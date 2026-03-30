@@ -52,6 +52,11 @@ export default function DepositPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {!protocol.permit.hasPermit && (
+            <Button variant="outline" className="glass-button" onClick={protocol.permit.requestPermitCreation}>
+              Enable Private Access
+            </Button>
+          )}
           <Button
             className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
             onClick={handleDeposit}
@@ -79,6 +84,18 @@ export default function DepositPage() {
           {protocol.lastTxHash && (
             <p className="mt-2 font-mono text-xs text-accent/80">Tx: {trimHex(protocol.lastTxHash)}</p>
           )}
+        </GlassPanel>
+      )}
+
+      {protocol.permit.isPermitInitializing && (
+        <GlassPanel className="border-black/10">
+          <p className="text-sm text-muted-foreground">Preparing private access...</p>
+        </GlassPanel>
+      )}
+
+      {protocol.decryptBlocked && !protocol.permit.isPermitInitializing && (
+        <GlassPanel className="border-amber-300/40">
+          <p className="text-sm text-foreground">Private access not enabled.</p>
         </GlassPanel>
       )}
     </div>

@@ -7,29 +7,6 @@ import { Button } from "@/components/ui/button";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { trimHex, useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
-const flowCards = [
-  {
-    title: "Onboard Permit",
-    detail: "Bind wallet context before decrypting private lending state.",
-    href: "/app/onboard",
-  },
-  {
-    title: "Encrypt Deposit",
-    detail: "Seal collateral inputs in-browser and submit ciphertext handles.",
-    href: "/app/deposit",
-  },
-  {
-    title: "Borrow Privately",
-    detail: "Simulate LTV locally and request encrypted debt updates.",
-    href: "/app/borrow",
-  },
-  {
-    title: "Run Demo",
-    detail: "Show the full encrypt, send, and decrypt flow for judges.",
-    href: "/app/demo",
-  },
-];
-
 export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const protocol = useWalnutProtocol();
@@ -53,7 +30,7 @@ export default function WalnutDashboardPage() {
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debt.decrypted.isPending, showDecrypted]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <GlassPanel className="overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -65,10 +42,15 @@ export default function WalnutDashboardPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="glass-button" onClick={() => setShowDecrypted((value) => !value)}>
+            {!protocol.permit.hasPermit && (
+              <Button size="sm" variant="outline" className="glass-button" onClick={protocol.permit.requestPermitCreation}>
+                Enable Private Access
+              </Button>
+            )}
+            <Button size="sm" variant="outline" className="glass-button" onClick={() => setShowDecrypted((value) => !value)}>
               {showDecrypted ? "Hide Values" : "Decrypt Values"}
             </Button>
-            <Button variant="outline" className="glass-button" onClick={() => protocol.refreshBalances()}>
+            <Button size="sm" variant="outline" className="glass-button" onClick={() => protocol.refreshBalances()}>
               Refresh
             </Button>
           </div>
@@ -95,10 +77,10 @@ export default function WalnutDashboardPage() {
       <GlassPanel>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-display text-xl text-foreground">Quick Actions</h2>
-            <p className="text-sm text-muted-foreground">Wave 1 routes are split for precise flow testing.</p>
+            <h2 className="font-display text-xl text-foreground">Actions</h2>
+            <p className="text-sm text-muted-foreground">Move through the encrypted flow in order.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <Link href="/app/onboard" className="glass-chip">
               Onboard
             </Link>
@@ -118,26 +100,24 @@ export default function WalnutDashboardPage() {
         </div>
       </GlassPanel>
 
-      <div className="scroll-cards">
-        {flowCards.map((card) => (
-          <Link
-            key={card.title}
-            href={card.href}
-            className="interactive-tilt glass-panel rounded-2xl p-5"
-          >
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Flow Card</p>
-            <h3 className="mt-3 text-2xl font-display text-foreground">{card.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{card.detail}</p>
-          </Link>
-        ))}
-      </div>
-
       {(protocol.status || protocol.lastTxHash) && (
         <GlassPanel className="border-accent/40">
           {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
           {protocol.lastTxHash && (
             <p className="mt-2 font-mono text-xs text-accent/80">Tx: {trimHex(protocol.lastTxHash)}</p>
           )}
+        </GlassPanel>
+      )}
+
+      {protocol.permit.isPermitInitializing && (
+        <GlassPanel className="border-black/10">
+          <p className="text-sm text-muted-foreground">Preparing private access...</p>
+        </GlassPanel>
+      )}
+
+      {protocol.decryptBlocked && !protocol.permit.isPermitInitializing && (
+        <GlassPanel className="border-amber-300/40">
+          <p className="text-sm text-foreground">Private access not enabled.</p>
         </GlassPanel>
       )}
 
