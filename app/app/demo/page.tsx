@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { trimHex, type WalnutAction, useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { GlassPanel } from "@/components/walnut/glass-panel";
+import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 
 export default function DemoPage() {
   const [amount, setAmount] = useState("");
@@ -20,21 +21,21 @@ export default function DemoPage() {
 
   const collateralLabel = useMemo(() => {
     if (!showDecrypted || !protocol.canRead) return "******";
-    if (protocol.collateral.decrypted.isPending) return "Decrypting...";
+    if (protocol.collateralDecrypting) return "Decrypting...";
     if (typeof protocol.collateral.decrypted.data === "bigint") {
       return protocol.collateral.decrypted.data.toString();
     }
     return "0";
-  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateral.decrypted.isPending, showDecrypted]);
+  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateralDecrypting, showDecrypted]);
 
   const debtLabel = useMemo(() => {
     if (!showDecrypted || !protocol.canRead) return "******";
-    if (protocol.debt.decrypted.isPending) return "Decrypting...";
+    if (protocol.debtDecrypting) return "Decrypting...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
       return protocol.debt.decrypted.data.toString();
     }
     return "0";
-  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debt.decrypted.isPending, showDecrypted]);
+  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   return (
     <div className="space-y-6">
@@ -45,6 +46,8 @@ export default function DemoPage() {
           Use this route during judging to show the full private flow in one place.
         </p>
       </GlassPanel>
+
+      <ProtocolAlerts protocol={protocol} />
 
       <GlassPanel className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -122,6 +125,8 @@ export default function DemoPage() {
           )}
         </GlassPanel>
       )}
+
+      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }

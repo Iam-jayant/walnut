@@ -9,6 +9,8 @@
 
 # production
 /build
+/artifacts
+/cache
 
 # debug
 npm-debug.log*

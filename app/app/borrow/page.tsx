@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
+import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { trimHex, useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
 function toNumber(value: unknown) {
@@ -23,12 +24,12 @@ export default function BorrowPage() {
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.debt.decrypted.isPending) return "Decrypting...";
+    if (protocol.debtDecrypting) return "Decrypting...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
       return protocol.debt.decrypted.data.toString();
     }
     return "0";
-  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debt.decrypted.isPending, showDecrypted]);
+  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   async function handleBorrow() {
     const success = await protocol.submitEncryptedAmount("borrow", amount);
@@ -44,6 +45,8 @@ export default function BorrowPage() {
           Borrow values are encrypted before transaction submission. LTV preview is local-only for user guidance.
         </p>
       </GlassPanel>
+
+      <ProtocolAlerts protocol={protocol} />
 
       <GlassPanel className="space-y-4">
         <div>
@@ -107,17 +110,7 @@ export default function BorrowPage() {
         </GlassPanel>
       )}
 
-      {protocol.permit.isPermitInitializing && (
-        <GlassPanel className="border-black/10">
-          <p className="text-sm text-muted-foreground">Preparing private access...</p>
-        </GlassPanel>
-      )}
-
-      {protocol.decryptBlocked && !protocol.permit.isPermitInitializing && (
-        <GlassPanel className="border-amber-300/40">
-          <p className="text-sm text-foreground">Private access not enabled.</p>
-        </GlassPanel>
-      )}
+      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }

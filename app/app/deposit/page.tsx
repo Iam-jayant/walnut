@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
+import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { trimHex, useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
 export default function DepositPage() {
@@ -14,12 +15,12 @@ export default function DepositPage() {
 
   const collateralLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.collateral.decrypted.isPending) return "Decrypting...";
+    if (protocol.collateralDecrypting) return "Decrypting...";
     if (typeof protocol.collateral.decrypted.data === "bigint") {
       return protocol.collateral.decrypted.data.toString();
     }
     return "0";
-  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateral.decrypted.isPending, showDecrypted]);
+  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateralDecrypting, showDecrypted]);
 
   async function handleDeposit() {
     const success = await protocol.submitEncryptedAmount("deposit", amount);
@@ -35,6 +36,8 @@ export default function DepositPage() {
           Input stays local, Walnut encrypts it in-browser, then only ciphertext metadata is submitted on-chain.
         </p>
       </GlassPanel>
+
+      <ProtocolAlerts protocol={protocol} />
 
       <GlassPanel className="space-y-4">
         <div>
@@ -87,17 +90,7 @@ export default function DepositPage() {
         </GlassPanel>
       )}
 
-      {protocol.permit.isPermitInitializing && (
-        <GlassPanel className="border-black/10">
-          <p className="text-sm text-muted-foreground">Preparing private access...</p>
-        </GlassPanel>
-      )}
-
-      {protocol.decryptBlocked && !protocol.permit.isPermitInitializing && (
-        <GlassPanel className="border-amber-300/40">
-          <p className="text-sm text-foreground">Private access not enabled.</p>
-        </GlassPanel>
-      )}
+      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }

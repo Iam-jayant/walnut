@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { GlassPanel } from "@/components/walnut/glass-panel";
+import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { trimHex, useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
 export default function WalnutDashboardPage() {
@@ -13,21 +14,21 @@ export default function WalnutDashboardPage() {
 
   const collateralLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.collateral.decrypted.isPending) return "Decrypting...";
+    if (protocol.collateralDecrypting) return "Decrypting...";
     if (typeof protocol.collateral.decrypted.data === "bigint") {
       return protocol.collateral.decrypted.data.toString();
     }
     return "0";
-  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateral.decrypted.isPending, showDecrypted]);
+  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateralDecrypting, showDecrypted]);
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.debt.decrypted.isPending) return "Decrypting...";
+    if (protocol.debtDecrypting) return "Decrypting...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
       return protocol.debt.decrypted.data.toString();
     }
     return "0";
-  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debt.decrypted.isPending, showDecrypted]);
+  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   return (
     <div className="space-y-5">
@@ -56,6 +57,8 @@ export default function WalnutDashboardPage() {
           </div>
         </div>
       </GlassPanel>
+
+      <ProtocolAlerts protocol={protocol} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <GlassPanel>
@@ -109,25 +112,7 @@ export default function WalnutDashboardPage() {
         </GlassPanel>
       )}
 
-      {protocol.permit.isPermitInitializing && (
-        <GlassPanel className="border-black/10">
-          <p className="text-sm text-muted-foreground">Preparing private access...</p>
-        </GlassPanel>
-      )}
-
-      {protocol.decryptBlocked && !protocol.permit.isPermitInitializing && (
-        <GlassPanel className="border-amber-300/40">
-          <p className="text-sm text-foreground">Private access not enabled.</p>
-        </GlassPanel>
-      )}
-
-      {!protocol.canUseContract && (
-        <GlassPanel className="border-destructive/50">
-          <p className="text-sm text-destructive">
-            Set <code>NEXT_PUBLIC_WALNUT_CONTRACT_ADDRESS</code> to enable encrypted contract actions.
-          </p>
-        </GlassPanel>
-      )}
+      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }

@@ -15,12 +15,12 @@ export default function RepayPage() {
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.debt.decrypted.isPending) return "Decrypting...";
+    if (protocol.debtDecrypting) return "Decrypting...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
       return protocol.debt.decrypted.data.toString();
     }
     return "0";
-  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debt.decrypted.isPending, showDecrypted]);
+  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   function handleRepayIntent() {
     if (!repayAmount || !/^\d+$/.test(repayAmount)) {
