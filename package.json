@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "deploy:sepolia": "hardhat run scripts/deploy-sepolia.js --network sepolia"
   },
@@ -22,7 +22,7 @@
     "clsx": "^2.1.1",
     "gsap": "^3.14.2",
     "lucide-react": "^0.454.0",
-    "next": "15.5.14",
+    "next": "16.2.1",
     "next-themes": "^0.4.6",
     "react": "18.3.1",
     "react-dom": "18.3.1",
