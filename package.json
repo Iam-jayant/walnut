@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "deploy:sepolia": "hardhat run scripts/deploy-sepolia.js --network sepolia"
+    "deploy:sepolia": "hardhat run scripts/deploy-sepolia.js --network sepolia",
+    "deploy:wave2:sepolia": "hardhat run scripts/deploy-wave2-sepolia.js --network sepolia"
   },
   "dependencies": {
     "@cofhe/abi": "^0.4.0",
@@ -16,6 +17,7 @@
     "@emotion/styled": "^11.14.1",
     "@radix-ui/react-checkbox": "1.1.3",
     "@radix-ui/react-slot": "1.1.1",
+    "@reineira-os/sdk": "^0.2.0",
     "@tanstack/react-query": "^5.95.2",
     "@vercel/analytics": "1.3.1",
     "class-variance-authority": "^0.7.1",
@@ -31,12 +33,15 @@
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
+    "@fhenixprotocol/cofhe-contracts": "^0.0.13",
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
-    "@fhenixprotocol/cofhe-contracts": "^0.1.3",
     "@tailwindcss/postcss": "^4.1.9",
+    "@types/chai": "^5.2.3",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "chai": "^6.2.2",
+    "cofhe-hardhat-plugin": "latest",
     "dotenv": "^16.4.7",
     "hardhat": "^2.24.2",
     "postcss": "^8.5",
