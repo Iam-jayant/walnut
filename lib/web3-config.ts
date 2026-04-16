@@ -1,13 +1,14 @@
-import { createConfig, http, injected } from "wagmi";
-import { hardhat, sepolia } from "wagmi/chains";
-
-import { walnutRpcUrl } from "@/lib/walnut-contract";
+import { createConfig, createStorage, http, injected } from "wagmi";
+import { sepolia } from "wagmi/chains";
 
 export const wagmiConfig = createConfig({
-  chains: [hardhat, sepolia],
+  chains: [sepolia],
   connectors: [injected()],
   transports: {
-    [hardhat.id]: http(walnutRpcUrl),
-    [sepolia.id]: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL),
+    [sepolia.id]: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"),
   },
+  storage: createStorage({
+    storage: typeof window !== "undefined" ? window.localStorage : undefined,
+  }),
+  ssr: true,
 });
