@@ -14,52 +14,52 @@ type AlertItem = {
 };
 
 function toneToClassName(tone: AlertItem["tone"]) {
-  if (tone === "error") return "border-destructive/50 text-destructive";
-  if (tone === "warning") return "border-amber-300/40 text-foreground";
-  return "border-black/10 text-muted-foreground";
+  if (tone === "error") return "walnut-alert walnut-alert-danger text-destructive";
+  if (tone === "warning") return "walnut-alert walnut-alert-warning text-foreground";
+  return "walnut-alert text-muted-foreground";
 }
 
 export function ProtocolAlerts({ protocol }: ProtocolHealthProps) {
   const alerts: AlertItem[] = [];
 
   if (!protocol.isConnected) {
-    alerts.push({ key: "wallet", message: "Connect wallet to use Walnut private actions.", tone: "warning" });
+    alerts.push({ key: "wallet", message: "Connect your wallet to continue.", tone: "warning" });
   }
 
   if (protocol.isConnected && !protocol.isOnTargetChain) {
-    alerts.push({ key: "network", message: "Wrong network. Switch to Sepolia.", tone: "error" });
+    alerts.push({ key: "network", message: "Wrong network. Please switch to Sepolia.", tone: "error" });
   }
 
   if (!protocol.canUseContract) {
     alerts.push({
       key: "contract",
-      message: "Contract address missing. Set NEXT_PUBLIC_WALNUT_CONTRACT_ADDRESS.",
+      message: "Walnut is not configured right now. Please try again later.",
       tone: "error",
     });
   }
 
   if (protocol.permit.isPermitInitializing) {
-    alerts.push({ key: "permit-init", message: "Creating private access permit...", tone: "info" });
+    alerts.push({ key: "permit-init", message: "Preparing secure access...", tone: "info" });
   }
 
   if (!protocol.permit.isPermitInitializing && !protocol.permit.hasPermit) {
-    alerts.push({ key: "permit-missing", message: "Private access not enabled.", tone: "warning" });
+    alerts.push({ key: "permit-missing", message: "Private access is not enabled yet.", tone: "warning" });
   }
 
   if (protocol.permit.permitError) {
     alerts.push({
       key: "permit-error",
-      message: `Permit creation failed. Try again. (${protocol.permit.permitError})`,
+      message: "Could not enable private access. Please try again.",
       tone: "error",
     });
   }
 
   if (protocol.hasDecryptPending) {
-    alerts.push({ key: "decrypting", message: "Decrypting balances...", tone: "info" });
+    alerts.push({ key: "decrypting", message: "Loading balances...", tone: "info" });
   }
 
   if (protocol.hasDecryptError) {
-    alerts.push({ key: "decrypt-error", message: "Decrypt failed. Refresh or recreate permit.", tone: "error" });
+    alerts.push({ key: "decrypt-error", message: "Could not load balances. Refresh and try again.", tone: "error" });
   }
 
   if (!alerts.length) return null;
@@ -85,20 +85,17 @@ function statusClass(ok: boolean) {
 
 export function SystemStatusPanel({ protocol }: ProtocolHealthProps) {
   return (
-    <GlassPanel>
-      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">System Status</p>
+    <GlassPanel className="walnut-card">
+      <p className="walnut-label">Status</p>
       <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-        <p className={statusClass(protocol.isConnected)}>
+        <p className={`walnut-progress ${statusClass(protocol.isConnected)}`}>
           Wallet: {statusLabel(protocol.isConnected, "Connected", "Disconnected")}
         </p>
-        <p className={statusClass(protocol.isOnTargetChain)}>
+        <p className={`walnut-progress ${statusClass(protocol.isOnTargetChain)}`}>
           Network: {statusLabel(protocol.isOnTargetChain, "Sepolia", "Wrong network")}
         </p>
-        <p className={statusClass(protocol.permit.hasPermit && protocol.permit.isPermitValid)}>
-          Permit: {statusLabel(protocol.permit.hasPermit && protocol.permit.isPermitValid, "Ready", "Missing or invalid")}
-        </p>
-        <p className={statusClass(protocol.contractReachable)}>
-          Contract: {statusLabel(protocol.contractReachable, "Reachable", "Unavailable")}
+        <p className={`walnut-progress ${statusClass(protocol.permit.hasPermit && protocol.permit.isPermitValid)}`}>
+          Private Access: {statusLabel(protocol.permit.hasPermit && protocol.permit.isPermitValid, "Ready", "Not ready")}
         </p>
       </div>
     </GlassPanel>
