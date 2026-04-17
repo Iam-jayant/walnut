@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
-import { trimHex, useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
 export default function DepositPage() {
   const [amount, setAmount] = useState("");
@@ -15,7 +15,7 @@ export default function DepositPage() {
 
   const collateralLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.collateralDecrypting) return "Decrypting...";
+    if (protocol.collateralDecrypting) return "Loading...";
     if (typeof protocol.collateral.decrypted.data === "bigint") {
       return protocol.collateral.decrypted.data.toString();
     }
@@ -29,20 +29,20 @@ export default function DepositPage() {
 
   return (
     <div className="space-y-6">
-      <GlassPanel>
+      <GlassPanel className="walnut-hero">
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Deposit Collateral</p>
-        <h1 className="mt-2 font-display text-3xl text-foreground">Seal Amount, Then Deposit</h1>
+        <h1 className="mt-2 font-display text-3xl text-foreground">Add Collateral</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Input stays local, Walnut encrypts it in-browser, then only ciphertext metadata is submitted on-chain.
+          Enter a number and confirm to add collateral.
         </p>
       </GlassPanel>
 
       <ProtocolAlerts protocol={protocol} />
 
-      <GlassPanel className="space-y-4">
+      <GlassPanel className="walnut-card space-y-4">
         <div>
           <label htmlFor="deposit-amount" className="mb-2 block text-sm text-foreground">
-            Amount (uint128)
+            Amount
           </label>
           <Input
             id="deposit-amount"
@@ -65,28 +65,23 @@ export default function DepositPage() {
             onClick={handleDeposit}
             disabled={protocol.isWriting || protocol.isEncrypting}
           >
-            Deposit Encrypted Amount
+            Deposit
           </Button>
           <Button variant="outline" className="glass-button" onClick={() => setShowDecrypted((value) => !value)}>
-            {showDecrypted ? "Hide Balance" : "Decrypt Balance"}
+            {showDecrypted ? "Hide Balance" : "Show Balance"}
           </Button>
         </div>
       </GlassPanel>
 
-      <GlassPanel>
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current Collateral</p>
-        <p className="mt-3 font-mono text-3xl text-foreground">{collateralLabel}</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Ciphertext: {trimHex(protocol.collateral.encrypted.data as string | undefined)}
-        </p>
+      <GlassPanel className="walnut-card walnut-card-strong">
+        <p className="walnut-label">Current Collateral</p>
+        <p className="walnut-value">{collateralLabel}</p>
+        <p className="walnut-meta">Your current collateral balance</p>
       </GlassPanel>
 
-      {(protocol.status || protocol.lastTxHash) && (
-        <GlassPanel className="border-accent/40">
+      {protocol.status && (
+        <GlassPanel className="walnut-alert border-accent/40">
           {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
-          {protocol.lastTxHash && (
-            <p className="mt-2 font-mono text-xs text-accent/80">Tx: {trimHex(protocol.lastTxHash)}</p>
-          )}
         </GlassPanel>
       )}
 
