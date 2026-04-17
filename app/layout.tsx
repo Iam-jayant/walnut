@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Web3Providers } from '@/components/web3-providers'
+import '@rainbow-me/rainbowkit/styles.css'
 import './globals.css'
 
 const instrumentSans = Instrument_Sans({ 
@@ -33,8 +34,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
+      <body className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} font-sans antialiased`} suppressHydrationWarning>
         <Web3Providers>{children}</Web3Providers>
         <Analytics />
       </body>
