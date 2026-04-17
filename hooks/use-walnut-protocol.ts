@@ -7,12 +7,12 @@ import {
   useCofheWriteContract,
 } from "@cofhe/react";
 import { useCallback, useState } from "react";
-import { useAccount, usePublicClient, useSwitchChain } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useSwitchChain } from "wagmi";
 
 import {
   walnutChainId,
-  walnutContractAddress,
-  walnutWave1Abi,
+  walnutWave2Abi,
+  walnutWave2ContractAddress,
 } from "@/lib/walnut-contract";
 import { useWalnutPermit } from "@/components/walnut/permit-provider";
 
@@ -80,18 +80,18 @@ export function useWalnutProtocol() {
   const [status, setStatus] = useState("");
   const [lastTxHash, setLastTxHash] = useState<`0x${string}` | null>(null);
 
-  const canUseContract = Boolean(walnutContractAddress);
+  const canUseContract = Boolean(walnutWave2ContractAddress);
   const isOnTargetChain = chainId === walnutChainId;
   const canRead = Boolean(isConnected && address && canUseContract && isOnTargetChain);
 
   const collateral = useCofheReadContractAndDecrypt<
-    typeof walnutWave1Abi,
+    typeof walnutWave2Abi,
     "getEncryptedCollateral",
     FheTypes.Uint128
   >(
     {
-      address: walnutContractAddress,
-      abi: walnutWave1Abi,
+      address: walnutWave2ContractAddress,
+      abi: walnutWave2Abi,
       functionName: "getEncryptedCollateral",
       args: address ? [address] : undefined,
       requiresPermit: true,
@@ -108,13 +108,13 @@ export function useWalnutProtocol() {
   );
 
   const debt = useCofheReadContractAndDecrypt<
-    typeof walnutWave1Abi,
+    typeof walnutWave2Abi,
     "getEncryptedDebt",
     FheTypes.Uint128
   >(
     {
-      address: walnutContractAddress,
-      abi: walnutWave1Abi,
+      address: walnutWave2ContractAddress,
+      abi: walnutWave2Abi,
       functionName: "getEncryptedDebt",
       args: address ? [address] : undefined,
       requiresPermit: true,
@@ -129,6 +129,40 @@ export function useWalnutProtocol() {
       },
     }
   );
+
+  const healthFactor = useCofheReadContractAndDecrypt<
+    typeof walnutWave2Abi,
+    "getHealthFactor",
+    FheTypes.Uint128
+  >(
+    {
+      address: walnutWave2ContractAddress,
+      abi: walnutWave2Abi,
+      functionName: "getHealthFactor",
+      args: address ? [address] : undefined,
+      requiresPermit: true,
+    },
+    {
+      readQueryOptions: {
+        enabled: canRead,
+        refetchInterval: 15000,
+      },
+      decryptingQueryOptions: {
+        enabled: canRead && permit.hasPermit,
+      },
+    }
+  );
+
+  const { data: liquidatable, isLoading: liquidatableLoading } = useReadContract({
+    address: walnutWave2ContractAddress,
+    abi: walnutWave2Abi,
+    functionName: "liquidatable",
+    args: address ? [address] : undefined,
+    query: {
+      enabled: canRead,
+      refetchInterval: 15000,
+    },
+  });
 
   const missingPermit = !permit.hasPermit || !permit.isPermitValid;
   const decryptBlocked =
@@ -151,6 +185,20 @@ export function useWalnutProtocol() {
   const hasEncryptedReadError = Boolean(collateral.encrypted.error || debt.encrypted.error);
   const contractReachable = Boolean(canRead && !hasEncryptedReadError);
 
+  const healthFactorCtHash = extractCtHash(healthFactor.encrypted.data);
+  const healthFactorHasCiphertext = Boolean(healthFactorCtHash && healthFactorCtHash > 0n);
+  const healthFactorDecrypting = Boolean(
+    healthFactorHasCiphertext && healthFactor.decrypted.isFetching
+  );
+
+  const healthFactorStatus: "safe" | "at-risk" | "liquidatable" | "unknown" = (() => {
+    const decryptedValue = healthFactor.decrypted.data;
+    if (decryptedValue === undefined) return "unknown";
+    if (decryptedValue >= 15000n) return "safe";
+    if (decryptedValue >= 10500n) return "at-risk";
+    return "liquidatable";
+  })();
+
   const ensureRightChain = useCallback(async () => {
     if (chainId === walnutChainId) return;
     await switchChainAsync({ chainId: walnutChainId });
@@ -162,8 +210,17 @@ export function useWalnutProtocol() {
       collateral.decrypted.refetch(),
       debt.encrypted.refetch(),
       debt.decrypted.refetch(),
+      healthFactor.encrypted.refetch(),
+      healthFactor.decrypted.refetch(),
     ]);
-  }, [collateral.decrypted, collateral.encrypted, debt.decrypted, debt.encrypted]);
+  }, [
+    collateral.decrypted,
+    collateral.encrypted,
+    debt.decrypted,
+    debt.encrypted,
+    healthFactor.decrypted,
+    healthFactor.encrypted,
+  ]);
 
   const submitEncryptedAmount = useCallback(
     async (action: WalnutAction, rawAmount: string) => {
@@ -172,12 +229,12 @@ export function useWalnutProtocol() {
         setLastTxHash(null);
 
         if (!isConnected || !address) {
-          setStatus("Connect wallet first.");
+          setStatus("Please connect your wallet.");
           return false;
         }
 
-        if (!canUseContract || !walnutContractAddress) {
-          setStatus("Set NEXT_PUBLIC_WALNUT_CONTRACT_ADDRESS in your environment.");
+        if (!canUseContract || !walnutWave2ContractAddress) {
+          setStatus("Walnut is not available right now. Please try again later.");
           return false;
         }
 
@@ -208,14 +265,14 @@ export function useWalnutProtocol() {
         const hash = await writeContractAsync({
           chain: undefined,
           account: address,
-          address: walnutContractAddress,
-          abi: walnutWave1Abi,
+          address: walnutWave2ContractAddress,
+          abi: walnutWave2Abi,
           functionName: action,
           args: [encodedForContract],
         });
 
         setLastTxHash(hash);
-        setStatus(`${action === "deposit" ? "Deposit" : "Borrow"} submitted.`);
+        setStatus(`${action === "deposit" ? "Deposit" : "Borrow"} is being processed...`);
 
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
@@ -225,9 +282,8 @@ export function useWalnutProtocol() {
 
         setStatus(`${action === "deposit" ? "Deposit" : "Borrow"} confirmed.`);
         return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        setStatus(`Failed: ${message}`);
+      } catch {
+        setStatus("Something went wrong. Please try again.");
         return false;
       }
     },
@@ -242,6 +298,195 @@ export function useWalnutProtocol() {
       writeContractAsync,
     ]
   );
+
+  const submitRepay = useCallback(
+    async (rawAmount: string) => {
+      try {
+        setStatus("");
+        setLastTxHash(null);
+
+        if (!isConnected || !address) {
+          setStatus("Please connect your wallet.");
+          return false;
+        }
+
+        if (!walnutWave2ContractAddress) {
+          setStatus("Walnut is not available right now. Please try again later.");
+          return false;
+        }
+
+        if (!rawAmount || !/^\d+$/.test(rawAmount)) {
+          setStatus("Amount must be a positive whole number.");
+          return false;
+        }
+
+        if (BigInt(rawAmount) <= 0n) {
+          setStatus("Amount must be greater than zero.");
+          return false;
+        }
+
+        await ensureRightChain();
+
+        const encrypted = await encryptInputsAsync([
+          Encryptable.uint128(BigInt(rawAmount)),
+        ]);
+
+        const encryptedAmount = encrypted[0];
+        const encodedForContract = {
+          ctHash: encryptedAmount.ctHash,
+          securityZone: encryptedAmount.securityZone,
+          utype: encryptedAmount.utype,
+          signature: encryptedAmount.signature as `0x${string}`,
+        };
+
+        const hash = await writeContractAsync({
+          chain: undefined,
+          account: address,
+          address: walnutWave2ContractAddress,
+          abi: walnutWave2Abi,
+          functionName: "repay",
+          args: [encodedForContract],
+        });
+
+        setLastTxHash(hash);
+        setStatus("Repayment is being processed...");
+
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+
+        await refreshBalances();
+
+        setStatus("Repayment confirmed.");
+        return true;
+      } catch {
+        setStatus("Something went wrong. Please try again.");
+        return false;
+      }
+    },
+    [
+      address,
+      encryptInputsAsync,
+      ensureRightChain,
+      isConnected,
+      publicClient,
+      refreshBalances,
+      writeContractAsync,
+    ]
+  );
+
+  const submitWithdraw = useCallback(
+    async (rawAmount: string) => {
+      try {
+        setStatus("");
+        setLastTxHash(null);
+
+        if (!isConnected || !address) {
+          setStatus("Please connect your wallet.");
+          return false;
+        }
+
+        if (!walnutWave2ContractAddress) {
+          setStatus("Walnut is not available right now. Please try again later.");
+          return false;
+        }
+
+        if (!rawAmount || !/^\d+$/.test(rawAmount)) {
+          setStatus("Amount must be a positive whole number.");
+          return false;
+        }
+
+        if (BigInt(rawAmount) <= 0n) {
+          setStatus("Amount must be greater than zero.");
+          return false;
+        }
+
+        await ensureRightChain();
+
+        const encrypted = await encryptInputsAsync([
+          Encryptable.uint128(BigInt(rawAmount)),
+        ]);
+
+        const encryptedAmount = encrypted[0];
+        const encodedForContract = {
+          ctHash: encryptedAmount.ctHash,
+          securityZone: encryptedAmount.securityZone,
+          utype: encryptedAmount.utype,
+          signature: encryptedAmount.signature as `0x${string}`,
+        };
+
+        const hash = await writeContractAsync({
+          chain: undefined,
+          account: address,
+          address: walnutWave2ContractAddress,
+          abi: walnutWave2Abi,
+          functionName: "withdraw",
+          args: [encodedForContract],
+        });
+
+        setLastTxHash(hash);
+        setStatus("Withdrawal is being processed...");
+
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+
+        await refreshBalances();
+
+        setStatus("Withdrawal confirmed.");
+        return true;
+      } catch {
+        setStatus("Something went wrong. Please try again.");
+        return false;
+      }
+    },
+    [
+      address,
+      encryptInputsAsync,
+      ensureRightChain,
+      isConnected,
+      publicClient,
+      refreshBalances,
+      writeContractAsync,
+    ]
+  );
+
+  const requestLiquidationCheck = useCallback(async () => {
+    try {
+      if (!isConnected || !address) {
+        setStatus("Please connect your wallet.");
+        return;
+      }
+
+      if (!walnutWave2ContractAddress) {
+        setStatus("Walnut is not available right now. Please try again later.");
+        return;
+      }
+
+      await ensureRightChain();
+
+      setStatus("Checking your position risk...");
+
+      const hash = await writeContractAsync({
+        chain: undefined,
+        account: address,
+        address: walnutWave2ContractAddress,
+        abi: walnutWave2Abi,
+        functionName: "requestLiquidationCheck",
+        args: [address],
+      });
+
+      setLastTxHash(hash);
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+
+      setStatus("Risk check requested. Please refresh in a moment.");
+    } catch {
+      setStatus("Something went wrong. Please try again.");
+    }
+  }, [address, ensureRightChain, isConnected, publicClient, writeContractAsync]);
 
   return {
     address,
@@ -258,16 +503,24 @@ export function useWalnutProtocol() {
     hasDecryptPending,
     hasEncryptedReadError,
     decryptBlocked,
+    healthFactor,
+    healthFactorDecrypting,
+    healthFactorStatus,
     isOnTargetChain,
     isConnected,
     isEncrypting,
     isWriting,
     lastTxHash,
+    liquidatable: liquidatable ?? false,
+    liquidatableLoading,
     permit,
     refreshBalances,
+    requestLiquidationCheck,
     setStatus,
     status,
     submitEncryptedAmount,
+    submitRepay,
+    submitWithdraw,
   };
 }
 

@@ -6,27 +6,27 @@ import MagicBento, { type BentoCardProps } from "@/components/landing/magic-bent
 
 const rails: BentoCardProps[] = [
   {
-    label: "Silent Collateral",
-    title: "Encrypted in-browser",
-    description: "Amounts are sealed before tx submission. Public observers only see opaque handles.",
+    label: "Private Collateral",
+    title: "Your balances stay private",
+    description: "Manage collateral without exposing your exact amounts publicly.",
     color: "rgba(255, 255, 255, 0.05)",
   },
   {
     label: "Private Debt",
-    title: "No open debt table",
-    description: "Debt movement is computed on encrypted values to prevent position leakage.",
+    title: "No public debt trail",
+    description: "Borrow and repay while keeping your position details private.",
     color: "rgba(255, 255, 255, 0.05)",
   },
   {
     label: "MEV Resistance",
-    title: "No visible liquidation bait",
-    description: "Sensitive lending state is hidden, reducing sniping opportunities.",
+    title: "Reduced targeting risk",
+    description: "Private position data helps reduce opportunistic attacks.",
     color: "rgba(255, 255, 255, 0.05)",
   },
   {
-    label: "Permit Control",
-    title: "User-side decrypt rights",
-    description: "Only the right user context can decrypt values back into readable numbers.",
+    label: "Access Control",
+    title: "You stay in control",
+    description: "Only you can unlock your own sensitive lending data.",
     color: "rgba(255, 255, 255, 0.05)",
   },
 ];
@@ -34,26 +34,26 @@ const rails: BentoCardProps[] = [
 const trustCards: BentoCardProps[] = [
   {
     label: "Protection",
-    title: "Encrypted Positions",
-    description: "Wallet-level lending data stays hidden on-chain by default.",
+    title: "Private Positions",
+    description: "Your lending activity is private by default.",
     color: "rgba(255, 255, 255, 0.05)",
   },
   {
     label: "Risk Surface",
-    title: "Private Liquidation Surface",
-    description: "No public mempool breadcrumbs exposing vulnerable positions.",
+    title: "Safer Risk Handling",
+    description: "Position risk is managed with less public exposure.",
     color: "rgba(255, 255, 255, 0.05)",
   },
   {
     label: "Signals",
-    title: "Confidential Credit Signals",
-    description: "Credit context can be computed without publishing a user profile.",
+    title: "Private Credit Signals",
+    description: "Your credit context can be evaluated without public profiling.",
     color: "rgba(255, 255, 255, 0.05)",
   },
   {
-    label: "Engine",
-    title: "FHE Native Engine",
-    description: "Arithmetic runs on encrypted types, not plaintext accounting variables.",
+    label: "Built for Privacy",
+    title: "Privacy-first architecture",
+    description: "Walnut is designed from the ground up for confidential lending.",
     color: "rgba(255, 255, 255, 0.05)",
   },
 ];
@@ -69,7 +69,7 @@ export function FeaturesSection() {
 
   return (
     <section id="product" className="relative overflow-hidden bg-black py-28 text-white lg:py-40">
-      <div className="mx-auto w-full max-w-[1400px] px-6 lg:px-12">
+      <div className="mx-auto w-full max-w-350 px-6 lg:px-12">
         <div className="mb-16 max-w-3xl">
           <div
             className={`mb-6 transition-all duration-700 ${
@@ -78,7 +78,7 @@ export function FeaturesSection() {
           >
             <span className="inline-flex items-center gap-3 rounded-full border border-white/25 bg-white px-3 py-1 text-xs font-mono uppercase tracking-[0.2em] text-black/70">
               <Sparkles className="h-3.5 w-3.5 text-black" />
-              Fhenix-Inspired Architecture
+              Privacy-First Design
             </span>
           </div>
           <h2

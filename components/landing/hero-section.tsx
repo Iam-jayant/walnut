@@ -15,7 +15,7 @@ export function HeroSection() {
 
   return (
     <section className="relative flex min-h-screen flex-col justify-center overflow-hidden pt-32 pb-24">
-      <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 lg:px-12">
+      <div className="relative z-10 mx-auto w-full max-w-350 px-6 lg:px-12">
         <div className="grid items-center gap-16 lg:grid-cols-2">
           <div>
             <div
@@ -42,8 +42,7 @@ export function HeroSection() {
                 isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
               }`}
             >
-              Borrow, lend, and manage positions without exposing your data. Your financial information stays encrypted.
-              Always.
+              Borrow, lend, and manage your position with privacy built in.
             </p>
 
             <div
@@ -91,7 +90,7 @@ export function HeroSection() {
                   <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Total Balance</p>
                   <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-display">******</span>
-                    <span className="text-sm text-muted-foreground">(encrypted)</span>
+                    <span className="text-sm text-muted-foreground">(private)</span>
                   </div>
                 </div>
 

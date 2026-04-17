@@ -23,7 +23,7 @@ const socialLinks = [
 export function FooterSection() {
   return (
     <footer className="relative border-t border-border">
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
+      <div className="max-w-350 mx-auto px-6 lg:px-12">
         {/* Main Footer */}
         <div className="py-16 lg:py-24">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-12 lg:gap-16">

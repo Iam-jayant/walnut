@@ -1,9 +1,9 @@
 import { createCofheConfig } from "@cofhe/react";
-import { hardhat as cofheHardhat, sepolia as cofheSepolia } from "@cofhe/sdk/chains";
+import { sepolia as cofheSepolia } from "@cofhe/sdk/chains";
 
 export const cofheConfig = createCofheConfig({
   environment: "react",
-  supportedChains: [cofheHardhat, cofheSepolia],
+  supportedChains: [cofheSepolia],
   react: {
     enableShieldUnshield: false,
     autogeneratePermits: true,

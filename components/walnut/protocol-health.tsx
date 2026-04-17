@@ -1,5 +1,7 @@
 "use client";
 
+import { Globe, ShieldCheck, Wallet } from "lucide-react";
+
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import type { WalnutProtocolState } from "@/hooks/use-walnut-protocol";
 
@@ -84,19 +86,46 @@ function statusClass(ok: boolean) {
 }
 
 export function SystemStatusPanel({ protocol }: ProtocolHealthProps) {
+  const statusItems = [
+    {
+      key: "wallet",
+      label: "Wallet",
+      value: statusLabel(protocol.isConnected, "Connected", "Disconnected"),
+      ok: protocol.isConnected,
+      icon: Wallet,
+    },
+    {
+      key: "network",
+      label: "Network",
+      value: statusLabel(protocol.isOnTargetChain, "Sepolia", "Wrong network"),
+      ok: protocol.isOnTargetChain,
+      icon: Globe,
+    },
+    {
+      key: "access",
+      label: "Private Access",
+      value: statusLabel(protocol.permit.hasPermit && protocol.permit.isPermitValid, "Ready", "Not ready"),
+      ok: protocol.permit.hasPermit && protocol.permit.isPermitValid,
+      icon: ShieldCheck,
+    },
+  ] as const;
+
   return (
     <GlassPanel className="walnut-card">
       <p className="walnut-label">Status</p>
-      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-        <p className={`walnut-progress ${statusClass(protocol.isConnected)}`}>
-          Wallet: {statusLabel(protocol.isConnected, "Connected", "Disconnected")}
-        </p>
-        <p className={`walnut-progress ${statusClass(protocol.isOnTargetChain)}`}>
-          Network: {statusLabel(protocol.isOnTargetChain, "Sepolia", "Wrong network")}
-        </p>
-        <p className={`walnut-progress ${statusClass(protocol.permit.hasPermit && protocol.permit.isPermitValid)}`}>
-          Private Access: {statusLabel(protocol.permit.hasPermit && protocol.permit.isPermitValid, "Ready", "Not ready")}
-        </p>
+      <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
+        {statusItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.key} className={`walnut-progress walnut-status-tile ${statusClass(item.ok)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{item.label}</p>
+                <Icon className="h-3.5 w-3.5" />
+              </div>
+              <p className="mt-2 font-medium">{item.value}</p>
+            </div>
+          );
+        })}
       </div>
     </GlassPanel>
   );

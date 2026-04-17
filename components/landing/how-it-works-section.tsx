@@ -13,8 +13,8 @@ const steps = [
   {
     number: "02",
     icon: Lock,
-    title: "Encrypt Position",
-    description: "Your data is encrypted with FHE. All computations happen on encrypted values.",
+    title: "Set Your Position",
+    description: "Your balances and activity stay private while you use the app.",
   },
   {
     number: "03",
@@ -46,7 +46,7 @@ export function HowItWorksSection() {
       ref={sectionRef}
       className="relative py-32 lg:py-48 overflow-hidden"
     >
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
+      <div className="max-w-350 mx-auto px-6 lg:px-12">
         {/* Header */}
         <div className="mb-24 max-w-2xl">
           <div 

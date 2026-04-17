@@ -6,8 +6,8 @@ import { Lock, Eye, FileCheck, Zap } from "lucide-react";
 const privacyFeatures = [
   {
     icon: Lock,
-    title: "Fully Homomorphic Encryption",
-    description: "Computations happen on encrypted data. Walnut never sees plaintext.",
+    title: "Private by Default",
+    description: "Your sensitive lending data stays private while you use Walnut.",
   },
   {
     icon: Eye,
@@ -17,12 +17,12 @@ const privacyFeatures = [
   {
     icon: Zap,
     title: "Private Liquidations",
-    description: "No public mempool. No liquidation sniping. No MEV extraction.",
+    description: "Risk handling is designed to reduce public targeting of your position.",
   },
   {
     icon: FileCheck,
-    title: "Audited Protocol",
-    description: "Smart contracts audited by leading security firms. Code is open-source.",
+    title: "Security Reviewed",
+    description: "Walnut follows strong security practices for safer onchain lending.",
   },
 ];
 
@@ -44,7 +44,7 @@ export function SecuritySection() {
 
   return (
     <section id="security" ref={sectionRef} className="relative py-32 lg:py-48 overflow-hidden">
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
+      <div className="max-w-350 mx-auto px-6 lg:px-12">
         <div className="grid lg:grid-cols-2 gap-16 lg:gap-24">
           {/* Left: Content */}
           <div
@@ -60,22 +60,22 @@ export function SecuritySection() {
               Privacy is your right.
             </h2>
             <p className="text-lg text-muted-foreground leading-relaxed mb-12">
-              Every feature is designed with privacy first. Encryption is not an add-on. It&apos;s how Walnut works.
+              Every feature is designed with privacy first, so you can lend and borrow with confidence.
             </p>
 
             {/* Key stats */}
             <div className="space-y-6">
               <div>
-                <p className="text-sm font-mono text-muted-foreground uppercase tracking-wide mb-2">Encryption Standard</p>
-                <p className="text-2xl font-display">Fully Homomorphic (FHE)</p>
+                <p className="text-sm font-mono text-muted-foreground uppercase tracking-wide mb-2">Privacy Focus</p>
+                <p className="text-2xl font-display">Confidential Lending</p>
               </div>
               <div>
-                <p className="text-sm font-mono text-muted-foreground uppercase tracking-wide mb-2">Audit Status</p>
-                <p className="text-2xl font-display">Third-party Audited</p>
+                <p className="text-sm font-mono text-muted-foreground uppercase tracking-wide mb-2">Security</p>
+                <p className="text-2xl font-display">Defense-in-Depth</p>
               </div>
               <div>
-                <p className="text-sm font-mono text-muted-foreground uppercase tracking-wide mb-2">Code Visibility</p>
-                <p className="text-2xl font-display">Open Source</p>
+                <p className="text-sm font-mono text-muted-foreground uppercase tracking-wide mb-2">Access</p>
+                <p className="text-2xl font-display">User Controlled</p>
               </div>
             </div>
           </div>
@@ -96,7 +96,7 @@ export function SecuritySection() {
                     style={{ transitionDelay: `${(i + 1) * 50}ms` }}
                   >
                     <div className="flex gap-4">
-                      <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center text-accent flex-shrink-0 mt-1">
+                      <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center text-accent shrink-0 mt-1">
                         <Icon className="w-5 h-5" />
                       </div>
                       <div className="flex-1">
