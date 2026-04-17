@@ -24,11 +24,15 @@ function toneToClassName(tone: AlertItem["tone"]) {
 export function ProtocolAlerts({ protocol }: ProtocolHealthProps) {
   const alerts: AlertItem[] = [];
 
-  if (!protocol.isConnected) {
+  if (protocol.isConnectionTransient) {
+    alerts.push({ key: "wallet-reconnect", message: "Restoring wallet session...", tone: "info" });
+  }
+
+  if (!protocol.isConnected && !protocol.isConnectionTransient) {
     alerts.push({ key: "wallet", message: "Connect your wallet to continue.", tone: "warning" });
   }
 
-  if (protocol.isConnected && !protocol.isOnTargetChain) {
+  if (protocol.isWalletReady && !protocol.isConnectionTransient && !protocol.isOnTargetChain) {
     alerts.push({ key: "network", message: "Wrong network. Please switch to Sepolia.", tone: "error" });
   }
 
@@ -90,15 +94,19 @@ export function SystemStatusPanel({ protocol }: ProtocolHealthProps) {
     {
       key: "wallet",
       label: "Wallet",
-      value: statusLabel(protocol.isConnected, "Connected", "Disconnected"),
-      ok: protocol.isConnected,
+      value: protocol.isConnectionTransient
+        ? "Reconnecting"
+        : statusLabel(protocol.isWalletReady, "Connected", "Disconnected"),
+      ok: protocol.isWalletReady,
       icon: Wallet,
     },
     {
       key: "network",
       label: "Network",
-      value: statusLabel(protocol.isOnTargetChain, "Sepolia", "Wrong network"),
-      ok: protocol.isOnTargetChain,
+      value: protocol.isConnectionTransient
+        ? "Detecting"
+        : statusLabel(protocol.isOnTargetChain, "Sepolia", "Wrong network"),
+      ok: protocol.isConnectionTransient ? true : protocol.isOnTargetChain,
       icon: Globe,
     },
     {
