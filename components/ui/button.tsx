@@ -41,19 +41,31 @@ function Button({
   variant,
   size,
   asChild = false,
+  isLoading = false,
+  loadingText,
+  children,
+  disabled,
   ...props
 }: React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    isLoading?: boolean
+    loadingText?: string
   }) {
   const Comp = asChild ? Slot : 'button'
+  const content = isLoading && loadingText ? loadingText : children
 
   return (
     <Comp
       data-slot="button"
+      aria-busy={isLoading || undefined}
+      disabled={asChild ? undefined : disabled || isLoading}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
-    />
+    >
+      {isLoading && <span className="walnut-button-spinner" aria-hidden="true" />}
+      {content}
+    </Comp>
   )
 }
 

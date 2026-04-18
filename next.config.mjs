@@ -5,14 +5,24 @@ const workspaceRoot = dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
     unoptimized: true,
   },
   outputFileTracingRoot: workspaceRoot,
-  webpack: (config) => {
+  webpack: (config, { dev }) => {
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      "@react-native-async-storage/async-storage": false,
+    };
+
+    if (dev) {
+      // Avoid flaky filesystem cache ENOENT issues on Windows during route recompiles.
+      config.cache = {
+        type: "memory",
+      };
+    }
+
     config.ignoreWarnings = [
       ...(config.ignoreWarnings || []),
       /Circular dependency between chunks with runtime/,

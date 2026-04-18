@@ -69,7 +69,7 @@ function extractCtHash(value: unknown): bigint | undefined {
 }
 
 export function useWalnutProtocol() {
-  const { address, isConnected, chainId } = useAccount();
+  const { address, isConnected, chainId, status: accountStatus } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient();
   const permit = useWalnutPermit();
@@ -81,8 +81,13 @@ export function useWalnutProtocol() {
   const [lastTxHash, setLastTxHash] = useState<`0x${string}` | null>(null);
 
   const canUseContract = Boolean(walnutWave2ContractAddress);
+  const isWalletReady = Boolean(isConnected && address);
+  const isConnectionTransient =
+    accountStatus === "connecting" ||
+    accountStatus === "reconnecting" ||
+    (isConnected && (address === undefined || chainId === undefined));
   const isOnTargetChain = chainId === walnutChainId;
-  const canRead = Boolean(isConnected && address && canUseContract && isOnTargetChain);
+  const canRead = Boolean(isWalletReady && canUseContract && isOnTargetChain && !isConnectionTransient);
 
   const collateral = useCofheReadContractAndDecrypt<
     typeof walnutWave2Abi,
@@ -506,8 +511,10 @@ export function useWalnutProtocol() {
     healthFactor,
     healthFactorDecrypting,
     healthFactorStatus,
+    isConnectionTransient,
     isOnTargetChain,
     isConnected,
+    isWalletReady,
     isEncrypting,
     isWriting,
     lastTxHash,

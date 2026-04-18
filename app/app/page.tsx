@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  ChevronRight,
   HandCoins,
   RefreshCcw,
   ShieldCheck,
@@ -12,7 +13,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { GlassPanel } from "@/components/walnut/glass-panel";
-import { HealthFactorCard } from "@/components/walnut/health-factor-card";
 import { LiquidationBadge } from "@/components/walnut/liquidation-badge";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
@@ -20,12 +20,24 @@ import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const protocol = useWalnutProtocol();
+  const collateralDecrypted =
+    typeof protocol.collateral.decrypted.data === "bigint"
+      ? protocol.collateral.decrypted.data
+      : undefined;
+  const debtDecrypted =
+    typeof protocol.debt.decrypted.data === "bigint" ? protocol.debt.decrypted.data : undefined;
 
-  const actions = [
-    { href: "/app/deposit", label: "Deposit", hint: "Add collateral", icon: ArrowDownToLine },
+  const primaryAction = {
+    href: "/app/deposit",
+    label: "Deposit",
+    hint: "Add collateral",
+    icon: ArrowDownToLine,
+  } as const;
+
+  const secondaryActions = [
     { href: "/app/borrow", label: "Borrow", hint: "Take a private loan", icon: HandCoins },
-    { href: "/app/repay", label: "Repay", hint: "Reduce your debt", icon: RefreshCcw },
     { href: "/app/withdraw", label: "Withdraw", hint: "Move available collateral", icon: ArrowUpFromLine },
+    { href: "/app/repay", label: "Repay", hint: "Reduce your debt", icon: RefreshCcw },
   ] as const;
 
   const collateralLabel = useMemo(() => {
@@ -47,11 +59,52 @@ export default function WalnutDashboardPage() {
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   const healthFactorValue = useMemo(() => {
-    if (typeof protocol.healthFactor?.decrypted?.data === "bigint") {
-      return protocol.healthFactor.decrypted.data;
+    const encryptedHealthFactor = protocol.healthFactor?.decrypted?.data;
+    if (typeof encryptedHealthFactor === "bigint") {
+      return encryptedHealthFactor;
     }
-    return undefined;
-  }, [protocol.healthFactor?.decrypted?.data]);
+
+    if (collateralDecrypted === undefined || debtDecrypted === undefined) {
+      return undefined;
+    }
+
+    if (debtDecrypted === 0n) {
+      // No debt means no liquidation risk for the active position.
+      return collateralDecrypted > 0n ? 999999n : undefined;
+    }
+
+    return (collateralDecrypted * 10000n) / debtDecrypted;
+  }, [collateralDecrypted, debtDecrypted, protocol.healthFactor?.decrypted?.data]);
+
+  const healthFactorLoading = Boolean(
+    showDecrypted &&
+      protocol.canRead &&
+      (protocol.collateralDecrypting || protocol.debtDecrypting || protocol.healthFactorDecrypting)
+  );
+
+  const healthFactorDisplay = useMemo(() => {
+    if (!showDecrypted) return "******";
+    if (healthFactorLoading) return "Loading...";
+    if (healthFactorValue === undefined) return "N/A";
+    return (Number(healthFactorValue) / 10000).toFixed(2);
+  }, [healthFactorLoading, healthFactorValue, showDecrypted]);
+
+  const healthGaugePercent = useMemo(() => {
+    if (!showDecrypted || healthFactorLoading || healthFactorValue === undefined) return 14;
+    const hf = Number(healthFactorValue) / 10000;
+    if (!Number.isFinite(hf) || hf <= 0) return 8;
+    return Math.max(8, Math.min(100, (hf / 2) * 100));
+  }, [healthFactorLoading, healthFactorValue, showDecrypted]);
+
+  const healthStatusLabel = useMemo(() => {
+    if (!showDecrypted || healthFactorLoading || healthFactorValue === undefined) {
+      return "Unknown";
+    }
+
+    if (healthFactorValue >= 15000n) return "Safe";
+    if (healthFactorValue >= 10500n) return "At Risk";
+    return "Liquidatable";
+  }, [healthFactorLoading, healthFactorValue, showDecrypted]);
 
   const availableCollateralLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
@@ -79,20 +132,29 @@ export default function WalnutDashboardPage() {
     ? "walnut-chip-ok"
     : "walnut-chip-pending";
 
+  const showKpiValues = showDecrypted && protocol.canRead;
+  const utilizationLabel = showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "******";
+  const utilizationBarWidth = showKpiValues ? Math.max(8, utilizationPercent) : 12;
+  const collateralMetric = showDecrypted ? collateralLabel : "******";
+  const debtMetric = showDecrypted ? debtLabel : "******";
+  const availableMetric = showDecrypted ? availableCollateralLabel : "******";
+
   return (
-    <div className="space-y-5">
-      <GlassPanel className="walnut-hero overflow-hidden">
+    <div className="space-y-4">
+      <GlassPanel className="walnut-hero walnut-card-strong overflow-hidden p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Dashboard</p>
-            <h1 className="mt-2 font-display text-3xl text-foreground">Private Lending Command Center</h1>
-            <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
+            <h1 className="mt-2 font-display text-[clamp(1.9rem,1.7vw+1.2rem,2.7rem)] text-foreground">
+              Private Lending Command Center
+            </h1>
+            <p className="mt-3 text-sm text-muted-foreground">
               View your balances and manage your position in one place.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className={`walnut-status-chip ${readinessTone}`}>{readinessLabel}</span>
               <span className="walnut-status-chip walnut-status-chip-ghost">
-                Utilization {showDecrypted ? `${utilizationPercent.toFixed(2)}%` : "--"}
+                Utilization {showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "--"}
               </span>
             </div>
           </div>
@@ -108,7 +170,7 @@ export default function WalnutDashboardPage() {
       </GlassPanel>
 
       {!protocol.permit.hasPermit && (
-        <GlassPanel className="walnut-card walnut-alert-warning border-amber-300/40">
+        <GlassPanel className="walnut-card walnut-alert-warning border-amber-300/40 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="walnut-label">Setup Required</p>
@@ -128,88 +190,137 @@ export default function WalnutDashboardPage() {
 
       <LiquidationBadge liquidatable={protocol.liquidatable} />
 
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-        <GlassPanel className="walnut-card walnut-card-strong walnut-spotlight">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="walnut-label">Position Lens</p>
-              <h2 className="mt-2 font-display text-2xl text-foreground">Portfolio Snapshot</h2>
-            </div>
-            <span className="walnut-status-chip walnut-status-chip-ghost">Live</span>
-          </div>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <div className="walnut-kpi-shell">
-              <p className="walnut-label">Available To Withdraw</p>
-              <p className="walnut-value text-3xl">{availableCollateralLabel}</p>
-              <p className="walnut-meta">Collateral minus current debt</p>
-            </div>
-            <div className="walnut-kpi-shell">
-              <p className="walnut-label">Borrow Utilization</p>
-              <p className="walnut-value text-3xl">
-                {showDecrypted ? `${utilizationPercent.toFixed(2)}%` : "******"}
-              </p>
-              <p className="walnut-meta">How much of collateral is currently borrowed</p>
-            </div>
-          </div>
-
+      <div className="grid gap-3 xl:grid-cols-[1fr_1.65fr_1fr]">
+        <GlassPanel className="walnut-card walnut-card-strong p-4">
+          <p className="walnut-label">Available To Withdraw</p>
+          <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{availableMetric}</p>
+          <p className="walnut-meta">Collateral minus current debt</p>
           <div className="mt-5">
             <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
               <span>Borrowed vs supplied</span>
-              <span>{showDecrypted ? `${utilizationPercent.toFixed(2)}%` : "--"}</span>
             </div>
             <div className="walnut-kpi-track">
-              <div className="walnut-kpi-fill" style={{ width: `${Math.max(6, utilizationPercent)}%` }} />
+              <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
             </div>
           </div>
         </GlassPanel>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <GlassPanel className="walnut-card walnut-card-strong walnut-kpi-card">
-            <p className="walnut-label">Collateral</p>
-            <p className="walnut-value">{collateralLabel}</p>
-            <p className="walnut-meta">Total supplied value</p>
-          </GlassPanel>
-          <GlassPanel className="walnut-card walnut-card-strong walnut-kpi-card">
-            <p className="walnut-label">Debt</p>
-            <p className="walnut-value">{debtLabel}</p>
-            <p className="walnut-meta">Total borrowed value</p>
-          </GlassPanel>
-        </div>
+        <GlassPanel className="walnut-card walnut-card-strong overflow-hidden p-0">
+          <div className="grid md:grid-cols-2">
+            <div className="p-4">
+              <p className="walnut-label">Borrow Utilization</p>
+              <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{utilizationLabel}</p>
+              <p className="walnut-meta">How much of collateral is currently borrowed</p>
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Borrow</span>
+                  <span>{showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "--"}</span>
+                </div>
+                <div className="walnut-kpi-track">
+                  <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-black/10 p-4 md:border-l md:border-t-0">
+              <p className="walnut-label">Collateral</p>
+              <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{collateralMetric}</p>
+              <p className="walnut-meta">Total supplied value</p>
+            </div>
+          </div>
+        </GlassPanel>
+
+        <GlassPanel className="walnut-card walnut-card-strong p-4">
+          <p className="walnut-label">Debt</p>
+          <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{debtMetric}</p>
+          <p className="walnut-meta">Total borrowed value</p>
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Total borrowed value</span>
+            </div>
+            <div className="walnut-kpi-track">
+              <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
+            </div>
+          </div>
+        </GlassPanel>
       </div>
 
-      <HealthFactorCard
-        healthFactor={healthFactorValue}
-        isDecrypting={protocol.healthFactorDecrypting}
-        showDecrypted={showDecrypted}
-        status={protocol.healthFactorStatus}
-      />
-
-      <GlassPanel className="walnut-card">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <GlassPanel className="walnut-card walnut-card-strong p-4 sm:p-5">
+        <div className="grid items-start gap-4 xl:grid-cols-[1.35fr_0.9fr]">
           <div>
-            <h2 className="font-display text-xl text-foreground">Actions</h2>
+            <h2 className="font-display text-[clamp(1.3rem,1vw+1rem,2rem)] text-foreground">Actions</h2>
             <p className="text-sm text-muted-foreground">Use these steps to manage your position.</p>
-          </div>
-        </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {actions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Link key={action.href} href={action.href} className="walnut-action-tile interactive-tilt">
-                <div className="flex items-start gap-3">
-                  <div className="walnut-action-icon">
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">{action.label}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{action.hint}</p>
+            <Link
+              href={primaryAction.href}
+              className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-black/12 bg-white/86 px-4 py-3 transition-colors hover:border-black/20"
+            >
+              <div className="flex items-start gap-3">
+                <div className="walnut-action-icon mt-0.5">
+                  <primaryAction.icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-[1.55rem] leading-none text-foreground">{primaryAction.label}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{primaryAction.hint}</p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </Link>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              {secondaryActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link key={action.href} href={action.href} className="walnut-action-tile interactive-tilt">
+                    <div className="flex items-start gap-3">
+                      <div className="walnut-action-icon">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{action.label}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{action.hint}</p>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-black/12 bg-white/85 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="walnut-health-gauge-wrap justify-start">
+                <div
+                  className="walnut-health-gauge"
+                  style={{
+                    background: `conic-gradient(rgba(17, 17, 17, 0.82) ${healthGaugePercent}%, rgba(17, 17, 17, 0.12) ${healthGaugePercent}% 100%)`,
+                  }}
+                >
+                  <div className="walnut-health-gauge-core">
+                    <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Risk</span>
+                    <span className="mt-1 font-mono text-[1.7rem] leading-none text-foreground">
+                      {showDecrypted && healthFactorValue !== undefined
+                        ? `${(Number(healthFactorValue) / 10000).toFixed(1)}x`
+                        : "--"}
+                    </span>
                   </div>
                 </div>
-              </Link>
-            );
-          })}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="walnut-label">Health Factor</p>
+                <p className="mt-2 text-sm text-muted-foreground">Target range above 1.50</p>
+                <p className="mt-2 text-xs text-muted-foreground">Show values to view status</p>
+              </div>
+
+              <span className="walnut-status-chip walnut-status-chip-ghost">{healthStatusLabel}</span>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-black/10 bg-white/90 px-3 py-2">
+              <p className="walnut-label">Current</p>
+              <p className="mt-1 font-mono text-lg text-foreground">{healthFactorDisplay}</p>
+            </div>
+          </div>
         </div>
       </GlassPanel>
 

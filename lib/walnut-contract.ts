@@ -173,7 +173,6 @@ export const walnutWave2Abi = [
     stateMutability: "nonpayable",
     inputs: [
       { name: "ctHash", type: "bytes32" },
-      { name: "plaintextHealthFactor", type: "uint128" },
       { name: "signature", type: "bytes" },
     ],
     outputs: [],
@@ -264,7 +263,6 @@ export const walnutWave2Abi = [
     name: "LiquidationTriggered",
     inputs: [
       { name: "user", type: "address", indexed: true },
-      { name: "healthFactor", type: "uint128", indexed: false },
     ],
   },
   {

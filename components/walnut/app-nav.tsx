@@ -11,11 +11,10 @@ import { cn } from "@/lib/utils";
 
 const appLinks = [
   { label: "Dashboard", href: "/app" },
-  { label: "Onboard", href: "/app/onboard" },
   { label: "Deposit", href: "/app/deposit" },
   { label: "Borrow", href: "/app/borrow" },
   { label: "Repay", href: "/app/repay" },
-  { label: "Quick", href: "/app/demo" },
+  { label: "Withdraw", href: "/app/withdraw" },
   { label: "Settings", href: "/app/settings" },
 ];
 
@@ -26,7 +25,7 @@ function trimAddress(address: string | undefined) {
 
 export function AppNav() {
   const pathname = usePathname();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, status } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { openAccountModal } = useAccountModal();
   const [mounted, setMounted] = useState(false);
@@ -37,6 +36,11 @@ export function AppNav() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const isWalletReady = Boolean(isConnected && address);
+  const isReconnecting = status === "reconnecting" || (isConnected && !address);
+
+  const walletLabel = isReconnecting ? "Reconnecting..." : trimAddress(address);
 
   return (
     <header className="sticky top-0 z-40 border-b border-black/10 bg-white/82 backdrop-blur-xl">
@@ -92,19 +96,19 @@ export function AppNav() {
           {mounted ? (
             <>
               <span className="hidden rounded-full border border-black/10 bg-white px-3 py-1 font-mono text-xs text-muted-foreground xl:inline">
-                {trimAddress(address)}
+                {walletLabel}
               </span>
-              {isConnected ? (
+              {isWalletReady ? (
                 <Button variant="outline" className="glass-button" onClick={() => openAccountModal?.()}>
                   Manage Wallet
                 </Button>
               ) : (
                 <Button
                   className="bg-accent text-accent-foreground hover:bg-accent/85"
-                  disabled={!openConnectModal}
+                  disabled={!openConnectModal || isReconnecting}
                   onClick={() => openConnectModal?.()}
                 >
-                  Connect Wallet
+                  {isReconnecting ? "Reconnecting..." : "Connect Wallet"}
                 </Button>
               )}
             </>

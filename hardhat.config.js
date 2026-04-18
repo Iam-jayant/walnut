@@ -1,12 +1,14 @@
 require("dotenv").config({ override: true });
 require("@nomicfoundation/hardhat-ethers");
+require("@nomicfoundation/hardhat-verify");
+require("cofhe-hardhat-plugin");
 
-const rawRpcUrl = process.env.RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "";
+const rawRpcUrl = process.env.RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
 const normalizedRpcUrl = rawRpcUrl
   ? rawRpcUrl.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//)
     ? rawRpcUrl
     : `https://${rawRpcUrl}`
-  : "";
+  : "https://ethereum-sepolia-rpc.publicnode.com";
 
 const rawPrivateKey = process.env.PRIVATE_KEY || process.env.NEXT_PUBLIC_PRIVATE_KEY || "";
 const normalizedPrivateKey = rawPrivateKey
@@ -34,6 +36,12 @@ module.exports = {
     sepolia: {
       url: normalizedRpcUrl,
       accounts: normalizedPrivateKey ? [normalizedPrivateKey] : [],
+      chainId: 11155111,
+    },
+  },
+  etherscan: {
+    apiKey: {
+      sepolia: process.env.ETHERSCAN_API_KEY || "",
     },
   },
 };

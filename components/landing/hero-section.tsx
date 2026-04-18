@@ -66,7 +66,7 @@ export function HeroSection() {
                 variant="outline"
                 className="h-14 rounded-full border-black/15 bg-white px-8 text-base hover:bg-black/5"
               >
-                <Link href="/app/demo">View Demo</Link>
+                <Link href="/app">Open Dashboard</Link>
               </Button>
             </div>
           </div>

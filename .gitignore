@@ -11,6 +11,7 @@
 /build
 /artifacts
 /cache
+coverage
 
 # debug
 npm-debug.log*
@@ -23,6 +24,17 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# editor/local workspace
+.vscode/
+
+# local planning artifacts
+.kiro/
+FIXES_APPLIED.md
+QUICK_START_TESTING.md
+TESTING_*.md
+TROUBLESHOOTING.md
+WALNUT_CODEBASE_ANALYSIS.md
 
 # typescript
 *.tsbuildinfo
