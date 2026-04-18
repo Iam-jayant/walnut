@@ -23,7 +23,7 @@ contract WalnutWave2 {
     event RepaySubmitted(address indexed user);
     event WithdrawSubmitted(address indexed user);
     event LiquidationCheckRequested(address indexed user, uint256 requestId);
-    event LiquidationTriggered(address indexed user, uint128 healthFactor);
+    event LiquidationTriggered(address indexed user);
     event RepaymentSettlementIntent(address indexed user, uint256 timestamp);
 
     function deposit(InEuint128 memory encryptedAmount) external {
@@ -110,7 +110,6 @@ contract WalnutWave2 {
 
     function submitLiquidationCheck(
         bytes32 ctHash,
-        uint128 plaintextHealthFactor,
         bytes calldata signature
     ) external {
         address user = pendingLiquidationChecks[uint256(ctHash)];
@@ -122,14 +121,17 @@ contract WalnutWave2 {
 
         (uint256 decryptedResult, bool isReady) = FHE.getDecryptResultSafe(uint256(ctHash));
         require(isReady, "Decrypt result not ready");
-        require(decryptedResult == plaintextHealthFactor, "Invalid decrypt result");
-        
-        if (plaintextHealthFactor < LIQUIDATION_THRESHOLD) {
-            liquidatable[user] = true;
-            emit LiquidationTriggered(user, plaintextHealthFactor);
-        }
+
+        onLiquidationCheckResult(user, uint128(decryptedResult));
         
         delete pendingLiquidationChecks[uint256(ctHash)];
+    }
+
+    function onLiquidationCheckResult(address user, uint128 result) internal {
+        if (result < LIQUIDATION_THRESHOLD) {
+            liquidatable[user] = true;
+            emit LiquidationTriggered(user);
+        }
     }
 
     function getEncryptedCollateral(address user) external view returns (EncryptedValue memory) {
