@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
-import { trimHex, useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
 function toNumber(value: unknown) {
   if (typeof value === "bigint") return Number(value);
@@ -19,12 +19,16 @@ export default function BorrowPage() {
   const protocol = useWalnutProtocol();
 
   const collateral = useMemo(() => toNumber(protocol.collateral.decrypted.data), [protocol.collateral.decrypted.data]);
+  const currentDebt = useMemo(() => toNumber(protocol.debt.decrypted.data), [protocol.debt.decrypted.data]);
   const amountNumber = Number(amount || "0");
-  const ltvRatio = collateral > 0 ? Math.min(999, (amountNumber / collateral) * 100) : 0;
+  const newDebt = currentDebt + amountNumber;
+  const ltvRatio = collateral > 0 ? Math.min(999, (newDebt / collateral) * 100) : 0;
+  const previewHealthFactor = collateral > 0 && newDebt > 0 ? (collateral / newDebt).toFixed(2) : "N/A";
+  const exceedsLTV = ltvRatio > 80;
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.debtDecrypting) return "Decrypting...";
+    if (protocol.debtDecrypting) return "Loading...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
       return protocol.debt.decrypted.data.toString();
     }
@@ -38,20 +42,20 @@ export default function BorrowPage() {
 
   return (
     <div className="space-y-6">
-      <GlassPanel>
+      <GlassPanel className="walnut-hero">
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Borrow</p>
         <h1 className="mt-2 font-display text-3xl text-foreground">Private Loan Request</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Borrow values are encrypted before transaction submission. LTV preview is local-only for user guidance.
+          Choose how much you want to borrow and preview your position before confirming.
         </p>
       </GlassPanel>
 
       <ProtocolAlerts protocol={protocol} />
 
-      <GlassPanel className="space-y-4">
+      <GlassPanel className="walnut-card space-y-4">
         <div>
           <label htmlFor="borrow-amount" className="mb-2 block text-sm text-foreground">
-            Borrow Amount (uint128)
+            Borrow Amount
           </label>
           <Input
             id="borrow-amount"
@@ -63,15 +67,31 @@ export default function BorrowPage() {
           />
         </div>
 
+        {exceedsLTV && (
+          <div className="walnut-alert walnut-alert-danger">
+            <p className="text-sm text-red-700">
+              This amount is above the 80% safety limit. Please enter a lower amount.
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-black/10 bg-white p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Estimated LTV</p>
-            <p className="mt-2 font-mono text-2xl text-foreground">{ltvRatio.toFixed(2)}%</p>
+          <div className="walnut-card walnut-card-strong">
+            <p className="walnut-label">New LTV</p>
+            <p className="walnut-value">{ltvRatio.toFixed(2)}%</p>
+            <p className="walnut-meta">Max: 80%</p>
           </div>
-          <div className="rounded-xl border border-black/10 bg-white p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Indicative APR</p>
-            <p className="mt-2 font-mono text-2xl text-foreground">8.00%</p>
+          <div className="walnut-card walnut-card-strong">
+            <p className="walnut-label">Health Factor Preview</p>
+            <p className="walnut-value">{previewHealthFactor}</p>
+            <p className="walnut-meta">Liquidation at 1.05</p>
           </div>
+        </div>
+
+        <div className="walnut-alert walnut-alert-warning">
+          <p className="text-xs text-muted-foreground">
+            Keep your borrow amount under 80% of collateral for a safer position.
+          </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -85,28 +105,23 @@ export default function BorrowPage() {
             onClick={handleBorrow}
             disabled={protocol.isWriting || protocol.isEncrypting}
           >
-            Borrow Encrypted Amount
+            Borrow
           </Button>
           <Button variant="outline" className="glass-button" onClick={() => setShowDecrypted((value) => !value)}>
-            {showDecrypted ? "Hide Debt" : "Decrypt Debt"}
+            {showDecrypted ? "Hide Debt" : "Show Debt"}
           </Button>
         </div>
       </GlassPanel>
 
-      <GlassPanel>
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current Debt</p>
-        <p className="mt-3 font-mono text-3xl text-foreground">{debtLabel}</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Ciphertext: {trimHex(protocol.debt.encrypted.data as string | undefined)}
-        </p>
+      <GlassPanel className="walnut-card walnut-card-strong">
+        <p className="walnut-label">Current Debt</p>
+        <p className="walnut-value">{debtLabel}</p>
+        <p className="walnut-meta">Your current borrowed balance</p>
       </GlassPanel>
 
-      {(protocol.status || protocol.lastTxHash) && (
-        <GlassPanel className="border-accent/40">
+      {protocol.status && (
+        <GlassPanel className="walnut-alert border-accent/40">
           {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
-          {protocol.lastTxHash && (
-            <p className="mt-2 font-mono text-xs text-accent/80">Tx: {trimHex(protocol.lastTxHash)}</p>
-          )}
         </GlassPanel>
       )}
 
