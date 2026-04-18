@@ -8,6 +8,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   outputFileTracingRoot: workspaceRoot,
   webpack: (config, { dev }) => {
     config.resolve = config.resolve || {};
@@ -20,6 +23,18 @@ const nextConfig = {
       // Avoid flaky filesystem cache ENOENT issues on Windows during route recompiles.
       config.cache = {
         type: "memory",
+      };
+
+      config.watchOptions = {
+        ...(config.watchOptions || {}),
+        ignored: [
+          "**/.git/**",
+          "**/.next/**",
+          "**/artifacts/**",
+          "**/cache/**",
+          "**/build-info/**",
+          "**/test/**",
+        ],
       };
     }
 

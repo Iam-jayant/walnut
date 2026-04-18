@@ -9,12 +9,21 @@ import {
 } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, createStorage } from "wagmi";
 import { sepolia } from "wagmi/chains";
-import { http } from "wagmi";
+import { fallback, http } from "wagmi";
 
-const walletConnectProjectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ??
-  process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ??
-  "demo";
+function requirePublicEnv(key: string) {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`[web3-config] Missing required environment variable: ${key}`);
+  }
+
+  return value;
+}
+
+const walletConnectProjectId = requirePublicEnv("NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID");
+const rpcUrlPrimary = requirePublicEnv("NEXT_PUBLIC_RPC_URL_PRIMARY");
+const rpcUrlFallback1 = requirePublicEnv("NEXT_PUBLIC_RPC_URL_FALLBACK_1");
+const rpcUrlFallback2 = requirePublicEnv("NEXT_PUBLIC_RPC_URL_FALLBACK_2");
 
 const noopStorage: Storage = {
   getItem: () => null,
@@ -49,8 +58,22 @@ export const wagmiConfig = createConfig({
   chains: [sepolia],
   connectors,
   transports: {
-    [sepolia.id]: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"),
+    [sepolia.id]: fallback([
+      http(rpcUrlPrimary, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(rpcUrlFallback1, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(rpcUrlFallback2, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+    ]),
   },
+  pollingInterval: 30_000,
   storage: createStorage({
     storage: typeof window !== "undefined" ? window.localStorage : noopStorage,
   }),
