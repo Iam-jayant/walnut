@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +12,10 @@ import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 export default function WithdrawPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
-  const protocol = useWalnutProtocol();
+  const [withdrawInFlight, setWithdrawInFlight] = useState(false);
+  const protocol = useWalnutProtocol({ mode: "advanced" });
 
-  const pendingWithdraw = protocol.isWriting || protocol.isEncrypting;
+  const pendingWithdraw = withdrawInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && (protocol.collateralDecrypting || protocol.debtDecrypting);
 
   const currentCollateral = useMemo(() => {
@@ -71,8 +73,17 @@ export default function WithdrawPage() {
   const exceedsAvailable = typedAmount > availableRaw && showDecrypted;
 
   async function handleWithdraw() {
-    const success = await protocol.submitWithdraw(amount);
-    if (success) setAmount("");
+    if (pendingWithdraw || !amount) return;
+
+    setWithdrawInFlight(true);
+    try {
+      const success = await protocol.submitWithdraw(amount);
+      if (success) {
+        setAmount("");
+      }
+    } finally {
+      setWithdrawInFlight(false);
+    }
   }
 
   return (
@@ -112,7 +123,7 @@ export default function WithdrawPage() {
               inputMode="numeric"
               value={amount}
               onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="100"
+              placeholder="Enter amount"
               className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
             />
           </div>
@@ -172,12 +183,21 @@ export default function WithdrawPage() {
             </Button>
             <Button
               variant="outline"
-              className="glass-button"
+              className="glass-button min-w-39 justify-center"
               onClick={() => setShowDecrypted((value) => !value)}
               isLoading={pendingDecrypt}
               loadingText="Decrypting..."
             >
-              {showDecrypted ? "Hide Balance" : "Show Balance"}
+              <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                <span className="inline-flex h-4 w-4 items-center justify-center">
+                  {showDecrypted ? (
+                    <EyeOff className="h-4 w-4 transition-all duration-200 ease-out rotate-0 scale-100" />
+                  ) : (
+                    <Eye className="h-4 w-4 transition-all duration-200 ease-out scale-100" />
+                  )}
+                </span>
+                <span>{showDecrypted ? "Hide Balance" : "Show Balance"}</span>
+              </span>
             </Button>
           </div>
         </GlassPanel>

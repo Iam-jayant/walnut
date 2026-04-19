@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { LTV_LIMIT_PERCENT } from "@/lib/protocol-constants";
 
 function toNumber(value: unknown) {
   if (typeof value === "bigint") return Number(value);
@@ -16,9 +18,10 @@ function toNumber(value: unknown) {
 export default function BorrowPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
-  const protocol = useWalnutProtocol();
+  const [borrowInFlight, setBorrowInFlight] = useState(false);
+  const protocol = useWalnutProtocol({ mode: "advanced" });
 
-  const pendingBorrow = protocol.isWriting || protocol.isEncrypting;
+  const pendingBorrow = borrowInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && protocol.debtDecrypting;
 
   const collateral = useMemo(() => toNumber(protocol.collateral.decrypted.data), [protocol.collateral.decrypted.data]);
@@ -40,7 +43,7 @@ export default function BorrowPage() {
   const canRenderRiskPreview = showDecrypted && protocol.canRead && !protocol.debtDecrypting && collateral > 0;
   const previewLtv = canRenderRiskPreview ? `${ltvRatio.toFixed(2)}%` : "--";
   const previewHealthFactor = canRenderRiskPreview && newDebt > 0 ? (collateral / newDebt).toFixed(2) : "--";
-  const exceedsLTV = canRenderRiskPreview ? ltvRatio > 80 : false;
+  const exceedsLTV = canRenderRiskPreview ? ltvRatio > LTV_LIMIT_PERCENT : false;
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
@@ -52,8 +55,17 @@ export default function BorrowPage() {
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   async function handleBorrow() {
-    const success = await protocol.submitEncryptedAmount("borrow", amount);
-    if (success) setAmount("");
+    if (pendingBorrow || !amount) return;
+
+    setBorrowInFlight(true);
+    try {
+      const success = await protocol.submitEncryptedAmount("borrow", amount);
+      if (success) {
+        setAmount("");
+      }
+    } finally {
+      setBorrowInFlight(false);
+    }
   }
 
   const projectedDebtLabel = useMemo(() => {
@@ -72,103 +84,122 @@ export default function BorrowPage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="walnut-status-chip walnut-status-chip-ghost">Risk Preview</span>
-          <span className="walnut-status-chip walnut-status-chip-ghost">80% LTV Cap</span>
+          <span className="walnut-status-chip walnut-status-chip-ghost">{`${LTV_LIMIT_PERCENT}% LTV Cap`}</span>
         </div>
       </GlassPanel>
 
       <ProtocolAlerts protocol={protocol} />
 
       <div className="grid items-start gap-4 xl:grid-cols-[1.45fr_1fr]">
-        <GlassPanel className="walnut-card walnut-card-strong self-start space-y-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="grid self-start gap-4">
+          <GlassPanel className="walnut-card walnut-card-strong space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="walnut-label">Borrow Studio</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Tune your request and preview how it affects your safety before you confirm.
+                </p>
+              </div>
+              <span className="walnut-status-chip walnut-status-chip-ghost">Encrypted</span>
+            </div>
+
             <div>
-              <p className="walnut-label">Borrow Studio</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Tune your request and preview how it affects your safety before you confirm.
+              <label htmlFor="borrow-amount" className="mb-2 block text-sm text-foreground">
+                Borrow Amount
+              </label>
+              <Input
+                id="borrow-amount"
+                inputMode="numeric"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))}
+                placeholder="Enter amount"
+                className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "100", value: "100" },
+                { label: "250", value: "250" },
+                { label: "500", value: "500" },
+                { label: "1000", value: "1000" },
+              ].map((option) => (
+                <Button
+                  key={option.value}
+                  size="sm"
+                  variant="outline"
+                  className="glass-chip"
+                  onClick={() => setAmount(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+
+            {exceedsLTV && (
+              <div className="walnut-alert walnut-alert-danger">
+                <p className="text-sm text-red-700">
+                  {`This amount is above the ${LTV_LIMIT_PERCENT}% safety limit. Please enter a lower amount.`}
+                </p>
+              </div>
+            )}
+
+            <div className="walnut-alert walnut-alert-warning">
+              <p className="text-xs text-muted-foreground">
+                {`Keep your borrow amount under ${LTV_LIMIT_PERCENT}% of collateral for a safer position.`}
               </p>
             </div>
-            <span className="walnut-status-chip walnut-status-chip-ghost">Encrypted</span>
-          </div>
 
-          <div>
-            <label htmlFor="borrow-amount" className="mb-2 block text-sm text-foreground">
-              Borrow Amount
-            </label>
-            <Input
-              id="borrow-amount"
-              inputMode="numeric"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="250"
-              className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: "100", value: "100" },
-              { label: "250", value: "250" },
-              { label: "500", value: "500" },
-              { label: "1000", value: "1000" },
-            ].map((option) => (
+            <div className="flex flex-wrap gap-2">
+              {!protocol.permit.hasPermit && (
+                <Button
+                  variant="outline"
+                  className="glass-button"
+                  onClick={protocol.permit.requestPermitCreation}
+                  isLoading={protocol.permit.isPermitInitializing}
+                  loadingText="Enabling..."
+                >
+                  Enable Private Access
+                </Button>
+              )}
               <Button
-                key={option.value}
-                size="sm"
-                variant="outline"
-                className="glass-chip"
-                onClick={() => setAmount(option.value)}
+                className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
+                onClick={handleBorrow}
+                isLoading={pendingBorrow}
+                loadingText={protocol.isEncrypting ? "Encrypting..." : "Borrowing..."}
+                disabled={!amount || pendingBorrow || exceedsLTV}
               >
-                {option.label}
+                Borrow
               </Button>
-            ))}
-          </div>
-
-          {exceedsLTV && (
-            <div className="walnut-alert walnut-alert-danger">
-              <p className="text-sm text-red-700">
-                This amount is above the 80% safety limit. Please enter a lower amount.
-              </p>
+              <Button
+                variant="outline"
+                className="glass-button min-w-39 justify-center"
+                onClick={() => setShowDecrypted((value) => !value)}
+                isLoading={pendingDecrypt}
+                loadingText="Decrypting..."
+              >
+                <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                  <span className="inline-flex h-4 w-4 items-center justify-center">
+                    {showDecrypted ? (
+                      <EyeOff className="h-4 w-4 transition-all duration-200 ease-out rotate-0 scale-100" />
+                    ) : (
+                      <Eye className="h-4 w-4 transition-all duration-200 ease-out scale-100" />
+                    )}
+                  </span>
+                  <span>{showDecrypted ? "Hide Debt" : "Show Debt"}</span>
+                </span>
+              </Button>
             </div>
+          </GlassPanel>
+
+          {protocol.status && (
+            <GlassPanel className="walnut-alert border-accent/40">
+              <p className="text-sm text-foreground">{protocol.status}</p>
+            </GlassPanel>
           )}
 
-          <div className="walnut-alert walnut-alert-warning">
-            <p className="text-xs text-muted-foreground">
-              Keep your borrow amount under 80% of collateral for a safer position.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {!protocol.permit.hasPermit && (
-              <Button
-                variant="outline"
-                className="glass-button"
-                onClick={protocol.permit.requestPermitCreation}
-                isLoading={protocol.permit.isPermitInitializing}
-                loadingText="Enabling..."
-              >
-                Enable Private Access
-              </Button>
-            )}
-            <Button
-              className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
-              onClick={handleBorrow}
-              isLoading={pendingBorrow}
-              loadingText={protocol.isEncrypting ? "Encrypting..." : "Borrowing..."}
-              disabled={!amount || pendingBorrow || exceedsLTV}
-            >
-              Borrow
-            </Button>
-            <Button
-              variant="outline"
-              className="glass-button"
-              onClick={() => setShowDecrypted((value) => !value)}
-              isLoading={pendingDecrypt}
-              loadingText="Decrypting..."
-            >
-              {showDecrypted ? "Hide Debt" : "Show Debt"}
-            </Button>
-          </div>
-        </GlassPanel>
+          <SystemStatusPanel protocol={protocol} />
+        </div>
 
         <div className="grid gap-4">
           <GlassPanel className="walnut-card walnut-card-strong walnut-kpi-card">
@@ -199,13 +230,6 @@ export default function BorrowPage() {
         </div>
       </div>
 
-      {protocol.status && (
-        <GlassPanel className="walnut-alert border-accent/40">
-          {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
-        </GlassPanel>
-      )}
-
-      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }

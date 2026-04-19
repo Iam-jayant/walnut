@@ -1,19 +1,27 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { wagmiConfig } from "@/lib/web3-config";
+import { walnutChainId } from "@/lib/walnut-contract";
+
+const targetChainName =
+  wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
+  `Chain ${walnutChainId}`;
 
 export default function DepositPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
-  const protocol = useWalnutProtocol();
+  const [depositInFlight, setDepositInFlight] = useState(false);
+  const protocol = useWalnutProtocol({ mode: "advanced" });
 
-  const pendingDeposit = protocol.isWriting || protocol.isEncrypting;
+  const pendingDeposit = depositInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && protocol.collateralDecrypting;
 
   const currentCollateral = useMemo(() => {
@@ -38,8 +46,17 @@ export default function DepositPage() {
   }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateralDecrypting, showDecrypted]);
 
   async function handleDeposit() {
-    const success = await protocol.submitEncryptedAmount("deposit", amount);
-    if (success) setAmount("");
+    if (pendingDeposit || !amount) return;
+
+    setDepositInFlight(true);
+    try {
+      const success = await protocol.submitEncryptedAmount("deposit", amount);
+      if (success) {
+        setAmount("");
+      }
+    } finally {
+      setDepositInFlight(false);
+    }
   }
 
   const projectedCollateralLabel = useMemo(() => {
@@ -58,7 +75,7 @@ export default function DepositPage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="walnut-status-chip walnut-status-chip-ghost">Secure Input</span>
-          <span className="walnut-status-chip walnut-status-chip-ghost">Sepolia</span>
+          <span className="walnut-status-chip walnut-status-chip-ghost">{targetChainName}</span>
         </div>
       </GlassPanel>
 
@@ -85,7 +102,7 @@ export default function DepositPage() {
               inputMode="numeric"
               value={amount}
               onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="1000"
+              placeholder="Enter amount"
               className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
             />
           </div>
@@ -139,12 +156,21 @@ export default function DepositPage() {
             </Button>
             <Button
               variant="outline"
-              className="glass-button"
+              className="glass-button min-w-39 justify-center"
               onClick={() => setShowDecrypted((value) => !value)}
               isLoading={pendingDecrypt}
               loadingText="Decrypting..."
             >
-              {showDecrypted ? "Hide Balance" : "Show Balance"}
+              <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                <span className="inline-flex h-4 w-4 items-center justify-center">
+                  {showDecrypted ? (
+                    <EyeOff className="h-4 w-4 transition-all duration-200 ease-out rotate-0 scale-100" />
+                  ) : (
+                    <Eye className="h-4 w-4 transition-all duration-200 ease-out scale-100" />
+                  )}
+                </span>
+                <span>{showDecrypted ? "Hide Balance" : "Show Balance"}</span>
+              </span>
             </Button>
           </div>
         </GlassPanel>

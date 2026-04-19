@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,10 +12,10 @@ import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 export default function RepayPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
-  const [settlementStep, setSettlementStep] = useState<"idle" | "principal" | "complete">("idle");
-  const protocol = useWalnutProtocol();
+  const [repayInFlight, setRepayInFlight] = useState(false);
+  const protocol = useWalnutProtocol({ mode: "advanced" });
 
-  const pendingRepay = protocol.isWriting || protocol.isEncrypting || settlementStep === "principal";
+  const pendingRepay = repayInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && protocol.debtDecrypting;
 
   const currentDebt = useMemo(() => {
@@ -42,15 +43,17 @@ export default function RepayPage() {
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   async function handleRepay() {
-    setSettlementStep("principal");
-    const success = await protocol.submitRepay(amount);
+    if (pendingRepay || !amount) return;
 
-    if (success) {
-      // Privara private settlement - Wave 3 implementation
-      setSettlementStep("complete");
-      setAmount("");
-    } else {
-      setSettlementStep("idle");
+    setRepayInFlight(true);
+    try {
+      const success = await protocol.submitRepay(amount);
+
+      if (success) {
+        setAmount("");
+      }
+    } finally {
+      setRepayInFlight(false);
     }
   }
 
@@ -97,7 +100,7 @@ export default function RepayPage() {
               inputMode="numeric"
               value={amount}
               onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="100"
+              placeholder="Enter amount"
               className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
             />
           </div>
@@ -125,9 +128,9 @@ export default function RepayPage() {
             <p className="walnut-label">Repayment Progress</p>
             <div className="mt-3 space-y-2">
               <div className="walnut-progress flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full ${settlementStep === "principal" ? "bg-accent animate-pulse" : settlementStep === "complete" ? "bg-accent" : "bg-muted"}`} />
+                <div className={`h-2 w-2 rounded-full ${pendingRepay ? "bg-accent animate-pulse" : "bg-muted"}`} />
                 <p className="text-sm text-foreground">
-                  Step 1: Repay principal {settlementStep === "complete" ? "[complete]" : ""}
+                  Step 1: Repay principal on-chain {pendingRepay ? "[in progress]" : ""}
                 </p>
               </div>
               <div className="walnut-progress flex items-center gap-2">
@@ -160,12 +163,21 @@ export default function RepayPage() {
             </Button>
             <Button
               variant="outline"
-              className="glass-button"
+              className="glass-button min-w-39 justify-center"
               onClick={() => setShowDecrypted((value) => !value)}
               isLoading={pendingDecrypt}
               loadingText="Decrypting..."
             >
-              {showDecrypted ? "Hide Debt" : "Show Debt"}
+              <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                <span className="inline-flex h-4 w-4 items-center justify-center">
+                  {showDecrypted ? (
+                    <EyeOff className="h-4 w-4 transition-all duration-200 ease-out rotate-0 scale-100" />
+                  ) : (
+                    <Eye className="h-4 w-4 transition-all duration-200 ease-out scale-100" />
+                  )}
+                </span>
+                <span>{showDecrypted ? "Hide Debt" : "Show Debt"}</span>
+              </span>
             </Button>
           </div>
         </GlassPanel>

@@ -16,10 +16,16 @@ import { GlassPanel } from "@/components/walnut/glass-panel";
 import { LiquidationBadge } from "@/components/walnut/liquidation-badge";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import {
+  BASIS_POINTS_SCALE,
+  HEALTH_FACTOR_AT_RISK_THRESHOLD,
+  HEALTH_FACTOR_SAFE_THRESHOLD,
+  HEALTH_FACTOR_SCALE,
+} from "@/lib/protocol-constants";
 
 export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
-  const protocol = useWalnutProtocol();
+  const protocol = useWalnutProtocol({ mode: "advanced" });
   const collateralDecrypted =
     typeof protocol.collateral.decrypted.data === "bigint"
       ? protocol.collateral.decrypted.data
@@ -58,40 +64,22 @@ export default function WalnutDashboardPage() {
     return "0";
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
-  const healthFactorValue = useMemo(() => {
-    const encryptedHealthFactor = protocol.healthFactor?.decrypted?.data;
-    if (typeof encryptedHealthFactor === "bigint") {
-      return encryptedHealthFactor;
-    }
-
-    if (collateralDecrypted === undefined || debtDecrypted === undefined) {
-      return undefined;
-    }
-
-    if (debtDecrypted === 0n) {
-      // No debt means no liquidation risk for the active position.
-      return collateralDecrypted > 0n ? 999999n : undefined;
-    }
-
-    return (collateralDecrypted * 10000n) / debtDecrypted;
-  }, [collateralDecrypted, debtDecrypted, protocol.healthFactor?.decrypted?.data]);
+  const healthFactorValue = protocol.healthFactorValue;
 
   const healthFactorLoading = Boolean(
-    showDecrypted &&
-      protocol.canRead &&
-      (protocol.collateralDecrypting || protocol.debtDecrypting || protocol.healthFactorDecrypting)
+    showDecrypted && protocol.canRead && protocol.healthFactorDecrypting
   );
 
   const healthFactorDisplay = useMemo(() => {
     if (!showDecrypted) return "******";
     if (healthFactorLoading) return "Loading...";
     if (healthFactorValue === undefined) return "N/A";
-    return (Number(healthFactorValue) / 10000).toFixed(2);
+    return (Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)).toFixed(2);
   }, [healthFactorLoading, healthFactorValue, showDecrypted]);
 
   const healthGaugePercent = useMemo(() => {
     if (!showDecrypted || healthFactorLoading || healthFactorValue === undefined) return 14;
-    const hf = Number(healthFactorValue) / 10000;
+    const hf = Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE);
     if (!Number.isFinite(hf) || hf <= 0) return 8;
     return Math.max(8, Math.min(100, (hf / 2) * 100));
   }, [healthFactorLoading, healthFactorValue, showDecrypted]);
@@ -101,10 +89,26 @@ export default function WalnutDashboardPage() {
       return "Unknown";
     }
 
-    if (healthFactorValue >= 15000n) return "Safe";
-    if (healthFactorValue >= 10500n) return "At Risk";
+    if (healthFactorValue >= HEALTH_FACTOR_SAFE_THRESHOLD) return "Safe";
+    if (healthFactorValue >= HEALTH_FACTOR_AT_RISK_THRESHOLD) return "At Risk";
     return "Liquidatable";
   }, [healthFactorLoading, healthFactorValue, showDecrypted]);
+
+  const healthStatusTone = useMemo(() => {
+    if (healthStatusLabel === "Safe") {
+      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+    }
+
+    if (healthStatusLabel === "At Risk") {
+      return "border-amber-200 bg-amber-100 text-amber-800";
+    }
+
+    if (healthStatusLabel === "Liquidatable") {
+      return "border-red-200 bg-red-100 text-red-800";
+    }
+
+    return "walnut-status-chip-ghost";
+  }, [healthStatusLabel]);
 
   const availableCollateralLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
@@ -123,7 +127,7 @@ export default function WalnutDashboardPage() {
     const collateralValue = protocol.collateral.decrypted.data;
     const debtValue = protocol.debt.decrypted.data;
     if (typeof collateralValue !== "bigint" || typeof debtValue !== "bigint" || collateralValue <= 0n) return 0;
-    const scaled = (debtValue * 10000n) / collateralValue;
+    const scaled = (debtValue * BASIS_POINTS_SCALE) / collateralValue;
     return Math.min(100, Number(scaled) / 100);
   }, [protocol.collateral.decrypted.data, protocol.debt.decrypted.data]);
 
@@ -162,7 +166,17 @@ export default function WalnutDashboardPage() {
             <Button size="sm" variant="outline" className="glass-button" onClick={() => setShowDecrypted((value) => !value)}>
               {showDecrypted ? "Hide Values" : "Show Values"}
             </Button>
-            <Button size="sm" variant="outline" className="glass-button" onClick={() => protocol.refreshBalances()}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="glass-button"
+              onClick={() => {
+                void protocol.refreshBalances();
+                if (showDecrypted) {
+                  void protocol.fetchHealthFactor();
+                }
+              }}
+            >
               Refresh
             </Button>
           </div>
@@ -298,9 +312,9 @@ export default function WalnutDashboardPage() {
                 >
                   <div className="walnut-health-gauge-core">
                     <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Risk</span>
-                    <span className="mt-1 font-mono text-[1.7rem] leading-none text-foreground">
+                    <span className="mt-1 font-mono text-[1.45rem] leading-none text-foreground">
                       {showDecrypted && healthFactorValue !== undefined
-                        ? `${(Number(healthFactorValue) / 10000).toFixed(1)}x`
+                        ? `${(Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)).toFixed(1)}x`
                         : "--"}
                     </span>
                   </div>
@@ -313,7 +327,7 @@ export default function WalnutDashboardPage() {
                 <p className="mt-2 text-xs text-muted-foreground">Show values to view status</p>
               </div>
 
-              <span className="walnut-status-chip walnut-status-chip-ghost">{healthStatusLabel}</span>
+              <span className={`walnut-status-chip ${healthStatusTone}`}>{healthStatusLabel}</span>
             </div>
 
             <div className="mt-4 rounded-xl border border-black/10 bg-white/90 px-3 py-2">
