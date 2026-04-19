@@ -63,7 +63,7 @@ flowchart TB
 	subgraph Frontend[Next.js Frontend]
 		Pages[App Pages]
 		Hooks[use-walnut-protocol]
-		CofheReact[@cofhe/react + @cofhe/sdk]
+		CofheReact[cofhe-react + cofhe-sdk]
 	end
 
 	subgraph Wallet[Wallet Layer]
