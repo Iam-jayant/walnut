@@ -1,4 +1,9 @@
 import { GlassPanel } from "@/components/walnut/glass-panel";
+import {
+  HEALTH_FACTOR_AT_RISK_THRESHOLD,
+  HEALTH_FACTOR_SAFE_THRESHOLD,
+  HEALTH_FACTOR_SCALE,
+} from "@/lib/protocol-constants";
 import { cn } from "@/lib/utils";
 
 type HealthFactorStatus = "safe" | "at-risk" | "liquidatable" | "unknown";
@@ -16,11 +21,16 @@ export function HealthFactorCard({
   showDecrypted,
   status,
 }: HealthFactorCardProps) {
+  const safeThresholdLabel =
+    (Number(HEALTH_FACTOR_SAFE_THRESHOLD) / Number(HEALTH_FACTOR_SCALE)).toFixed(2);
+  const atRiskThresholdLabel =
+    (Number(HEALTH_FACTOR_AT_RISK_THRESHOLD) / Number(HEALTH_FACTOR_SCALE)).toFixed(2);
+
   const displayValue = () => {
     if (!showDecrypted) return "******";
     if (isDecrypting) return "Loading...";
     if (healthFactor === undefined) return "N/A";
-    return (Number(healthFactor) / 10000).toFixed(2);
+    return (Number(healthFactor) / Number(HEALTH_FACTOR_SCALE)).toFixed(2);
   };
 
   const statusColors: Record<HealthFactorStatus, string> = {
@@ -39,7 +49,7 @@ export function HealthFactorCard({
 
   const normalizedGauge = (() => {
     if (!showDecrypted || isDecrypting || healthFactor === undefined) return 14;
-    const hf = Number(healthFactor) / 10000;
+    const hf = Number(healthFactor) / Number(HEALTH_FACTOR_SCALE);
     if (!Number.isFinite(hf) || hf <= 0) return 8;
     return Math.max(8, Math.min(100, (hf / 2) * 100));
   })();
@@ -50,7 +60,7 @@ export function HealthFactorCard({
         <div className="min-w-47.5">
           <p className="walnut-label">Health Factor</p>
           <p className="walnut-value mt-2 text-4xl">{displayValue()}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Target range: above 1.50</p>
+          <p className="mt-1 text-xs text-muted-foreground">{`Target range: above ${safeThresholdLabel}`}</p>
         </div>
 
         <div className="walnut-health-gauge-wrap">
@@ -81,9 +91,9 @@ export function HealthFactorCard({
       </div>
 
       <p className="walnut-meta mt-4 text-xs">
-        {status === "safe" && "Your position is healthy (≥1.50)"}
-        {status === "at-risk" && "Monitor your position (1.05-1.50)"}
-        {status === "liquidatable" && "Position at risk (<1.05)"}
+        {status === "safe" && `Your position is healthy (≥${safeThresholdLabel})`}
+        {status === "at-risk" && `Monitor your position (${atRiskThresholdLabel}-${safeThresholdLabel})`}
+        {status === "liquidatable" && `Position at risk (<${atRiskThresholdLabel})`}
         {status === "unknown" && "Show values to view status"}
       </p>
     </GlassPanel>

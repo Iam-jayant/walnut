@@ -14,6 +14,7 @@ type WalnutPermitContextValue = {
   hasPermit: boolean;
   isPermitValid: boolean;
   permitHash?: string;
+  permitIssuer?: `0x${string}`;
   permitCount: number;
   isPermitInitializing: boolean;
   permitError: string | null;
@@ -98,6 +99,7 @@ export function WalnutPermitProvider({ children }: { children: ReactNode }) {
       hasPermit: Boolean(activePermit?.permit?.hash),
       isPermitValid: Boolean(activePermit?.isValid),
       permitHash: activePermit?.permit?.hash,
+      permitIssuer: activePermit?.permit?.issuer as `0x${string}` | undefined,
       permitCount: allPermits.length,
       isPermitInitializing: Boolean(
         isCreatingPermit || (isConnected && !activePermit?.permit?.hash && allPermits.length === 0),

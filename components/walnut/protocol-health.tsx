@@ -4,6 +4,8 @@ import { Globe, ShieldCheck, Wallet } from "lucide-react";
 
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import type { WalnutProtocolState } from "@/hooks/use-walnut-protocol";
+import { wagmiConfig } from "@/lib/web3-config";
+import { walnutChainId } from "@/lib/walnut-contract";
 
 type ProtocolHealthProps = {
   protocol: WalnutProtocolState;
@@ -21,6 +23,10 @@ function toneToClassName(tone: AlertItem["tone"]) {
   return "walnut-alert text-muted-foreground";
 }
 
+const targetChainName =
+  wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
+  `Chain ${walnutChainId}`;
+
 export function ProtocolAlerts({ protocol }: ProtocolHealthProps) {
   const alerts: AlertItem[] = [];
 
@@ -33,7 +39,11 @@ export function ProtocolAlerts({ protocol }: ProtocolHealthProps) {
   }
 
   if (protocol.isWalletReady && !protocol.isConnectionTransient && !protocol.isOnTargetChain) {
-    alerts.push({ key: "network", message: "Wrong network. Please switch to Sepolia.", tone: "error" });
+    alerts.push({
+      key: "network",
+      message: `Wrong network. Please switch to ${targetChainName}.`,
+      tone: "error",
+    });
   }
 
   if (!protocol.canUseContract) {
@@ -105,7 +115,7 @@ export function SystemStatusPanel({ protocol }: ProtocolHealthProps) {
       label: "Network",
       value: protocol.isConnectionTransient
         ? "Detecting"
-        : statusLabel(protocol.isOnTargetChain, "Sepolia", "Wrong network"),
+        : statusLabel(protocol.isOnTargetChain, targetChainName, "Wrong network"),
       ok: protocol.isConnectionTransient ? true : protocol.isOnTargetChain,
       icon: Globe,
     },
