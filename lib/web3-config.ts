@@ -11,8 +11,7 @@ import { createConfig, createStorage } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { fallback, http } from "wagmi";
 
-function requirePublicEnv(key: string) {
-  const value = process.env[key];
+function requirePublicEnv(key: string, value: string | undefined) {
   if (!value) {
     throw new Error(`[web3-config] Missing required environment variable: ${key}`);
   }
@@ -20,10 +19,19 @@ function requirePublicEnv(key: string) {
   return value;
 }
 
-const walletConnectProjectId = requirePublicEnv("NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID");
-const rpcUrlPrimary = requirePublicEnv("NEXT_PUBLIC_RPC_URL_PRIMARY");
-const rpcUrlFallback1 = requirePublicEnv("NEXT_PUBLIC_RPC_URL_FALLBACK_1");
-const rpcUrlFallback2 = requirePublicEnv("NEXT_PUBLIC_RPC_URL_FALLBACK_2");
+const walletConnectProjectId = requirePublicEnv(
+  "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+);
+const rpcUrlPrimary = requirePublicEnv("NEXT_PUBLIC_RPC_URL_PRIMARY", process.env.NEXT_PUBLIC_RPC_URL_PRIMARY);
+const rpcUrlFallback1 = requirePublicEnv(
+  "NEXT_PUBLIC_RPC_URL_FALLBACK_1",
+  process.env.NEXT_PUBLIC_RPC_URL_FALLBACK_1,
+);
+const rpcUrlFallback2 = requirePublicEnv(
+  "NEXT_PUBLIC_RPC_URL_FALLBACK_2",
+  process.env.NEXT_PUBLIC_RPC_URL_FALLBACK_2,
+);
 
 const noopStorage: Storage = {
   getItem: () => null,
