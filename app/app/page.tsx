@@ -25,6 +25,7 @@ import {
 
 export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
+  const [isRevealingValues, setIsRevealingValues] = useState(false);
   const protocol = useWalnutProtocol({ mode: "advanced" });
   const collateralDecrypted =
     typeof protocol.collateral.decrypted.data === "bigint"
@@ -143,27 +144,59 @@ export default function WalnutDashboardPage() {
   const debtMetric = showDecrypted ? debtLabel : "******";
   const availableMetric = showDecrypted ? availableCollateralLabel : "******";
 
+  async function revealValues() {
+    if (isRevealingValues) return;
+
+    setIsRevealingValues(true);
+    try {
+      await protocol.refreshBalances();
+      await protocol.fetchHealthFactor();
+    } finally {
+      setIsRevealingValues(false);
+    }
+  }
+
+  function handleToggleValues() {
+    const next = !showDecrypted;
+    setShowDecrypted(next);
+
+    if (next && protocol.canRead) {
+      void revealValues();
+    }
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <GlassPanel className="walnut-hero walnut-card-strong overflow-hidden p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_auto] lg:items-start">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Dashboard</p>
             <h1 className="mt-2 font-display text-[clamp(1.9rem,1.7vw+1.2rem,2.7rem)] text-foreground">
               Private Lending Command Center
             </h1>
-            <p className="mt-3 text-sm text-muted-foreground">
-              View your balances and manage your position in one place.
+            <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
+              One place for collateral, debt, health, and quick protocol actions.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className={`walnut-status-chip ${readinessTone}`}>{readinessLabel}</span>
               <span className="walnut-status-chip walnut-status-chip-ghost">
                 Utilization {showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "--"}
               </span>
+              <span className="walnut-status-chip walnut-status-chip-ghost">
+                Health {showDecrypted ? healthFactorDisplay : "--"}
+              </span>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" className="glass-button" onClick={() => setShowDecrypted((value) => !value)}>
+
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              className="glass-button"
+              onClick={handleToggleValues}
+              isLoading={isRevealingValues}
+              loadingText="Loading..."
+            >
               {showDecrypted ? "Hide Values" : "Show Values"}
             </Button>
             <Button
@@ -181,6 +214,31 @@ export default function WalnutDashboardPage() {
             </Button>
           </div>
         </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="walnut-kpi-shell">
+            <p className="walnut-label">Available</p>
+            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{availableMetric}</p>
+            <p className="walnut-meta">Ready to withdraw</p>
+          </div>
+          <div className="walnut-kpi-shell">
+            <p className="walnut-label">Collateral</p>
+            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{collateralMetric}</p>
+            <p className="walnut-meta">Total supplied</p>
+          </div>
+          <div className="walnut-kpi-shell">
+            <p className="walnut-label">Debt</p>
+            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{debtMetric}</p>
+            <p className="walnut-meta">Total borrowed</p>
+          </div>
+          <div className="walnut-kpi-shell">
+            <p className="walnut-label">Borrow Utilization</p>
+            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{utilizationLabel}</p>
+            <div className="mt-3 walnut-kpi-track">
+              <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
+            </div>
+          </div>
+        </div>
       </GlassPanel>
 
       {!protocol.permit.hasPermit && (
@@ -192,7 +250,11 @@ export default function WalnutDashboardPage() {
                 Enable private access once to decrypt balances and use confidential actions.
               </p>
             </div>
-            <Button size="sm" className="glass-button bg-accent text-accent-foreground hover:bg-accent/85" onClick={protocol.permit.requestPermitCreation}>
+            <Button
+              size="sm"
+              className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
+              onClick={protocol.permit.requestPermitCreation}
+            >
               <ShieldCheck className="mr-2 h-4 w-4" />
               Enable Private Access
             </Button>
@@ -201,146 +263,95 @@ export default function WalnutDashboardPage() {
       )}
 
       <ProtocolAlerts protocol={protocol} />
-
       <LiquidationBadge liquidatable={protocol.liquidatable} />
 
-      <div className="grid gap-3 xl:grid-cols-[1fr_1.65fr_1fr]">
-        <GlassPanel className="walnut-card walnut-card-strong p-4">
-          <p className="walnut-label">Available To Withdraw</p>
-          <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{availableMetric}</p>
-          <p className="walnut-meta">Collateral minus current debt</p>
-          <div className="mt-5">
-            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-              <span>Borrowed vs supplied</span>
+      <div className="grid gap-4 xl:grid-cols-[1.25fr_0.85fr]">
+        <GlassPanel className="walnut-card walnut-card-strong p-4 sm:p-5">
+          <h2 className="font-display text-[clamp(1.35rem,1vw+1rem,2rem)] text-foreground">Actions</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Organized flows for each position change.</p>
+
+          <Link
+            href={primaryAction.href}
+            className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-black/12 bg-white/88 px-4 py-3 transition-colors hover:border-black/20"
+          >
+            <div className="flex items-start gap-3">
+              <div className="walnut-action-icon mt-0.5">
+                <primaryAction.icon className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[1.55rem] leading-none text-foreground">{primaryAction.label}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{primaryAction.hint}</p>
+              </div>
             </div>
-            <div className="walnut-kpi-track">
-              <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
-            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            {secondaryActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <Link key={action.href} href={action.href} className="walnut-action-tile interactive-tilt">
+                  <div className="flex items-start gap-3">
+                    <div className="walnut-action-icon">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{action.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{action.hint}</p>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </GlassPanel>
 
-        <GlassPanel className="walnut-card walnut-card-strong overflow-hidden p-0">
-          <div className="grid md:grid-cols-2">
-            <div className="p-4">
-              <p className="walnut-label">Borrow Utilization</p>
-              <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{utilizationLabel}</p>
-              <p className="walnut-meta">How much of collateral is currently borrowed</p>
-              <div className="mt-5">
-                <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Borrow</span>
-                  <span>{showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "--"}</span>
-                </div>
-                <div className="walnut-kpi-track">
-                  <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
+        <GlassPanel className="walnut-card walnut-card-strong walnut-health-card p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="walnut-health-gauge-wrap justify-start">
+              <div
+                className="walnut-health-gauge"
+                style={{
+                  background: `conic-gradient(rgba(17, 17, 17, 0.82) ${healthGaugePercent}%, rgba(17, 17, 17, 0.12) ${healthGaugePercent}% 100%)`,
+                }}
+              >
+                <div className="walnut-health-gauge-core">
+                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Risk</span>
+                  <span className="mt-1 font-mono text-[1.45rem] leading-none text-foreground">
+                    {showDecrypted && healthFactorValue !== undefined
+                      ? `${(Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)).toFixed(1)}x`
+                      : "--"}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="border-t border-black/10 p-4 md:border-l md:border-t-0">
-              <p className="walnut-label">Collateral</p>
-              <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{collateralMetric}</p>
-              <p className="walnut-meta">Total supplied value</p>
+            <div className="min-w-0 flex-1">
+              <p className="walnut-label">Health Factor</p>
+              <p className="mt-2 text-sm text-muted-foreground">Target range above 1.50</p>
+              <p className="mt-2 text-xs text-muted-foreground">Show values to view status</p>
             </div>
-          </div>
-        </GlassPanel>
 
-        <GlassPanel className="walnut-card walnut-card-strong p-4">
-          <p className="walnut-label">Debt</p>
-          <p className="walnut-value mt-2 text-3xl tracking-[0.16em]">{debtMetric}</p>
-          <p className="walnut-meta">Total borrowed value</p>
-          <div className="mt-5">
-            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-              <span>Total borrowed value</span>
-            </div>
+            <span className={`walnut-status-chip ${healthStatusTone}`}>{healthStatusLabel}</span>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-black/10 bg-white/90 px-3 py-2">
+            <p className="walnut-label">Current</p>
+            <p className="mt-1 font-mono text-lg text-foreground">{healthFactorDisplay}</p>
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 walnut-label">Risk Meter</p>
             <div className="walnut-kpi-track">
-              <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
+              <div className="walnut-kpi-fill" style={{ width: `${healthGaugePercent}%` }} />
             </div>
           </div>
         </GlassPanel>
       </div>
 
-      <GlassPanel className="walnut-card walnut-card-strong p-4 sm:p-5">
-        <div className="grid items-start gap-4 xl:grid-cols-[1.35fr_0.9fr]">
-          <div>
-            <h2 className="font-display text-[clamp(1.3rem,1vw+1rem,2rem)] text-foreground">Actions</h2>
-            <p className="text-sm text-muted-foreground">Use these steps to manage your position.</p>
-
-            <Link
-              href={primaryAction.href}
-              className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-black/12 bg-white/86 px-4 py-3 transition-colors hover:border-black/20"
-            >
-              <div className="flex items-start gap-3">
-                <div className="walnut-action-icon mt-0.5">
-                  <primaryAction.icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-[1.55rem] leading-none text-foreground">{primaryAction.label}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{primaryAction.hint}</p>
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              {secondaryActions.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Link key={action.href} href={action.href} className="walnut-action-tile interactive-tilt">
-                    <div className="flex items-start gap-3">
-                      <div className="walnut-action-icon">
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">{action.label}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{action.hint}</p>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-black/12 bg-white/85 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="walnut-health-gauge-wrap justify-start">
-                <div
-                  className="walnut-health-gauge"
-                  style={{
-                    background: `conic-gradient(rgba(17, 17, 17, 0.82) ${healthGaugePercent}%, rgba(17, 17, 17, 0.12) ${healthGaugePercent}% 100%)`,
-                  }}
-                >
-                  <div className="walnut-health-gauge-core">
-                    <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Risk</span>
-                    <span className="mt-1 font-mono text-[1.45rem] leading-none text-foreground">
-                      {showDecrypted && healthFactorValue !== undefined
-                        ? `${(Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)).toFixed(1)}x`
-                        : "--"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="walnut-label">Health Factor</p>
-                <p className="mt-2 text-sm text-muted-foreground">Target range above 1.50</p>
-                <p className="mt-2 text-xs text-muted-foreground">Show values to view status</p>
-              </div>
-
-              <span className={`walnut-status-chip ${healthStatusTone}`}>{healthStatusLabel}</span>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-black/10 bg-white/90 px-3 py-2">
-              <p className="walnut-label">Current</p>
-              <p className="mt-1 font-mono text-lg text-foreground">{healthFactorDisplay}</p>
-            </div>
-          </div>
-        </div>
-      </GlassPanel>
-
       {protocol.status && (
         <GlassPanel className="walnut-alert border-accent/40">
-          {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
+          <p className="text-sm text-foreground">{protocol.status}</p>
         </GlassPanel>
       )}
 
