@@ -15,6 +15,7 @@ const appLinks = [
   { label: "Borrow", href: "/app/borrow" },
   { label: "Repay", href: "/app/repay" },
   { label: "Withdraw", href: "/app/withdraw" },
+  { label: "Liquidation", href: "/app/liquidation" },
   { label: "Settings", href: "/app/settings" },
 ];
 
@@ -30,8 +31,8 @@ export function AppNav() {
   const { openAccountModal } = useAccountModal();
   const [mounted, setMounted] = useState(false);
 
-  const primaryLinks = appLinks.slice(0, 5);
-  const utilityLinks = appLinks.slice(5);
+  const primaryLinks = appLinks.slice(0, 6);
+  const utilityLinks = appLinks.slice(6);
 
   useEffect(() => {
     setMounted(true);

@@ -328,7 +328,7 @@ export function useWalnutProtocol(options: WalnutProtocolOptions = {}) {
   const hasDecryptPending = Boolean(
     canRead &&
       permit.hasPermit &&
-      (collateralDecrypting || debtDecrypting || healthFactorLoading || (supportsAdvancedFeatures && aggregatedCollateralDecrypting))
+      (collateralDecrypting || debtDecrypting || (supportsAdvancedFeatures && aggregatedCollateralDecrypting))
   );
   const hasDecryptError = Boolean(
     (collateralHasCiphertext && collateral.decrypted.error) ||

@@ -55,6 +55,31 @@ function Button({
   const Comp = asChild ? Slot : 'button'
   const content = isLoading && loadingText ? loadingText : children
 
+  if (asChild) {
+    const normalizedChildren = React.Children.toArray(children).filter((child) => {
+      if (typeof child === 'string') {
+        return child.trim().length > 0
+      }
+
+      return React.isValidElement(child)
+    })
+
+    if (normalizedChildren.length !== 1 || !React.isValidElement(normalizedChildren[0])) {
+      throw new Error('Button with asChild expects a single React element child.')
+    }
+
+    return (
+      <Comp
+        data-slot="button"
+        aria-busy={isLoading || undefined}
+        className={cn(buttonVariants({ variant, size, className }))}
+        {...props}
+      >
+        {normalizedChildren[0]}
+      </Comp>
+    )
+  }
+
   return (
     <Comp
       data-slot="button"
