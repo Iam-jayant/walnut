@@ -11,147 +11,166 @@
 
 </div>
 
-## What exactly is this project?
+## Project Idea (Simple Version)
 
-Walnut is a privacy-first lending protocol prototype built on Fhenix.
+Walnut is a privacy-first lending protocol on Ethereum Sepolia using Fhenix Fully Homomorphic Encryption (FHE).
 
-It lets users borrow, lend, and manage positions **without exposing sensitive financial values on-chain**.
+Most lending apps expose your collateral, debt, and risk profile publicly on-chain. Walnut changes that by keeping sensitive financial values encrypted from end to end.
 
-In traditional DeFi, collateral, debt, and risk posture are public by default. Walnut changes this by encrypting user financial state end-to-end and only allowing decryption through user permits.
+In simple terms:
 
-This repository contains:
+- You can deposit, borrow, repay, and withdraw.
+- The protocol computes on encrypted values.
+- Only authorized users can decrypt and view sensitive numbers in the UI.
 
-- A Next.js app (landing + app experience)
+This makes Walnut useful for both technical builders and non-technical users who want private financial operations.
+
+## What Is Live Right Now
+
+The current implementation already includes:
+
 - Encrypted deposit and borrow flows
-- CoFHE-powered encrypted reads and writes
-- Client-side permit-based decryption for user-visible balances
+- Encrypted repay and withdraw flows
+- Encrypted health factor retrieval and display
+- Liquidation eligibility checks with async decrypt + finalize flow
+- Sealed-bid liquidation auctions (bid amounts stay encrypted)
+- ENS wallet linking and aggregated encrypted collateral
+- Frontend pages for dashboard, deposit, borrow, repay, withdraw, liquidation, and settings
 
-## The problem
+## Live Deployment (Ethereum Sepolia)
 
-DeFi is fully transparent today. That creates real issues:
+- Chain ID: 11155111
+- Active contract: 0xD6792922Bca01d34E543cf241D4B3474207d2594
+- Etherscan: https://sepolia.etherscan.io/address/0xD6792922Bca01d34E543cf241D4B3474207d2594
 
-- Liquidation sniping by bots
-- Exposure of user and strategy behavior
-- Low institutional comfort with public-by-default state
-- No practical way for users to manage positions privately
+## Product Flow At A Glance
 
-There is no mainstream way to use DeFi while keeping your full financial state private.
+```mermaid
+flowchart LR
+	U[User Input] --> E[Encrypt In Browser]
+	E --> TX[Send Transaction]
+	TX --> C[Walnut Contract]
+	C --> S[Encrypted State Stored Onchain]
+	S --> R[Frontend Reads Ciphertext]
+	R --> P[Permit-Based Decryption]
+	P --> UI[User Sees Plaintext In UI]
+```
 
-## The solution
+## High-Level Architecture
 
-Walnut introduces confidential lending using Fully Homomorphic Encryption.
+```mermaid
+flowchart TB
+	subgraph Frontend[Next.js Frontend]
+		Pages[App Pages]
+		Hooks[use-walnut-protocol]
+		CofheReact[@cofhe/react + @cofhe/sdk]
+	end
 
-Instead of storing plaintext values on-chain:
+	subgraph Wallet[Wallet Layer]
+		Wagmi[Wagmi + Viem]
+		Rainbow[RainbowKit]
+	end
 
-- Sensitive values are encrypted in the browser
-- Contracts store only encrypted state
-- Computation is performed directly on encrypted values
-- Users decrypt locally with permit-based access
+	subgraph Chain[Ethereum Sepolia]
+		Contract[WalnutWave2b Contract]
+		FHE[Fhenix CoFHE Runtime]
+	end
 
-Result:
+	Pages --> Hooks
+	Hooks --> CofheReact
+	Hooks --> Wagmi
+	Wagmi --> Rainbow
+	Wagmi --> Contract
+	Contract --> FHE
+	CofheReact --> FHE
+```
 
-- The chain never sees raw collateral or debt values
-- Users keep control over who can decrypt their data
+## Core Technical Implementation
 
-## How it works
+### Smart Contract
 
-Walnut uses the Fhenix CoFHE stack for encrypted state + computation.
+Primary contract: WalnutWave2b
 
-### Core flow
+Main capabilities:
 
-input -> encrypt -> contract -> store -> fetch -> decrypt -> display
+- `deposit(InEuint128)`
+- `borrow(InEuint128)`
+- `repay(InEuint128)`
+- `withdraw(InEuint128)`
+- `getHealthFactor(address)`
+- `requestLiquidationCheck(address)`
+- `submitLiquidationCheck(bytes32)`
+- `openAuction(address)`
+- `submitBid(address, InEuint128)`
+- `selectWinningBid(address)`
+- `finalizeWinnerSelection(uint256)`
+- `registerENSWallet(string,address)`
+- `getAggregatedCollateral(address)`
 
-### Step-by-step
+Contract-level protections implemented:
 
-1. User enters a deposit or borrow value.
-2. Frontend encrypts that value before transaction submission.
-3. Contract receives encrypted input and updates encrypted state.
-4. Frontend fetches encrypted state from chain.
-5. User decrypts locally using permit-based access.
-6. UI shows decrypted values only to the authorized user.
+- 80% LTV cap enforcement on borrow
+- Available collateral check on withdraw
+- Liquidation threshold checks
+- No plaintext bid amount leakage in settlement events
+- Duplicate-link and invalid ENS wallet link prevention
 
-## Key features
+### Frontend
 
-- Encrypted balances and debt on-chain
-- Permit-based decryption with user-controlled visibility
-- Private deposit and borrow flows
-- Real-time encrypted-state handling in frontend
-- Clean UX for encrypted -> decrypted transitions
+The frontend is a Next.js app that:
 
-## Tech stack
+- Encrypts user inputs before tx submission
+- Waits for transaction confirmations
+- Reads encrypted state from contract
+- Decrypts only with valid permits
+- Displays human-readable status for success/failure outcomes
 
-- Fhenix CoFHE
-- Solidity (encrypted types and FHE ops)
-- Next.js 16
-- @cofhe/sdk
-- @cofhe/react
-- Wagmi
-- Viem / EVM tooling
+Main app routes:
 
-## What makes Walnut different
+- `/` landing page
+- `/app` dashboard
+- `/app/deposit`
+- `/app/borrow`
+- `/app/repay`
+- `/app/withdraw`
+- `/app/liquidation`
+- `/app/settings`
 
-Walnut is not just UI obfuscation.
+### Async Decrypt + Finalize Pattern
 
-It changes the protocol internals:
+Some flows require asynchronous decrypt readiness before final state transitions.
 
-- State is encrypted at the protocol level
-- Computation is executed over encrypted data
-- Decryption is permissioned, not globally public
+```mermaid
+sequenceDiagram
+	participant User
+	participant UI as Frontend
+	participant C as Walnut Contract
+	participant F as FHE Runtime
 
-Even direct contract storage inspection does not reveal meaningful financial values.
+	User->>UI: Start liquidation check
+	UI->>C: requestLiquidationCheck(user)
+	C->>F: decrypt(encryptedHealthFactor)
+	F-->>C: Result available later
+	UI->>C: submitLiquidationCheck(ctHash)
+	C->>F: getDecryptResultSafe(ctHash)
+	F-->>C: decryptedResult + isReady
+	C-->>UI: state updated (liquidatable or not)
+```
 
-## Current scope
+The same pattern is used for auction winner selection:
 
-### Wave 1 (Complete)
+- select winner request
+- async decrypt readiness
+- explicit finalize transaction
 
-Implemented app routes:
+## For Non-Technical Readers: What Privacy Means Here
 
-- /
-- /app
-- /app/deposit
-- /app/borrow
-- /app/repay (UI scaffold)
-- /app/withdraw
-- /app/settings
+- Your raw collateral and debt values are not openly written in plain text.
+- The protocol performs key calculations on encrypted values.
+- Decryption in the app is permit-based and user-controlled.
+- On-chain metadata (wallet address, timestamps, gas usage) is still visible, because that is native to public blockchains.
 
-Implemented protocol interactions:
-
-- deposit(InEuint128)
-- borrow(InEuint128)
-- encrypted collateral/debt reads + local decrypt
-
-### Wave 2 (Complete)
-
-Wave 2 completes the confidential lending cycle with encrypted repayment, withdrawal, health factor monitoring, and async decrypt liquidation checks.
-
-**New Contract Functions:**
-- `repay(InEuint128)` - Encrypted debt repayment with clamping to zero
-- `withdraw(InEuint128)` - Encrypted collateral withdrawal (respects available balance)
-- `getHealthFactor(address)` - Returns encrypted health factor (collateral/debt ratio scaled by 10000)
-- `requestLiquidationCheck(address)` - Initiates async decrypt for liquidation status
-- `submitLiquidationCheck(bytes32, uint128, bytes)` - Verifies and processes liquidation check results
-- `liquidatable(address)` - Public boolean indicating liquidation eligibility
-
-**New Features:**
-- **80% LTV Enforcement**: On-chain encrypted validation prevents borrowing beyond 80% of collateral
-- **Health Factor Monitoring**: Color-coded dashboard display (green ≥1.5, amber 1.05-1.5, red <1.05)
-- **Liquidation Checks**: Uses new CoFHE tx-side decrypt lifecycle with off-chain decryption and on-chain verification
-- **Private Interest Settlement**: Integrates Privara SDK for confidential interest payments
-- **Withdraw Flow**: Complete UI for withdrawing available collateral (collateral - debt)
-
-**Updated App Routes:**
-- /app/repay - Wired to contract with two-step settlement (principal + interest)
-- /app/withdraw - New page for collateral withdrawal
-- /app/borrow - Enhanced with LTV calculation and health factor preview
-- /app - Dashboard now displays health factor card and liquidation status badge
-
-**Technical Improvements:**
-- Migrated to new CoFHE decrypt flow (deprecated fhenixjs patterns removed)
-- Uses `FHE.allowGlobal()` + `FHE.verifyDecryptResult()` for publish-on-chain decryption
-- Deployed to Ethereum Sepolia (Chain ID: 11155111)
-- TypeScript build errors resolved
-
-## Local setup
+## Local Setup
 
 ### 1) Install dependencies
 
@@ -161,7 +180,7 @@ npm install
 
 ### 2) Configure environment
 
-Create `.env.local` from `.env.example`.
+Create `.env.local` from `.env.example` and fill required values.
 
 ```bash
 cp .env.example .env.local
@@ -169,15 +188,16 @@ cp .env.example .env.local
 
 Required variables:
 
-- PRIVATE_KEY (deploy only, never expose in frontend or public env)
-- RPC_URL (deploy-only RPC, defaults to https://ethereum-sepolia-rpc.publicnode.com)
-- NEXT_PUBLIC_WALNUT_CHAIN_ID (defaults to 11155111 for Ethereum Sepolia)
-- NEXT_PUBLIC_WALNUT_RPC_URL (optional, for local development)
-- NEXT_PUBLIC_WALNUT_CONTRACT_ADDRESS (Wave 1 contract address)
-- NEXT_PUBLIC_WALNUT_WAVE2_CONTRACT_ADDRESS (Wave 2 contract address)
-- NEXT_PUBLIC_SEPOLIA_RPC_URL (Sepolia RPC URL for frontend)
+- `PRIVATE_KEY` (deployment only, never expose publicly)
+- `RPC_URL` (deployment RPC)
+- `NEXT_PUBLIC_CHAIN_ID` (11155111 for Sepolia)
+- `NEXT_PUBLIC_RPC_URL_PRIMARY`
+- `NEXT_PUBLIC_RPC_URL_FALLBACK_1`
+- `NEXT_PUBLIC_RPC_URL_FALLBACK_2`
+- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
+- `NEXT_PUBLIC_WALNUT_WAVE2_CONTRACT_ADDRESS`
 
-### 3) Start the app
+### 3) Run the app
 
 ```bash
 npm run dev
@@ -185,88 +205,43 @@ npm run dev
 
 Open: http://localhost:3000
 
-### 4) Production build
+### 4) Build for production
 
 ```bash
 npm run build
-npm start
+npm run start
 ```
 
-### 5) Deploy contracts to Sepolia
+## Deployment Commands
 
-**Deploy Wave 1 contract:**
+The repository currently includes these scripts:
+
+- `npm run deploy:sepolia`
+- `npm run deploy:wave2:sepolia`
+
+Verify deployed contract:
+
 ```bash
-npm run deploy:sepolia
+npx hardhat verify --network sepolia <DEPLOYED_CONTRACT_ADDRESS>
 ```
 
-**Deploy Wave 2 contract:**
+## Testing
+
+Smart contract tests are included and pass in local Hardhat mock environment.
+
+Run:
+
 ```bash
-npm run deploy:wave2:sepolia
+npx hardhat test
 ```
 
-After deployment, the contract address will be automatically added to your `.env` file.
+## Known Constraints
 
-## Demo flow
+- Blockchain metadata is still public (addresses, tx timing, gas usage).
+- Privacy applies to encrypted financial values and encrypted computations.
 
-### Wave 1 Flow
-1. Connect wallet.
-2. Enable private access from the dashboard setup card.
-3. Submit encrypted collateral at /app/deposit.
-4. Submit encrypted borrow request at /app/borrow.
+## Why This Matters
 
-### Wave 2 Flow (Complete Lending Cycle)
-1. Connect wallet and enable private access (permit creation).
-2. Deposit encrypted collateral at /app/deposit.
-3. Borrow against collateral at /app/borrow (respects 80% LTV limit).
-4. Monitor health factor on dashboard (decrypt to view exact ratio).
-5. Repay debt at /app/repay (two-step: principal on-chain + interest via Privara).
-6. Withdraw available collateral at /app/withdraw (collateral - debt).
-7. Check liquidation status if health factor drops below 1.05.
+Walnut demonstrates that lending UX can stay familiar while sensitive financial state stays encrypted by default.
 
-## Architecture
-
-### Async Decrypt Liquidation Check Pattern
-
-Wave 2 implements the new CoFHE tx-side decrypt lifecycle for liquidation checks:
-
-1. **Request**: Contract calls `requestLiquidationCheck(user)` which computes encrypted health factor and calls `FHE.allowGlobal()` to grant public decryption permission
-2. **Off-chain Decrypt**: Liquidator bot calls `client.decryptForTx(ctHash)` to decrypt health factor with Threshold Network signature
-3. **Submit Result**: Bot calls `submitLiquidationCheck(ctHash, plaintext, signature)` with decrypted value and proof
-4. **Verify**: Contract uses `FHE.verifyDecryptResult()` to verify Threshold Network signature
-5. **Update State**: If health factor < 10500 (1.05), contract sets `liquidatable[user] = true`
-
-This pattern ensures:
-- Health factors remain encrypted on-chain
-- Decryption is cryptographically verified
-- No trusted oracle required
-- Plaintext values exist only in callback execution context
-
-### Private Interest Settlement with Privara
-
-Repayment uses a two-step flow:
-1. **Principal Repayment**: Encrypted amount submitted to WalnutWave2 contract on-chain
-2. **Interest Settlement**: Private stablecoin transfer via Privara SDK (off-chain, confidential)
-
-This separates principal (encrypted on-chain) from interest (private off-chain), maintaining privacy for both components.
-
-## Current limitations
-
-This is an early Walnut version with intentional simplifications:
-
-- Lending logic is minimal (basic borrow constraints)
-- Metadata like addresses and transaction timing can still leak behavior
-- Full-stack privacy (including metadata privacy) remains an active research area
-
-These are known tradeoffs while validating encrypted DeFi primitives.
-
-## Vision
-
-Walnut pushes DeFi from:
-
-transparent-by-default -> private-by-design
-
-Long-term direction:
-
-- Better financial privacy for retail users
-- Institutional participation in on-chain credit markets
-- New classes of privacy-native financial protocols
+It is a practical path toward privacy-preserving DeFi without sacrificing on-chain verifiability.

@@ -35,6 +35,13 @@ QUICK_START_TESTING.md
 TESTING_*.md
 TROUBLESHOOTING.md
 WALNUT_CODEBASE_ANALYSIS.md
+WALNUT_MASTER_ROADMAP.md
+
+# temporary local run artifacts
+build-output.log
+tmp-*.log
+tmp-*.json
+tmp-*.cjs
 
 # typescript
 *.tsbuildinfo

@@ -44,19 +44,27 @@ function upsertEnvValue(key, value) {
 async function main() {
   ensureRequiredEnv();
 
-  const WalnutWave1 = await hre.ethers.getContractFactory("WalnutWave1");
-  const contract = await WalnutWave1.deploy();
+  console.log("Deploying WalnutWave2b to Ethereum Sepolia...");
+
+  const WalnutWave2b = await hre.ethers.getContractFactory("WalnutWave2b");
+  const contract = await WalnutWave2b.deploy();
   await contract.waitForDeployment();
 
   const deployedAddress = await contract.getAddress();
   const deployTx = contract.deploymentTransaction();
   const txHash = deployTx ? deployTx.hash : "unavailable";
 
-  upsertEnvValue("NEXT_PUBLIC_WALNUT_CONTRACT_ADDRESS", deployedAddress);
+  upsertEnvValue("NEXT_PUBLIC_WALNUT_WAVE2_CONTRACT_ADDRESS", deployedAddress);
 
+  console.log("✅ WalnutWave2b deployed successfully!");
   console.log("DEPLOYED_CONTRACT_ADDRESS=" + deployedAddress);
   console.log("DEPLOYMENT_TX_HASH=" + txHash);
-  console.log("UPDATED_ENV_KEY=NEXT_PUBLIC_WALNUT_CONTRACT_ADDRESS");
+  console.log("UPDATED_ENV_KEY=NEXT_PUBLIC_WALNUT_WAVE2_CONTRACT_ADDRESS");
+  console.log("VERIFY_COMMAND=npx hardhat verify --network sepolia " + deployedAddress);
+  console.log("\nNext steps:");
+  console.log("1. Run verify command on Ethereum Sepolia");
+  console.log("2. Confirm frontend uses NEXT_PUBLIC_WALNUT_WAVE2_CONTRACT_ADDRESS");
+  console.log("3. Test Wave2b flows: auction + ENS aggregation + core lending");
 }
 
 main().catch((error) => {
