@@ -111,8 +111,18 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!showAggregated || !protocol.canRead || !address) return;
+
+    // Avoid repeated signing prompts when the value is already available.
+    if (typeof protocol.aggregatedCollateralValue === "bigint") return;
+
     void protocol.fetchAggregatedCollateral(address as Address);
-  }, [address, protocol.canRead, protocol.fetchAggregatedCollateral, showAggregated]);
+  }, [
+    address,
+    protocol.aggregatedCollateralValue,
+    protocol.canRead,
+    protocol.fetchAggregatedCollateral,
+    showAggregated,
+  ]);
 
   function clearOnboardingFlag() {
     window.localStorage.removeItem(ONBOARD_KEY);

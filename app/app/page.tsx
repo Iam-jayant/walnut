@@ -150,7 +150,12 @@ export default function WalnutDashboardPage() {
     setIsRevealingValues(true);
     try {
       await protocol.refreshBalances();
-      await protocol.fetchHealthFactor();
+
+      // Only request a fresh on-chain health-factor handle when we do not
+      // already have a decrypted value for the current session.
+      if (healthFactorValue === undefined) {
+        await protocol.fetchHealthFactor();
+      }
     } finally {
       setIsRevealingValues(false);
     }
