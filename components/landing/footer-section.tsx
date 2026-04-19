@@ -4,8 +4,8 @@ import { ArrowUpRight } from "lucide-react";
 
 const footerLinks = {
   Product: [
-    { name: "Documentation", href: "https://docs.walnut.finance" },
-    { name: "Github", href: "https://github.com/walnut-finance" },
+    { name: "Documentation", href: "https://github.com/Iam-jayant/walnut" },
+    { name: "Github", href: "https://github.com/Iam-jayant/walnut" },
     { name: "Status", href: "#" },
   ],
   Legal: [
@@ -15,9 +15,9 @@ const footerLinks = {
 };
 
 const socialLinks = [
-  { name: "Twitter", href: "https://twitter.com/walnutfinance" },
-  { name: "GitHub", href: "https://github.com/walnut-finance" },
-  { name: "Discord", href: "#" },
+  { name: "X", href: "https://x.com/0xjayantxyz" },
+  { name: "GitHub", href: "https://github.com/Iam-jayant/walnut" },
+  { name: "Telegram", href: "https://t.me/staticmelon" },
 ];
 
 export function FooterSection() {

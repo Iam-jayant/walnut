@@ -78,7 +78,7 @@ export function CtaSection() {
                   variant="outline"
                   className="h-14 rounded-full border-black/15 bg-white px-8 text-base hover:bg-black/10"
                 >
-                  <a href="https://docs.walnut.finance" target="_blank" rel="noopener noreferrer">
+                  <a href="https://github.com/Iam-jayant/walnut" target="_blank" rel="noopener noreferrer">
                     Read the Docs
                   </a>
                 </Button>

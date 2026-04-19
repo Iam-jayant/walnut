@@ -7,7 +7,7 @@ import {
   useCofheReadContractAndDecrypt,
   useCofheWriteContract,
 } from "@cofhe/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain } from "wagmi";
 
 import {
@@ -152,6 +152,13 @@ export function useWalnutProtocol(options: WalnutProtocolOptions = {}) {
   const [aggregatedCollateralValue, setAggregatedCollateralValue] = useState<bigint | undefined>(undefined);
   const [aggregatedCollateralLoading, setAggregatedCollateralLoading] = useState(false);
   const [aggregatedCollateralError, setAggregatedCollateralError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHealthFactorValue(undefined);
+    setHealthFactorError(null);
+    setAggregatedCollateralValue(undefined);
+    setAggregatedCollateralError(null);
+  }, [address, activeContractAddress]);
 
   const canUseContract = Boolean(activeContractAddress);
   const isWalletReady = Boolean(isConnected && address);

@@ -9,8 +9,8 @@ const navLinks = [
   { name: "Product", href: "#product" },
   { name: "How It Works", href: "#how-it-works" },
   { name: "Privacy", href: "#security" },
-  { name: "Docs", href: "https://docs.walnut.finance", external: true },
-  { name: "GitHub", href: "https://github.com/walnut-finance", external: true },
+  { name: "Docs", href: "https://github.com/Iam-jayant/walnut", external: true },
+  { name: "GitHub", href: "https://github.com/Iam-jayant/walnut", external: true },
 ];
 
 export function Navigation() {
@@ -36,8 +36,8 @@ export function Navigation() {
       <nav 
         className={`mx-auto transition-all duration-500 ${
           isScrolled || isMobileMenuOpen
-            ? "glass-panel rounded-2xl shadow-2xl max-w-[1240px]"
-            : "bg-transparent max-w-[1340px]"
+            ? "glass-panel rounded-2xl shadow-2xl max-w-310"
+            : "bg-transparent max-w-335"
         }`}
       >
         <div 
