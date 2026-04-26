@@ -1,8 +1,8 @@
 /**
- * FHE Helper Functions for WalnutWave2 Testing
+ * FHE Helper Functions for WalnutV1 Testing
  * 
  * This module provides encryption and decryption utilities for testing
- * the WalnutWave2 contract with the cofhe-hardhat-plugin mock coprocessor.
+ * the WalnutV1 contract with the cofhe hardhat mock coprocessor.
  * 
  * These helpers abstract the cofhe API to provide simple encrypt/decrypt
  * functions that can be used throughout the test suite.
@@ -147,7 +147,7 @@ async function decryptAggregatedCollateral(contract, primaryWallet) {
 /**
  * Setup and deposit collateral for a user (test helper)
  * 
- * @param {Object} contract - The WalnutWave2 contract instance
+ * @param {Object} contract - The WalnutV1 contract instance
  * @param {Object} signer - The ethers signer for the user
  * @param {bigint} amount - The collateral amount to deposit
  * @returns {Promise<void>}
@@ -166,7 +166,7 @@ async function setupCollateral(contract, signer, amount) {
 /**
  * Setup collateral and borrow debt for a user (test helper)
  * 
- * @param {Object} contract - The WalnutWave2 contract instance
+ * @param {Object} contract - The WalnutV1 contract instance
  * @param {Object} signer - The ethers signer for the user
  * @param {bigint} collateralAmount - The collateral amount to deposit
  * @param {bigint} borrowAmount - The debt amount to borrow
@@ -188,6 +188,52 @@ async function setupPosition(contract, signer, collateralAmount, borrowAmount) {
   await tx.wait();
 }
 
+/**
+ * Decrypt repayment count for a specific user
+ *
+ * @param {Object} contract - The WalnutV1 contract instance
+ * @param {string} userAddress - The user's address
+ * @returns {Promise<bigint>} Decrypted repayment count
+ */
+async function decryptRepaymentCount(contract, userAddress) {
+  const encryptedValue = await contract.getEncryptedRepaymentCount(userAddress);
+  return await decrypt(encryptedValue);
+}
+
+/**
+ * Decrypt default count for a specific user
+ *
+ * @param {Object} contract - The WalnutV1 contract instance
+ * @param {string} userAddress - The user's address
+ * @returns {Promise<bigint>} Decrypted default count
+ */
+async function decryptDefaultCount(contract, userAddress) {
+  const encryptedValue = await contract.getEncryptedDefaultCount(userAddress);
+  return await decrypt(encryptedValue);
+}
+
+/**
+ * Decrypt total pool collateral
+ *
+ * @param {Object} contract - The WalnutV1 contract instance
+ * @returns {Promise<bigint>} Decrypted total pool collateral
+ */
+async function decryptTotalPoolCollateral(contract) {
+  const encryptedValue = await contract.getEncryptedTotalPoolCollateral();
+  return await decrypt(encryptedValue);
+}
+
+/**
+ * Decrypt total pool debt
+ *
+ * @param {Object} contract - The WalnutV1 contract instance
+ * @returns {Promise<bigint>} Decrypted total pool debt
+ */
+async function decryptTotalPoolDebt(contract) {
+  const encryptedValue = await contract.getEncryptedTotalPoolDebt();
+  return await decrypt(encryptedValue);
+}
+
 module.exports = {
   encrypt,
   decrypt,
@@ -195,6 +241,10 @@ module.exports = {
   decryptDebt,
   decryptHealthFactor,
   decryptAggregatedCollateral,
+  decryptRepaymentCount,
+  decryptDefaultCount,
+  decryptTotalPoolCollateral,
+  decryptTotalPoolDebt,
   setupCollateral,
   setupPosition,
 };

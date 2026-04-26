@@ -1,9 +1,9 @@
 /**
- * Property Test Generators for WalnutWave2
+ * Property Test Generators for WalnutV1
  * 
  * This module provides random data generators for property-based testing.
  * Generators create constrained random values that are valid for the
- * WalnutWave2 contract's input space.
+ * WalnutV1 contract's input space.
  * 
  * All generators are designed to produce values within the euint128 range
  * and respect the contract's business logic constraints (LTV limits, etc.).
@@ -88,10 +88,10 @@ function randomCollateral() {
 }
 
 /**
- * Generate a random debt amount that respects 80% LTV limit
+ * Generate a random debt amount that respects a supplied LTV limit
  * 
  * @param {bigint} collateral - The collateral amount
- * @param {number} ltvPercent - LTV percentage (0-80), defaults to random between 1-80
+ * @param {number} ltvBps - LTV in basis points, defaults to tier 0 (7000)
  * @returns {bigint} Random debt amount within LTV limit
  * 
  * @example
@@ -99,19 +99,21 @@ function randomCollateral() {
  * const debt = randomDebtWithinLTV(collateral); // Will be <= 800
  * const maxDebt = randomDebtWithinLTV(collateral, 80); // Will be exactly at 80% LTV
  */
-function randomDebtWithinLTV(collateral, ltvPercent = null) {
-  // If no LTV specified, use random value between 1 and 80
-  const ltv = ltvPercent !== null ? ltvPercent : Math.floor(Math.random() * 80) + 1;
-  
-  // Calculate max debt at this LTV
-  const maxDebt = (collateral * BigInt(ltv)) / 100n;
+function randomDebtWithinLTV(collateral, ltvBps = 7000) {
+  const bps = BigInt(ltvBps);
+  if (bps < 1n || bps > 10000n) {
+    throw new Error("ltvBps must be between 1 and 10000");
+  }
+
+  // Calculate max debt at this LTV in basis points
+  const maxDebt = (collateral * bps) / 10000n;
   
   // Return random value between 1 and maxDebt
   return randomUint128(1n, maxDebt);
 }
 
 /**
- * Generate a random debt amount that exceeds 80% LTV limit
+ * Generate a random debt amount that exceeds a supplied LTV limit
  * Used for testing LTV enforcement (borrow should fail)
  * 
  * @param {bigint} collateral - The collateral amount
@@ -121,9 +123,14 @@ function randomDebtWithinLTV(collateral, ltvPercent = null) {
  * const collateral = 1000n;
  * const excessiveDebt = randomDebtExceedingLTV(collateral); // Will be > 800
  */
-function randomDebtExceedingLTV(collateral) {
-  // Calculate 80% LTV threshold
-  const ltvLimit = (collateral * 80n) / 100n;
+function randomDebtExceedingLTV(collateral, ltvBps = 7000) {
+  const bps = BigInt(ltvBps);
+  if (bps < 1n || bps > 9999n) {
+    throw new Error("ltvBps must be between 1 and 9999");
+  }
+
+  // Calculate LTV threshold from basis points
+  const ltvLimit = (collateral * bps) / 10000n;
   
   // Return random value between ltvLimit + 1 and collateral
   return randomUint128(ltvLimit + 1n, collateral);
