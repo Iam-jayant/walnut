@@ -5,14 +5,14 @@ const hre = require("hardhat");
 
 function ensureRequiredEnv() {
   const hasPk = Boolean(process.env.PRIVATE_KEY || process.env.NEXT_PUBLIC_PRIVATE_KEY);
-  const hasRpc = Boolean(process.env.RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL);
+  const hasRpc = Boolean(process.env.RPC_URL || process.env.ARBITRUM_SEPOLIA_RPC_URL);
 
   if (!hasPk) {
     throw new Error("Missing PRIVATE_KEY in .env");
   }
 
   if (!hasRpc) {
-    throw new Error("Missing RPC_URL in .env");
+    throw new Error("Missing ARBITRUM_SEPOLIA_RPC_URL (or RPC_URL) in .env");
   }
 }
 

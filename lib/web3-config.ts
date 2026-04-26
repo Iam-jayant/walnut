@@ -8,7 +8,7 @@ import {
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, createStorage } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { arbitrumSepolia } from "wagmi/chains";
 import { fallback, http } from "wagmi";
 
 function requirePublicEnv(key: string, value: string | undefined) {
@@ -63,10 +63,10 @@ const connectors =
     : [];
 
 export const wagmiConfig = createConfig({
-  chains: [sepolia],
+  chains: [arbitrumSepolia],
   connectors,
   transports: {
-    [sepolia.id]: fallback([
+    [arbitrumSepolia.id]: fallback([
       http(rpcUrlPrimary, {
         timeout: 10_000,
         retryCount: 1,

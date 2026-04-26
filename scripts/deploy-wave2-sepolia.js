@@ -5,14 +5,14 @@ const hre = require("hardhat");
 
 function ensureRequiredEnv() {
   const hasPk = Boolean(process.env.PRIVATE_KEY || process.env.NEXT_PUBLIC_PRIVATE_KEY);
-  const hasRpc = Boolean(process.env.RPC_URL || process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL);
+  const hasRpc = Boolean(process.env.RPC_URL || process.env.ARBITRUM_SEPOLIA_RPC_URL);
 
   if (!hasPk) {
     throw new Error("Missing PRIVATE_KEY in .env");
   }
 
   if (!hasRpc) {
-    throw new Error("Missing RPC_URL in .env");
+    throw new Error("Missing ARBITRUM_SEPOLIA_RPC_URL (or RPC_URL) in .env");
   }
 }
 
@@ -44,7 +44,7 @@ function upsertEnvValue(key, value) {
 async function main() {
   ensureRequiredEnv();
 
-  console.log("Deploying WalnutWave2b to Ethereum Sepolia...");
+  console.log("Deploying WalnutWave2b to Arbitrum Sepolia...");
 
   const WalnutWave2b = await hre.ethers.getContractFactory("WalnutWave2b");
   const contract = await WalnutWave2b.deploy();
@@ -60,9 +60,9 @@ async function main() {
   console.log("DEPLOYED_CONTRACT_ADDRESS=" + deployedAddress);
   console.log("DEPLOYMENT_TX_HASH=" + txHash);
   console.log("UPDATED_ENV_KEY=NEXT_PUBLIC_WALNUT_WAVE2_CONTRACT_ADDRESS");
-  console.log("VERIFY_COMMAND=npx hardhat verify --network sepolia " + deployedAddress);
+  console.log("VERIFY_COMMAND=npx hardhat verify --network arbitrumSepolia " + deployedAddress);
   console.log("\nNext steps:");
-  console.log("1. Run verify command on Ethereum Sepolia");
+  console.log("1. Run verify command on Arbitrum Sepolia");
   console.log("2. Confirm frontend uses NEXT_PUBLIC_WALNUT_WAVE2_CONTRACT_ADDRESS");
   console.log("3. Test Wave2b flows: auction + ENS aggregation + core lending");
 }

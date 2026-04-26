@@ -6,8 +6,8 @@
     "dev": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "deploy:sepolia": "hardhat run scripts/deploy-sepolia.js --network sepolia",
-    "deploy:wave2:sepolia": "hardhat run scripts/deploy-wave2-sepolia.js --network sepolia"
+    "deploy:arbitrum-sepolia": "hardhat run scripts/deploy-sepolia.js --network arbitrumSepolia",
+    "deploy:wave2:arbitrum-sepolia": "hardhat run scripts/deploy-wave2-sepolia.js --network arbitrumSepolia"
   },
   "dependencies": {
     "@cofhe/abi": "^0.4.0",
@@ -34,20 +34,21 @@
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
-    "@fhenixprotocol/cofhe-contracts": "^0.0.13",
+    "@cofhe/hardhat-plugin": "^0.4.0",
+    "@fhenixprotocol/cofhe-contracts": "^0.1.3",
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
-    "@nomicfoundation/hardhat-verify": "^2.0.14",
+    "@nomicfoundation/hardhat-verify": "^2.1.3",
     "@tailwindcss/postcss": "^4.1.9",
     "@types/chai": "^5.2.3",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "chai": "^6.2.2",
-    "cofhe-hardhat-plugin": "latest",
     "dotenv": "^16.4.7",
     "hardhat": "^2.24.2",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
+    "ts-node": "^10.9.2",
     "tw-animate-css": "1.3.3",
     "typescript": "^5"
   }
