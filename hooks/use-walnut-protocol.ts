@@ -1,1223 +1,755 @@
 "use client";
 
-import { Encryptable, FheTypes } from "@cofhe/sdk";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAccount, usePublicClient, useReadContract, useSwitchChain } from "wagmi";
+import { arbitrumSepolia } from "wagmi/chains";
+import type { Address } from "viem";
+
+import { useWalnutPermit } from "@/components/walnut/permit-provider";
+import { useToast } from "@/components/walnut/toast-provider";
 import {
   useCofheClient,
   useCofheEncrypt,
   useCofheReadContractAndDecrypt,
   useCofheWriteContract,
 } from "@cofhe/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAccount, usePublicClient, useReadContract, useSwitchChain } from "wagmi";
+import { Encryptable, FheTypes } from "@cofhe/sdk";
+import { walnutChainId, walnutContractAddress, walnutV1Abi } from "@/lib/walnut-contract";
 
-import {
-  walnutContractAddress,
-  walnutChainId,
-  walnutWave2bContractAddress,
-  walnutWave2Abi,
-  walnutWave2CoreContractAddress,
-} from "@/lib/walnut-contract";
-import {
-  HEALTH_FACTOR_AT_RISK_THRESHOLD,
-  HEALTH_FACTOR_SAFE_THRESHOLD,
-} from "@/lib/protocol-constants";
-import { useWalnutPermit } from "@/components/walnut/permit-provider";
-import { decodeEventLog, isAddress, type Address, type TransactionReceipt } from "viem";
+const BALANCE_REFRESH_INTERVAL_MS = 30_000;
+const DEFAULT_LIQUIDATION_POLL_INTERVAL_MS = 15_000;
+const DEFAULT_LIQUIDATION_POLL_MAX = 20;
 
-export type WalnutAction = "deposit" | "borrow";
+export type WalnutAction = "deposit" | "borrow" | "repay" | "withdraw";
 
 export type AuctionSummary = {
   borrower: Address;
+  active: boolean;
+  settled: boolean;
   endTime: bigint;
   bidCount: bigint;
-  settled: boolean;
-  active: boolean;
 };
 
-export type WalnutProtocolMode = "core" | "advanced";
-
-type WalnutProtocolOptions = {
-  mode?: WalnutProtocolMode;
+type CofheDecryptResult<T> = {
+  encrypted: unknown;
+  decrypted: {
+    data?: T;
+    error?: Error;
+    isFetching: boolean;
+    isLoading: boolean;
+    refetch: () => Promise<unknown>;
+  };
 };
 
-type HandleEventName = "HealthFactorHandle" | "AggregatedCollateralHandle";
-
-const READ_REFETCH_INTERVAL_MS = 30_000;
-
-function isRateLimitError(error: unknown) {
-  const message = String(error ?? "").toLowerCase();
-  return message.includes("429") || message.includes("rate limit");
-}
-
-function shouldRetryRead(failureCount: number, error: unknown) {
-  if (isRateLimitError(error)) return false;
-  return failureCount < 1;
-}
-
-function normalizeHexLike(value: unknown): string | undefined {
-  if (!value) return undefined;
-
-  if (typeof value === "string") {
-    return value;
+function parsePositiveBigint(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  try {
+    const value = BigInt(trimmed);
+    return value > 0n ? value : null;
+  } catch {
+    return null;
   }
-
-  if (typeof value === "bigint") {
-    return `0x${value.toString(16)}`;
-  }
-
-  if (typeof value === "object") {
-    const maybeCipher = value as { ctHash?: unknown };
-    if (maybeCipher.ctHash !== undefined) {
-      return normalizeHexLike(maybeCipher.ctHash);
-    }
-  }
-
-  return undefined;
 }
 
-export function trimHex(hexValue: unknown) {
-  const normalized = normalizeHexLike(hexValue);
-  if (!normalized) return "Not available";
-  if (normalized.length < 16) return normalized;
-  return `${normalized.slice(0, 10)}...${normalized.slice(-8)}`;
+function isBigint(value: unknown): value is bigint {
+  return typeof value === "bigint";
 }
 
-function extractCtHash(value: unknown): bigint | undefined {
-  if (value === null || value === undefined) return undefined;
+export function useCreditTier(borrower?: Address) {
+  const { data, isLoading, refetch } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutV1Abi,
+    functionName: "creditTier",
+    args: [borrower ?? "0x0000000000000000000000000000000000000000"],
+    query: {
+      enabled: Boolean(borrower),
+    },
+  });
 
-  if (typeof value === "bigint") {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    if (value.startsWith("0x")) {
-      return BigInt(value);
-    }
-    return undefined;
-  }
-
-  if (typeof value === "object" && "ctHash" in value) {
-    const cipherLike = value as { ctHash?: unknown };
-    return extractCtHash(cipherLike.ctHash);
-  }
-
-  return undefined;
+  return {
+    creditTier: isBigint(data) ? data : undefined,
+    creditTierLoading: isLoading,
+    refreshCreditTier: refetch,
+  } as const;
 }
 
-type BalanceSnapshot = {
-  collateral?: bigint;
-  debt?: bigint;
-};
+export function useTierLTV(tier?: bigint) {
+  const { data, isLoading, refetch } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutV1Abi,
+    functionName: "TIER_LTV",
+    args: [tier ?? 0n],
+    query: {
+      enabled: typeof tier === "bigint",
+    },
+  });
 
-function asBigInt(value: unknown): bigint | undefined {
-  return typeof value === "bigint" ? value : undefined;
+  return {
+    tierLTV: isBigint(data) ? data : undefined,
+    tierLTVLoading: isLoading,
+    refreshTierLTV: refetch,
+  } as const;
 }
 
-function hasCompleteBalanceSnapshot(
-  snapshot: BalanceSnapshot | undefined
-): snapshot is { collateral: bigint; debt: bigint } {
-  return snapshot?.collateral !== undefined && snapshot?.debt !== undefined;
-}
-
-function snapshotsEqual(
-  before: { collateral: bigint; debt: bigint },
-  after: { collateral: bigint; debt: bigint }
-) {
-  return before.collateral === after.collateral && before.debt === after.debt;
-}
-
-export function useWalnutProtocol(options: WalnutProtocolOptions = {}) {
-  const { address, isConnected, chainId, status: accountStatus } = useAccount();
-  const { switchChainAsync } = useSwitchChain();
+export function useWalnutProtocol() {
+  const account = useAccount();
   const publicClient = usePublicClient();
   const cofheClient = useCofheClient();
+  const { addToast, removeToast } = useToast();
   const permit = useWalnutPermit();
+  const encryptor = useCofheEncrypt();
+  const writer = useCofheWriteContract();
 
-  const mode = options.mode ?? "advanced";
-  const coreContractAddress =
-    walnutWave2CoreContractAddress ?? walnutContractAddress ?? walnutWave2bContractAddress;
-  const activeContractAddress =
-    mode === "advanced" ? walnutWave2bContractAddress : coreContractAddress;
-  const supportsWave2CoreFeatures = mode === "advanced" || Boolean(walnutWave2CoreContractAddress);
-  const supportsAdvancedFeatures = mode === "advanced";
-
-  const { encryptInputsAsync, isEncrypting } = useCofheEncrypt();
-  const { writeContractAsync, isPending: isWriting } = useCofheWriteContract();
-
-  const [status, setStatus] = useState("");
-  const [lastTxHash, setLastTxHash] = useState<`0x${string}` | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [lastTxHash, setLastTxHash] = useState<string | null>(null);
   const [healthFactorValue, setHealthFactorValue] = useState<bigint | undefined>(undefined);
-  const [healthFactorLoading, setHealthFactorLoading] = useState(false);
+  const [healthFactorDecrypting, setHealthFactorDecrypting] = useState(false);
   const [healthFactorError, setHealthFactorError] = useState<string | null>(null);
   const [aggregatedCollateralValue, setAggregatedCollateralValue] = useState<bigint | undefined>(undefined);
-  const [aggregatedCollateralLoading, setAggregatedCollateralLoading] = useState(false);
+  const [aggregatedCollateralDecrypting, setAggregatedCollateralDecrypting] = useState(false);
   const [aggregatedCollateralError, setAggregatedCollateralError] = useState<string | null>(null);
+  const [liquidationPollingActive, setLiquidationPollingActive] = useState(false);
+  const [liquidationPollingMessage, setLiquidationPollingMessage] = useState<string | null>(null);
+  const liquidationPollingRef = useRef<{
+    attempts: number;
+    timer?: number;
+    toastId?: string;
+  }>({ attempts: 0 });
+  const [creditTierPollingActive, setCreditTierPollingActive] = useState(false);
+  const creditTierPollingRef = useRef<{
+    toastId?: string;
+  }>({});
+
+  const [linkedWallets, setLinkedWallets] = useState<Address[]>([]);
+  const [linkedWalletCount, setLinkedWalletCount] = useState(0);
+  const [linkedWalletsLoading, setLinkedWalletsLoading] = useState(false);
+
+  const isWalletReady = Boolean(account.isConnected && account.address);
+  const isConnectionTransient = account.status === "reconnecting" || (account.isConnected && !account.address);
+  const isOnTargetChain = account.chainId === walnutChainId;
+  const canUseContract = Boolean(walnutContractAddress && walnutV1Abi && publicClient);
+  const canRead = Boolean(isWalletReady && isOnTargetChain && canUseContract && permit.hasPermit);
+  const canWrite = Boolean(isWalletReady && isOnTargetChain && canUseContract);
+
+  const { switchChainAsync } = useSwitchChain();
+
+  const collateral = useCofheReadContractAndDecrypt({
+    address: walnutContractAddress,
+    abi: walnutV1Abi,
+    functionName: "getEncryptedCollateral",
+    args: [account.address ?? "0x0000000000000000000000000000000000000000"],
+    requiresPermit: true,
+  }, {
+    readQueryOptions: { enabled: canRead && Boolean(account.address) },
+  }) as CofheDecryptResult<bigint>;
+
+  const debt = useCofheReadContractAndDecrypt({
+    address: walnutContractAddress,
+    abi: walnutV1Abi,
+    functionName: "getEncryptedDebt",
+    args: [account.address ?? "0x0000000000000000000000000000000000000000"],
+    requiresPermit: true,
+  }, {
+    readQueryOptions: { enabled: canRead && Boolean(account.address) },
+  }) as CofheDecryptResult<bigint>;
+
+  const totalPoolCollateral = useCofheReadContractAndDecrypt({
+    address: walnutContractAddress,
+    abi: walnutV1Abi,
+    functionName: "getEncryptedTotalPoolCollateral",
+    args: [],
+    requiresPermit: true,
+  }, {
+    readQueryOptions: { enabled: canRead },
+  }) as CofheDecryptResult<bigint>;
+
+  const totalPoolDebt = useCofheReadContractAndDecrypt({
+    address: walnutContractAddress,
+    abi: walnutV1Abi,
+    functionName: "getEncryptedTotalPoolDebt",
+    args: [],
+    requiresPermit: true,
+  }, {
+    readQueryOptions: { enabled: canRead },
+  }) as CofheDecryptResult<bigint>;
+
+  const { data: liquidatableData, refetch: refreshLiquidatable } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutV1Abi,
+    functionName: "liquidatable",
+    args: [account.address ?? "0x0000000000000000000000000000000000000000"],
+    query: { enabled: Boolean(account.address) && isOnTargetChain },
+  });
+
+  const liquidatable = Boolean(liquidatableData);
+
+  const { creditTier, creditTierLoading, refreshCreditTier } = useCreditTier(account.address);
+  const { tierLTV, tierLTVLoading } = useTierLTV(creditTier);
+
+  const collateralDecrypting = collateral.decrypted.isFetching || collateral.decrypted.isLoading;
+  const debtDecrypting = debt.decrypted.isFetching || debt.decrypted.isLoading;
+  const totalPoolCollateralDecrypting =
+    totalPoolCollateral.decrypted.isFetching || totalPoolCollateral.decrypted.isLoading;
+  const totalPoolDebtDecrypting =
+    totalPoolDebt.decrypted.isFetching || totalPoolDebt.decrypted.isLoading;
+
+  const hasDecryptPending = collateralDecrypting || debtDecrypting;
+  
+  // Only show decrypt error if we have permit and should be able to decrypt
+  // Ignore errors when user hasn't deposited yet (zero values are expected)
+  const hasDecryptError = Boolean(
+    canRead && 
+    !hasDecryptPending && 
+    (collateral.decrypted.error || debt.decrypted.error) &&
+    // Don't show error if it's just a "no data" scenario
+    collateral.decrypted.error?.message !== "No ciphertext found" &&
+    debt.decrypted.error?.message !== "No ciphertext found"
+  );
+
+  const decryptForView = useCallback(
+    async (ctHash: bigint | string, accountAddress: Address) => {
+      if (!cofheClient) return undefined;
+
+      const builder = cofheClient
+        .decryptForView(ctHash, FheTypes.Uint128)
+        .setChainId(walnutChainId)
+        .setAccount(accountAddress);
+
+      const withPermitBuilder = permit.permitHash
+        ? builder.withPermit(permit.permitHash)
+        : builder.withPermit();
+
+      const decrypted = await withPermitBuilder.execute();
+      return typeof decrypted === "bigint" ? decrypted : undefined;
+    },
+    [cofheClient, permit.permitHash]
+  );
 
   useEffect(() => {
-    setHealthFactorValue(undefined);
-    setHealthFactorError(null);
-    setAggregatedCollateralValue(undefined);
-    setAggregatedCollateralError(null);
-  }, [address, activeContractAddress]);
+    let active = true;
 
-  const canUseContract = Boolean(activeContractAddress);
-  const isWalletReady = Boolean(isConnected && address);
-  const isConnectionTransient =
-    accountStatus === "connecting" ||
-    accountStatus === "reconnecting" ||
-    (isConnected && (address === undefined || chainId === undefined));
-  const isOnTargetChain = chainId === walnutChainId;
-  const canRead = Boolean(isWalletReady && canUseContract && isOnTargetChain && !isConnectionTransient);
-
-  const collateral = useCofheReadContractAndDecrypt<
-    typeof walnutWave2Abi,
-    "getEncryptedCollateral",
-    FheTypes.Uint128
-  >(
-    {
-      address: activeContractAddress,
-      abi: walnutWave2Abi,
-      functionName: "getEncryptedCollateral",
-      args: address ? [address] : undefined,
-      requiresPermit: true,
-    },
-    {
-      readQueryOptions: {
-        enabled: canRead,
-        refetchInterval: READ_REFETCH_INTERVAL_MS,
-        retry: shouldRetryRead,
-      },
-      decryptingQueryOptions: {
-        enabled: canRead && permit.hasPermit,
-      },
-    }
-  );
-
-  const debt = useCofheReadContractAndDecrypt<
-    typeof walnutWave2Abi,
-    "getEncryptedDebt",
-    FheTypes.Uint128
-  >(
-    {
-      address: activeContractAddress,
-      abi: walnutWave2Abi,
-      functionName: "getEncryptedDebt",
-      args: address ? [address] : undefined,
-      requiresPermit: true,
-    },
-    {
-      readQueryOptions: {
-        enabled: canRead,
-        refetchInterval: READ_REFETCH_INTERVAL_MS,
-        retry: shouldRetryRead,
-      },
-      decryptingQueryOptions: {
-        enabled: canRead && permit.hasPermit,
-      },
-    }
-  );
-
-  const {
-    data: linkedWalletsData,
-    isLoading: linkedWalletsLoading,
-    refetch: refetchLinkedWallets,
-  } = useReadContract({
-    address: activeContractAddress,
-    abi: walnutWave2Abi,
-    functionName: "getLinkedWallets",
-    args: address ? [address] : undefined,
-    query: {
-      enabled: canRead && supportsAdvancedFeatures,
-      refetchInterval: READ_REFETCH_INTERVAL_MS,
-      retry: shouldRetryRead,
-    },
-  });
-
-  const {
-    data: linkedWalletCountData,
-    isLoading: linkedWalletCountLoading,
-    refetch: refetchLinkedWalletCount,
-  } = useReadContract({
-    address: activeContractAddress,
-    abi: walnutWave2Abi,
-    functionName: "getLinkedWalletCount",
-    args: address ? [address] : undefined,
-    query: {
-      enabled: canRead && supportsAdvancedFeatures,
-      refetchInterval: READ_REFETCH_INTERVAL_MS,
-      retry: shouldRetryRead,
-    },
-  });
-
-  const {
-    data: liquidatable,
-    isLoading: liquidatableLoading,
-    refetch: refetchLiquidatable,
-  } = useReadContract({
-    address: activeContractAddress,
-    abi: walnutWave2Abi,
-    functionName: "liquidatable",
-    args: address ? [address] : undefined,
-    query: {
-      enabled: canRead && supportsWave2CoreFeatures,
-      refetchInterval: READ_REFETCH_INTERVAL_MS,
-      retry: shouldRetryRead,
-    },
-  });
-
-  const missingPermit = !permit.hasPermit || !permit.isPermitValid;
-  const decryptBlocked =
-    collateral.disabledDueToMissingPermit || debt.disabledDueToMissingPermit || missingPermit;
-
-  const cofhejs = useMemo(
-    () => ({
-      unseal: async (
-        ctHash: bigint,
-        utype: FheTypes,
-        permitIssuer: Address,
-        permitHash: string
-      ) => {
-        return await cofheClient
-          .decryptForView(ctHash, utype)
-          .setChainId(walnutChainId)
-          .setAccount(permitIssuer)
-          .withPermit(permitHash)
-          .execute();
-      },
-    }),
-    [cofheClient]
-  );
-
-  const decodeHandleCtHash = useCallback(
-    (receipt: TransactionReceipt, eventName: HandleEventName) => {
-      for (const log of receipt.logs) {
-        if (
-          activeContractAddress &&
-          log.address.toLowerCase() !== activeContractAddress.toLowerCase()
-        ) {
-          continue;
+    async function refreshLinkedWallets() {
+      if (!canUseContract || !account.address) {
+        if (active) {
+          setLinkedWallets([]);
+          setLinkedWalletCount(0);
         }
-
-        try {
-          const decoded = decodeEventLog({
-            abi: walnutWave2Abi,
-            data: log.data,
-            topics: log.topics,
-            strict: false,
-          });
-
-          if (decoded.eventName !== eventName) continue;
-
-          const args = decoded.args as { ctHash?: bigint | string | number };
-          const handle = args.ctHash;
-
-          if (typeof handle === "bigint") return handle;
-          if (typeof handle === "string") return BigInt(handle);
-          if (typeof handle === "number") return BigInt(handle);
-        } catch {
-          // Ignore non-matching logs.
-        }
+        return;
       }
 
-      return undefined;
-    },
-    [activeContractAddress]
-  );
+      setLinkedWalletsLoading(true);
 
-  const collateralCtHash = extractCtHash(collateral.encrypted.data);
-  const debtCtHash = extractCtHash(debt.encrypted.data);
-  const collateralHasCiphertext = Boolean(collateralCtHash && collateralCtHash > 0n);
-  const debtHasCiphertext = Boolean(debtCtHash && debtCtHash > 0n);
-  const collateralDecrypting = Boolean(collateralHasCiphertext && collateral.decrypted.isFetching);
-  const debtDecrypting = Boolean(debtHasCiphertext && debt.decrypted.isFetching);
-  const aggregatedCollateralDecrypting = aggregatedCollateralLoading;
+      try {
+        const [count, wallets] = await Promise.all([
+          publicClient?.readContract({
+            address: walnutContractAddress,
+            abi: walnutV1Abi,
+            functionName: "getLinkedWalletCount",
+            args: [account.address],
+          }),
+          publicClient?.readContract({
+            address: walnutContractAddress,
+            abi: walnutV1Abi,
+            functionName: "getLinkedWallets",
+            args: [account.address],
+          }),
+        ]);
 
-  const hasDecryptPending = Boolean(
-    canRead &&
-      permit.hasPermit &&
-      (collateralDecrypting || debtDecrypting || (supportsAdvancedFeatures && aggregatedCollateralDecrypting))
-  );
-  const hasDecryptError = Boolean(
-    (collateralHasCiphertext && collateral.decrypted.error) ||
-    (debtHasCiphertext && debt.decrypted.error) ||
-    Boolean(healthFactorError) ||
-    Boolean(aggregatedCollateralError)
-  );
-  const hasEncryptedReadError = Boolean(
-    collateral.encrypted.error ||
-      debt.encrypted.error
-  );
-  const contractReachable = Boolean(canRead && !hasEncryptedReadError);
+        if (!active) return;
 
-  const healthFactorDecrypting = healthFactorLoading;
-
-  const healthFactorStatus: "safe" | "at-risk" | "liquidatable" | "unknown" = (() => {
-    const decryptedValue = healthFactorValue;
-    if (decryptedValue === undefined) return "unknown";
-    if (decryptedValue >= HEALTH_FACTOR_SAFE_THRESHOLD) return "safe";
-    if (decryptedValue >= HEALTH_FACTOR_AT_RISK_THRESHOLD) return "at-risk";
-    return "liquidatable";
-  })();
-
-  const ensureRightChain = useCallback(async () => {
-    if (chainId === walnutChainId) return;
-    await switchChainAsync({ chainId: walnutChainId });
-  }, [chainId, switchChainAsync]);
-
-  const refreshBalances = useCallback(async (): Promise<BalanceSnapshot> => {
-    const [decryptedResults] = await Promise.all([
-      Promise.all([collateral.decrypted.refetch(), debt.decrypted.refetch()]),
-      Promise.all([collateral.encrypted.refetch(), debt.encrypted.refetch()]),
-    ]);
-
-    const [collateralDecryptedResult, debtDecryptedResult] = decryptedResults;
-
-    const refreshJobs: Array<Promise<unknown>> = [];
-
-    if (supportsWave2CoreFeatures) {
-      refreshJobs.push(refetchLiquidatable());
+        setLinkedWalletCount(Number(count ?? 0n));
+        setLinkedWallets(Array.isArray(wallets) ? (wallets as Address[]) : []);
+      } catch {
+        if (!active) return;
+        setLinkedWalletCount(0);
+        setLinkedWallets([]);
+      } finally {
+        if (active) setLinkedWalletsLoading(false);
+      }
     }
 
-    if (supportsAdvancedFeatures) {
-      refreshJobs.push(
-        refetchLinkedWallets(),
-        refetchLinkedWalletCount()
-      );
-    }
+    void refreshLinkedWallets();
 
-    if (refreshJobs.length > 0) {
-      await Promise.all(refreshJobs);
-    }
-
-    return {
-      collateral: asBigInt(collateralDecryptedResult.data),
-      debt: asBigInt(debtDecryptedResult.data),
+    return () => {
+      active = false;
     };
-  }, [
-    collateral.decrypted,
-    collateral.encrypted,
-    debt.decrypted,
-    debt.encrypted,
-    refetchLinkedWalletCount,
-    refetchLinkedWallets,
-    refetchLiquidatable,
-    supportsAdvancedFeatures,
-    supportsWave2CoreFeatures,
-  ]);
+  }, [account.address, canUseContract, publicClient]);
+
+  const refreshBalances = useCallback(async () => {
+    if (!canRead) return;
+    try {
+      await Promise.all([
+        collateral.decrypted.refetch(),
+        debt.decrypted.refetch(),
+        totalPoolCollateral.decrypted.refetch(),
+        totalPoolDebt.decrypted.refetch(),
+      ]);
+    } catch (error) {
+      console.error("Failed to refresh balances:", error);
+      // Silently fail - balances will retry on next interval
+    }
+  }, [canRead, collateral.decrypted, debt.decrypted, totalPoolCollateral.decrypted, totalPoolDebt.decrypted]);
+
+  useEffect(() => {
+    if (!canRead) return;
+
+    const id = window.setInterval(() => {
+      void refreshBalances();
+    }, BALANCE_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(id);
+  }, [canRead, refreshBalances]);
 
   const fetchHealthFactor = useCallback(
-    async (userAddress?: Address): Promise<bigint | undefined> => {
+    async (borrower?: Address) => {
+      if (!canUseContract || !publicClient || !permit.hasPermit) return undefined;
+
+      const target = borrower ?? account.address;
+      if (!target) return undefined;
+
+      setHealthFactorDecrypting(true);
+      setHealthFactorError(null);
+
       try {
-        setHealthFactorError(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return undefined;
-        }
-
-        if (!activeContractAddress || !supportsWave2CoreFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return undefined;
-        }
-
-        if (!permit.permitHash || !permit.permitIssuer) {
-          setStatus("Enable private access before fetching health factor.");
-          return undefined;
-        }
-
-        const targetUser = userAddress ?? address;
-        if (!isAddress(targetUser)) {
-          setStatus("Target user address is invalid.");
-          return undefined;
-        }
-
-        setHealthFactorLoading(true);
-        await ensureRightChain();
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
+        const handle = (await publicClient.readContract({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
           functionName: "getHealthFactor",
-          args: [targetUser as Address],
-        });
+          args: [target],
+        })) as bigint;
 
-        setLastTxHash(hash);
-        setStatus("Fetching health factor...");
+        const value = await decryptForView(handle, target);
 
-        const receipt = publicClient
-          ? await publicClient.waitForTransactionReceipt({ hash })
-          : undefined;
-
-        if (!receipt) {
-          setStatus("Health factor request submitted.");
-          return undefined;
+        if (!borrower) {
+          setHealthFactorValue(value);
         }
 
-        const ctHash = decodeHandleCtHash(receipt, "HealthFactorHandle");
-        if (ctHash === undefined) {
-          setHealthFactorError("HealthFactorHandle event not found in receipt logs.");
-          setStatus("Could not decode health factor handle.");
-          return undefined;
-        }
-
-        const result = await cofhejs.unseal(
-          ctHash,
-          FheTypes.Uint128,
-          permit.permitIssuer,
-          permit.permitHash
-        );
-
-        const plaintext = typeof result === "bigint" ? result : BigInt(result as string | number);
-        setHealthFactorValue(plaintext);
-        setStatus("Health factor updated.");
-        return plaintext;
-      } catch {
-        setHealthFactorError("Failed to fetch health factor.");
-        setStatus("Something went wrong. Please try again.");
+        return value;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to decrypt health factor.";
+        setHealthFactorError(message);
         return undefined;
       } finally {
-        setHealthFactorLoading(false);
+        setHealthFactorDecrypting(false);
       }
     },
-    [
-      activeContractAddress,
-      address,
-      cofhejs,
-      decodeHandleCtHash,
-      ensureRightChain,
-      isConnected,
-      permit.permitHash,
-      permit.permitIssuer,
-      publicClient,
-      supportsWave2CoreFeatures,
-      writeContractAsync,
-    ]
+    [account.address, canUseContract, decryptForView, permit.hasPermit, publicClient]
   );
 
   const fetchAggregatedCollateral = useCallback(
-    async (primaryWallet?: Address): Promise<bigint | undefined> => {
+    async (owner?: Address) => {
+      if (!canUseContract || !publicClient || !permit.hasPermit) return undefined;
+
+      const target = owner ?? account.address;
+      if (!target) return undefined;
+
+      setAggregatedCollateralDecrypting(true);
+      setAggregatedCollateralError(null);
+
       try {
-        setAggregatedCollateralError(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return undefined;
-        }
-
-        if (!activeContractAddress || !supportsAdvancedFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return undefined;
-        }
-
-        if (!permit.permitHash || !permit.permitIssuer) {
-          setStatus("Enable private access before fetching aggregated collateral.");
-          return undefined;
-        }
-
-        const targetWallet = primaryWallet ?? address;
-        if (!isAddress(targetWallet)) {
-          setStatus("Primary wallet address is invalid.");
-          return undefined;
-        }
-
-        setAggregatedCollateralLoading(true);
-        await ensureRightChain();
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
+        const handle = (await publicClient.readContract({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
           functionName: "getAggregatedCollateral",
-          args: [targetWallet as Address],
-        });
+          args: [target],
+        })) as bigint;
 
-        setLastTxHash(hash);
-        setStatus("Fetching aggregated collateral...");
-
-        const receipt = publicClient
-          ? await publicClient.waitForTransactionReceipt({ hash })
-          : undefined;
-
-        if (!receipt) {
-          setStatus("Aggregated collateral request submitted.");
-          return undefined;
-        }
-
-        const ctHash = decodeHandleCtHash(receipt, "AggregatedCollateralHandle");
-        if (ctHash === undefined) {
-          setAggregatedCollateralError("AggregatedCollateralHandle event not found in receipt logs.");
-          setStatus("Could not decode aggregated collateral handle.");
-          return undefined;
-        }
-
-        const result = await cofhejs.unseal(
-          ctHash,
-          FheTypes.Uint128,
-          permit.permitIssuer,
-          permit.permitHash
-        );
-
-        const plaintext = typeof result === "bigint" ? result : BigInt(result as string | number);
-        setAggregatedCollateralValue(plaintext);
-        setStatus("Aggregated collateral updated.");
-        return plaintext;
-      } catch {
-        setAggregatedCollateralError("Failed to fetch aggregated collateral.");
-        setStatus("Something went wrong. Please try again.");
+        const value = await decryptForView(handle, target);
+        setAggregatedCollateralValue(value);
+        return value;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to decrypt aggregated collateral.";
+        setAggregatedCollateralError(message);
         return undefined;
       } finally {
-        setAggregatedCollateralLoading(false);
+        setAggregatedCollateralDecrypting(false);
       }
     },
-    [
-      activeContractAddress,
-      address,
-      cofhejs,
-      decodeHandleCtHash,
-      ensureRightChain,
-      isConnected,
-      permit.permitHash,
-      permit.permitIssuer,
-      publicClient,
-      supportsAdvancedFeatures,
-      writeContractAsync,
-    ]
+    [account.address, canUseContract, decryptForView, permit.hasPermit, publicClient]
   );
 
   const submitEncryptedAmount = useCallback(
-    async (action: WalnutAction, rawAmount: string) => {
-      try {
-        setStatus("");
-        setLastTxHash(null);
+    async (action: WalnutAction, amount: string) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
 
-        const actionLabel = action === "deposit" ? "Deposit" : "Borrow";
-        const preTxSnapshot: BalanceSnapshot | undefined =
-          action === "borrow"
-            ? {
-                collateral: asBigInt(collateral.decrypted.data),
-                debt: asBigInt(debt.decrypted.data),
+      const value = parsePositiveBigint(amount);
+      if (!value) {
+        addToast({ variant: "error", message: "Amount must be a positive integer." });
+        return false;
+      }
+
+      try {
+        setStatus("Encrypting amount...");
+        const [encrypted] = await encryptor.encryptInputsAsync([Encryptable.uint128(value)]);
+        const functionName: "deposit" | "borrow" | "repay" | "withdraw" =
+          action === "deposit"
+            ? "deposit"
+            : action === "borrow"
+            ? "borrow"
+            : action === "repay"
+            ? "repay"
+            : "withdraw";
+
+        setStatus("Submitting transaction...");
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName,
+          args: [encrypted],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 5_000_000n, // High gas limit for FHE operations
+        });
+
+        setLastTxHash(hash);
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+
+        addToast({ variant: "success", message: "Transaction confirmed." });
+        setStatus(null);
+        await refreshBalances();
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Transaction failed.";
+        addToast({ variant: "error", message });
+        setStatus(null);
+        return false;
+      }
+    },
+    [addToast, canWrite, encryptor, publicClient, refreshBalances, writer]
+  );
+
+  const requestLiquidationCheck = useCallback(
+    async (borrowerAddress: Address, options?: { intervalMs?: number; maxAttempts?: number }) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
+
+      const intervalMs = options?.intervalMs ?? DEFAULT_LIQUIDATION_POLL_INTERVAL_MS;
+      const maxAttempts = options?.maxAttempts ?? DEFAULT_LIQUIDATION_POLL_MAX;
+
+      try {
+        setStatus("Requesting liquidation check...");
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "requestLiquidationCheck",
+          args: [borrowerAddress],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 5_000_000n, // High gas limit for FHE operations
+        });
+
+        setLastTxHash(hash);
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+
+        setStatus(null);
+        const toastId = addToast({ variant: "pending", message: "Waiting for CoFHE result..." });
+        liquidationPollingRef.current.toastId = toastId;
+        setLiquidationPollingActive(true);
+        setLiquidationPollingMessage("Waiting for CoFHE result...");
+
+        let attempts = 0;
+        liquidationPollingRef.current.attempts = 0;
+
+        return await new Promise<boolean>((resolve) => {
+          const poll = async () => {
+            attempts += 1;
+            liquidationPollingRef.current.attempts = attempts;
+
+            const next = await refreshLiquidatable();
+            const isLiquidatable = Boolean(next.data);
+
+            if (isLiquidatable) {
+              if (liquidationPollingRef.current.toastId) {
+                removeToast(liquidationPollingRef.current.toastId);
               }
-            : undefined;
+              addToast({ variant: "success", message: "Borrower is liquidatable." });
+              setLiquidationPollingActive(false);
+              setLiquidationPollingMessage(null);
+              resolve(true);
+              return;
+            }
 
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
+            if (attempts >= maxAttempts) {
+              if (liquidationPollingRef.current.toastId) {
+                removeToast(liquidationPollingRef.current.toastId);
+              }
+              addToast({
+                variant: "error",
+                message: "Timed out waiting for liquidation result. Try again.",
+              });
+              setLiquidationPollingActive(false);
+              setLiquidationPollingMessage("Timed out waiting for liquidation result.");
+              resolve(false);
+              return;
+            }
 
-        if (!canUseContract || !activeContractAddress) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
+            liquidationPollingRef.current.timer = window.setTimeout(poll, intervalMs);
+          };
 
-        if (!rawAmount || !/^\d+$/.test(rawAmount)) {
-          setStatus("Amount must be a positive whole number.");
-          return false;
-        }
-
-        if (BigInt(rawAmount) <= 0n) {
-          setStatus("Amount must be greater than zero.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const encrypted = await encryptInputsAsync([
-          Encryptable.uint128(BigInt(rawAmount)),
-        ]);
-
-        const encryptedAmount = encrypted[0];
-        const encodedForContract = {
-          ctHash: encryptedAmount.ctHash,
-          securityZone: encryptedAmount.securityZone,
-          utype: encryptedAmount.utype,
-          signature: encryptedAmount.signature as `0x${string}`,
-        };
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: action,
-          args: [encodedForContract],
+          poll();
         });
-
-        setLastTxHash(hash);
-        setStatus(`${actionLabel} is being processed...`);
-
-        if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash });
-        }
-
-        let postTxSnapshot: BalanceSnapshot | undefined;
-        try {
-          postTxSnapshot = await refreshBalances();
-        } catch (error) {
-          console.error(`Failed to refresh balances after ${action} confirmation`, error);
-          setStatus(`${actionLabel} confirmed, but balances may be stale. Please refresh.`);
-          return true;
-        }
-
-        if (
-          action === "borrow" &&
-          hasCompleteBalanceSnapshot(preTxSnapshot) &&
-          hasCompleteBalanceSnapshot(postTxSnapshot) &&
-          snapshotsEqual(preTxSnapshot, postTxSnapshot)
-        ) {
-          setStatus(
-            "Borrow transaction confirmed, but your position did not change. This usually means the request exceeded protocol limits (for example the LTV cap)."
-          );
-          return false;
-        }
-
-        setStatus(`${actionLabel} confirmed.`);
-        return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Liquidation request failed.";
+        addToast({ variant: "error", message });
+        setStatus(null);
         return false;
       }
     },
-    [
-      address,
-      activeContractAddress,
-      canUseContract,
-      collateral.decrypted.data,
-      debt.decrypted.data,
-      encryptInputsAsync,
-      ensureRightChain,
-      isConnected,
-      publicClient,
-      refreshBalances,
-      writeContractAsync,
-    ]
+    [addToast, canWrite, publicClient, refreshLiquidatable, removeToast, writer]
   );
 
-  const submitRepay = useCallback(
-    async (rawAmount: string) => {
+  useEffect(() => {
+    return () => {
+      if (liquidationPollingRef.current.timer) {
+        window.clearTimeout(liquidationPollingRef.current.timer);
+      }
+    };
+  }, []);
+
+  const openAuction = useCallback(
+    async (borrowerAddress: Address) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
+
       try {
-        setStatus("");
-        setLastTxHash(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
-
-        if (!activeContractAddress || !supportsWave2CoreFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
-
-        if (!rawAmount || !/^\d+$/.test(rawAmount)) {
-          setStatus("Amount must be a positive whole number.");
-          return false;
-        }
-
-        if (BigInt(rawAmount) <= 0n) {
-          setStatus("Amount must be greater than zero.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const encrypted = await encryptInputsAsync([
-          Encryptable.uint128(BigInt(rawAmount)),
-        ]);
-
-        const encryptedAmount = encrypted[0];
-        const encodedForContract = {
-          ctHash: encryptedAmount.ctHash,
-          securityZone: encryptedAmount.securityZone,
-          utype: encryptedAmount.utype,
-          signature: encryptedAmount.signature as `0x${string}`,
-        };
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: "repay",
-          args: [encodedForContract],
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "openAuction",
+          args: [borrowerAddress],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 3_000_000n, // Gas limit for auction operations
         });
-
         setLastTxHash(hash);
-        setStatus("Repayment is being processed...");
-
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
         }
-
-        try {
-          await refreshBalances();
-        } catch (error) {
-          console.error("Failed to refresh balances after repay confirmation", error);
-          setStatus("Repayment confirmed, but balances may be stale. Please refresh.");
-          return true;
-        }
-
-        setStatus("Repayment confirmed.");
+        addToast({ variant: "success", message: "Auction opened." });
         return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to open auction.";
+        addToast({ variant: "error", message });
         return false;
       }
     },
-    [
-      address,
-      activeContractAddress,
-      encryptInputsAsync,
-      ensureRightChain,
-      isConnected,
-      publicClient,
-      refreshBalances,
-      supportsWave2CoreFeatures,
-      writeContractAsync,
-    ]
+    [addToast, canWrite, publicClient, writer]
   );
 
-  const submitWithdraw = useCallback(
-    async (rawAmount: string) => {
+  const submitLiquidationBid = useCallback(
+    async (borrowerAddress: Address, bidAmount: string) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
+
+      const bidValue = parsePositiveBigint(bidAmount);
+      if (!bidValue) {
+        addToast({ variant: "error", message: "Bid must be a positive integer." });
+        return false;
+      }
+
       try {
-        setStatus("");
-        setLastTxHash(null);
-
-        const preTxSnapshot: BalanceSnapshot = {
-          collateral: asBigInt(collateral.decrypted.data),
-          debt: asBigInt(debt.decrypted.data),
-        };
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
-
-        if (!activeContractAddress || !supportsWave2CoreFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
-
-        if (!rawAmount || !/^\d+$/.test(rawAmount)) {
-          setStatus("Amount must be a positive whole number.");
-          return false;
-        }
-
-        if (BigInt(rawAmount) <= 0n) {
-          setStatus("Amount must be greater than zero.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const encrypted = await encryptInputsAsync([
-          Encryptable.uint128(BigInt(rawAmount)),
-        ]);
-
-        const encryptedAmount = encrypted[0];
-        const encodedForContract = {
-          ctHash: encryptedAmount.ctHash,
-          securityZone: encryptedAmount.securityZone,
-          utype: encryptedAmount.utype,
-          signature: encryptedAmount.signature as `0x${string}`,
-        };
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: "withdraw",
-          args: [encodedForContract],
+        const [encryptedBid] = await encryptor.encryptInputsAsync([Encryptable.uint128(bidValue)]);
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "submitBid",
+          args: [borrowerAddress, encryptedBid],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 5_000_000n, // High gas limit for FHE bid submission
         });
-
         setLastTxHash(hash);
-        setStatus("Withdrawal is being processed...");
-
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
         }
-
-        let postTxSnapshot: BalanceSnapshot | undefined;
-        try {
-          postTxSnapshot = await refreshBalances();
-        } catch (error) {
-          console.error("Failed to refresh balances after withdraw confirmation", error);
-          setStatus("Withdrawal confirmed, but balances may be stale. Please refresh.");
-          return true;
-        }
-
-        if (
-          hasCompleteBalanceSnapshot(preTxSnapshot) &&
-          hasCompleteBalanceSnapshot(postTxSnapshot) &&
-          snapshotsEqual(preTxSnapshot, postTxSnapshot)
-        ) {
-          setStatus(
-            "Withdrawal transaction confirmed, but your position did not change. This usually means the requested amount exceeded available collateral."
-          );
-          return false;
-        }
-
-        setStatus("Withdrawal confirmed.");
+        addToast({ variant: "success", message: "Bid submitted." });
         return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Bid failed.";
+        addToast({ variant: "error", message });
         return false;
       }
     },
-    [
-      address,
-      activeContractAddress,
-      collateral.decrypted.data,
-      debt.decrypted.data,
-      encryptInputsAsync,
-      ensureRightChain,
-      isConnected,
-      publicClient,
-      refreshBalances,
-      supportsWave2CoreFeatures,
-      writeContractAsync,
-    ]
+    [addToast, canWrite, encryptor, publicClient, writer]
   );
 
-  const requestLiquidationCheck = useCallback(async () => {
+  const selectWinningBid = useCallback(
+    async (borrowerAddress: Address) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
+
+      try {
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "selectWinningBid",
+          args: [borrowerAddress],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 5_000_000n, // High gas limit for FHE winner selection
+        });
+        setLastTxHash(hash);
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+        addToast({ variant: "success", message: "Winner selection requested." });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Selection failed.";
+        addToast({ variant: "error", message });
+        return false;
+      }
+    },
+    [addToast, canWrite, publicClient, writer]
+  );
+
+  const registerENSWallet = useCallback(
+    async (ensName: string, walletAddress: Address) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
+
+      try {
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "registerENSWallet",
+          args: [ensName, walletAddress],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 2_000_000n, // Gas limit for ENS registration
+        });
+        setLastTxHash(hash);
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+        addToast({ variant: "success", message: "Wallet linked." });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to link wallet.";
+        addToast({ variant: "error", message });
+        return false;
+      }
+    },
+    [addToast, canWrite, publicClient, writer]
+  );
+
+  const requestCreditTierUpdate = useCallback(async () => {
+    if (!canWrite) {
+      addToast({ variant: "error", message: "Connect your wallet to continue." });
+      return false;
+    }
+
+    if (!account.address) {
+      addToast({ variant: "error", message: "Wallet address is unavailable." });
+      return false;
+    }
+
     try {
-      if (!isConnected || !address) {
-        setStatus("Please connect your wallet.");
-        return;
-      }
-
-      if (!activeContractAddress || !supportsWave2CoreFeatures) {
-        setStatus("Walnut is not available right now. Please try again later.");
-        return;
-      }
-
-      await ensureRightChain();
-
-      setStatus("Checking your position risk...");
-
-      const hash = await writeContractAsync({
-        chain: undefined,
-        account: address,
-        address: activeContractAddress,
-        abi: walnutWave2Abi,
-        functionName: "requestLiquidationCheck",
-        args: [address],
+      const hash = await writer.writeContractAsync({
+        address: walnutContractAddress,
+        abi: walnutV1Abi,
+        functionName: "requestCreditTierUpdate",
+        args: [account.address],
+        chain: arbitrumSepolia,
+        account: account.address!,
+        gas: 5_000_000n, // High gas limit for FHE credit tier update
       });
-
       setLastTxHash(hash);
-
       if (publicClient) {
         await publicClient.waitForTransactionReceipt({ hash });
       }
 
-      setStatus("Risk check requested. Please refresh in a moment.");
-    } catch {
-      setStatus("Something went wrong. Please try again.");
+      const toastId = addToast({ variant: "pending", message: "Waiting for CoFHE result..." });
+      creditTierPollingRef.current.toastId = toastId;
+      setCreditTierPollingActive(true);
+
+      const previousTier = creditTier;
+      let attempt = 0;
+
+      while (attempt < DEFAULT_LIQUIDATION_POLL_MAX) {
+        attempt += 1;
+        const result = await refreshCreditTier();
+        if (typeof result.data === "bigint" && result.data !== previousTier) {
+          if (creditTierPollingRef.current.toastId) {
+            removeToast(creditTierPollingRef.current.toastId);
+          }
+          addToast({ variant: "success", message: "Credit tier updated." });
+          setCreditTierPollingActive(false);
+          return true;
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, DEFAULT_LIQUIDATION_POLL_INTERVAL_MS));
+      }
+
+      if (creditTierPollingRef.current.toastId) {
+        removeToast(creditTierPollingRef.current.toastId);
+      }
+      addToast({ variant: "error", message: "Timed out waiting for credit tier update." });
+      setCreditTierPollingActive(false);
+      return false;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Credit tier request failed.";
+      addToast({ variant: "error", message });
+      setCreditTierPollingActive(false);
+      return false;
     }
-  }, [address, ensureRightChain, isConnected, publicClient, writeContractAsync]);
+  }, [addToast, canWrite, creditTier, publicClient, refreshCreditTier, removeToast, writer]);
 
-  const openAuction = useCallback(
-    async (borrower: string) => {
-      try {
-        setStatus("");
-        setLastTxHash(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
-
-        if (!activeContractAddress || !supportsAdvancedFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
-
-        if (!isAddress(borrower)) {
-          setStatus("Borrower address is invalid.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: "openAuction",
-          args: [borrower as Address],
-        });
-
-        setLastTxHash(hash);
-        setStatus("Opening auction...");
-
-        if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash });
-        }
-
-        setStatus("Auction opened.");
-        return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
-        return false;
-      }
-    },
-    [address, ensureRightChain, isConnected, publicClient, writeContractAsync]
-  );
-
-  const submitLiquidationBid = useCallback(
-    async (borrower: string, rawAmount: string) => {
-      try {
-        setStatus("");
-        setLastTxHash(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
-
-        if (!activeContractAddress || !supportsAdvancedFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
-
-        if (!isAddress(borrower)) {
-          setStatus("Borrower address is invalid.");
-          return false;
-        }
-
-        if (!rawAmount || !/^\d+$/.test(rawAmount)) {
-          setStatus("Bid must be a positive whole number.");
-          return false;
-        }
-
-        if (BigInt(rawAmount) <= 0n) {
-          setStatus("Bid must be greater than zero.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const encrypted = await encryptInputsAsync([Encryptable.uint128(BigInt(rawAmount))]);
-        const encryptedAmount = encrypted[0];
-        const encodedForContract = {
-          ctHash: encryptedAmount.ctHash,
-          securityZone: encryptedAmount.securityZone,
-          utype: encryptedAmount.utype,
-          signature: encryptedAmount.signature as `0x${string}`,
-        };
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: "submitBid",
-          args: [borrower as Address, encodedForContract],
-        });
-
-        setLastTxHash(hash);
-        setStatus("Submitting encrypted bid...");
-
-        if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash });
-        }
-
-        setStatus("Bid submitted.");
-        return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
-        return false;
-      }
-    },
-    [address, encryptInputsAsync, ensureRightChain, isConnected, publicClient, writeContractAsync]
-  );
-
-  const selectWinningBid = useCallback(
-    async (borrower: string) => {
-      try {
-        setStatus("");
-        setLastTxHash(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
-
-        if (!activeContractAddress || !supportsAdvancedFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
-
-        if (!isAddress(borrower)) {
-          setStatus("Borrower address is invalid.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: "selectWinningBid",
-          args: [borrower as Address],
-        });
-
-        setLastTxHash(hash);
-        setStatus("Selecting winning bid...");
-
-        if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash });
-        }
-
-        setStatus("Winner selection requested.");
-        return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
-        return false;
-      }
-    },
-    [address, ensureRightChain, isConnected, publicClient, writeContractAsync]
-  );
-
-  const finalizeWinnerSelection = useCallback(
-    async (reqIdInput: bigint | number | string) => {
-      try {
-        setStatus("");
-        setLastTxHash(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
-
-        if (!activeContractAddress || !supportsAdvancedFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
-
-        let reqId: bigint;
-        if (typeof reqIdInput === "bigint") {
-          reqId = reqIdInput;
-        } else if (typeof reqIdInput === "number" && Number.isInteger(reqIdInput) && reqIdInput >= 0) {
-          reqId = BigInt(reqIdInput);
-        } else if (typeof reqIdInput === "string" && /^\d+$/.test(reqIdInput)) {
-          reqId = BigInt(reqIdInput);
-        } else {
-          setStatus("Request id is invalid.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: "finalizeWinnerSelection",
-          args: [reqId],
-        });
-
-        setLastTxHash(hash);
-        setStatus("Finalizing winner selection...");
-
-        if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash });
-        }
-
-        setStatus("Auction settled.");
-        return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
-        return false;
-      }
-    },
-    [address, ensureRightChain, isConnected, publicClient, writeContractAsync]
-  );
-
-  const registerENSWallet = useCallback(
-    async (ensName: string, additionalWallet: string) => {
-      try {
-        setStatus("");
-        setLastTxHash(null);
-
-        if (!isConnected || !address) {
-          setStatus("Please connect your wallet.");
-          return false;
-        }
-
-        if (!activeContractAddress || !supportsAdvancedFeatures) {
-          setStatus("Walnut is not available right now. Please try again later.");
-          return false;
-        }
-
-        if (!ensName.trim()) {
-          setStatus("ENS name is required.");
-          return false;
-        }
-
-        if (!isAddress(additionalWallet)) {
-          setStatus("Additional wallet address is invalid.");
-          return false;
-        }
-
-        await ensureRightChain();
-
-        const hash = await writeContractAsync({
-          chain: undefined,
-          account: address,
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
-          functionName: "registerENSWallet",
-          args: [ensName.trim(), additionalWallet as Address],
-        });
-
-        setLastTxHash(hash);
-        setStatus("Linking wallet...");
-
-        if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash });
-        }
-
-        setStatus("Wallet linked.");
-        return true;
-      } catch {
-        setStatus("Something went wrong. Please try again.");
-        return false;
-      }
-    },
-    [address, ensureRightChain, isConnected, publicClient, writeContractAsync]
-  );
+  const getAuctionBorrowers = useCallback(async () => {
+    if (!publicClient) return [] as Address[];
+    try {
+      const borrowers = await publicClient.readContract({
+        address: walnutContractAddress,
+        abi: walnutV1Abi,
+        functionName: "getAuctionBorrowers",
+        args: [],
+      });
+      return Array.isArray(borrowers) ? (borrowers as Address[]) : [];
+    } catch {
+      return [];
+    }
+  }, [publicClient]);
 
   const getAuctionSummary = useCallback(
-    async (borrower: string): Promise<AuctionSummary | null> => {
-      if (!publicClient || !activeContractAddress || !supportsAdvancedFeatures || !isAddress(borrower)) {
-        return null;
-      }
-
+    async (borrowerAddress: Address): Promise<AuctionSummary | null> => {
+      if (!publicClient) return null;
       try {
         const summary = await publicClient.readContract({
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
           functionName: "getAuctionSummary",
-          args: [borrower as Address],
+          args: [borrowerAddress],
         });
+
+        if (!Array.isArray(summary) || summary.length < 5) return null;
 
         const [auctionBorrower, endTime, bidCount, settled, active] =
           summary as [Address, bigint, bigint, boolean, boolean];
 
         return {
           borrower: auctionBorrower,
+          active,
+          settled,
           endTime,
           bidCount,
-          settled,
-          active,
         };
       } catch {
         return null;
@@ -1226,40 +758,17 @@ export function useWalnutProtocol(options: WalnutProtocolOptions = {}) {
     [publicClient]
   );
 
-  const getAuctionBorrowers = useCallback(async (): Promise<Address[]> => {
-    if (!publicClient || !activeContractAddress || !supportsAdvancedFeatures) {
-      return [];
-    }
-
-    try {
-      const borrowers = await publicClient.readContract({
-        address: activeContractAddress,
-        abi: walnutWave2Abi,
-        functionName: "getAuctionBorrowers",
-        args: [],
-      });
-
-      return borrowers as Address[];
-    } catch {
-      return [];
-    }
-  }, [publicClient]);
-
   const getPendingWinnerRequestId = useCallback(
-    async (borrower: string): Promise<bigint | null> => {
-      if (!publicClient || !activeContractAddress || !supportsAdvancedFeatures || !isAddress(borrower)) {
-        return null;
-      }
-
+    async (borrowerAddress: Address) => {
+      if (!publicClient) return null;
       try {
-        const reqId = await publicClient.readContract({
-          address: activeContractAddress,
-          abi: walnutWave2Abi,
+        const value = await publicClient.readContract({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
           functionName: "getPendingWinnerRequestId",
-          args: [borrower as Address],
+          args: [borrowerAddress],
         });
-
-        return reqId as bigint;
+        return typeof value === "bigint" ? value : null;
       } catch {
         return null;
       }
@@ -1267,84 +776,248 @@ export function useWalnutProtocol(options: WalnutProtocolOptions = {}) {
     [publicClient]
   );
 
-  const getCurrentBlockTimestamp = useCallback(async (): Promise<bigint | null> => {
-    if (!publicClient) {
-      return null;
-    }
-
+  const getCurrentBlockTimestamp = useCallback(async () => {
+    if (!publicClient) return null;
     try {
-      const block = await publicClient.getBlock({ blockTag: "latest" });
+      const block = await publicClient.getBlock();
       return block.timestamp;
     } catch {
       return null;
     }
   }, [publicClient]);
 
-  const linkedWallets = (linkedWalletsData ?? []) as Address[];
-  const linkedWalletCount =
-    typeof linkedWalletCountData === "bigint"
-      ? Number(linkedWalletCountData)
-      : linkedWallets.length;
+  const getOfferCount = useCallback(async () => {
+    if (!publicClient) return 0n;
+    try {
+      const value = await publicClient.readContract({
+        address: walnutContractAddress,
+        abi: walnutV1Abi,
+        functionName: "offerCount",
+        args: [],
+      });
+      return typeof value === "bigint" ? value : 0n;
+    } catch {
+      return 0n;
+    }
+  }, [publicClient]);
+
+  const getOfferMeta = useCallback(
+    async (offerId: bigint) => {
+      if (!publicClient) return null;
+      try {
+        const meta = await publicClient.readContract({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "getOfferMeta",
+          args: [offerId],
+        });
+
+        if (!Array.isArray(meta) || meta.length < 3) return null;
+
+        const [lender, active, matchedBorrower] = meta as [Address, boolean, Address];
+        const matched = matchedBorrower !== "0x0000000000000000000000000000000000000000";
+        return { lender, borrower: matchedBorrower, active, matched };
+      } catch {
+        return null;
+      }
+    },
+    [publicClient]
+  );
+
+  const getOfferTerms = useCallback(
+    async (offerId: bigint) => {
+      if (!publicClient || !permit.hasPermit) return null;
+      try {
+        const [amountHandle, aprHandle, tenorHandle] = await Promise.all([
+          publicClient.readContract({
+            address: walnutContractAddress,
+            abi: walnutV1Abi,
+            functionName: "getEncryptedOfferSize",
+            args: [offerId],
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: walnutContractAddress,
+            abi: walnutV1Abi,
+            functionName: "getEncryptedOfferAPR",
+            args: [offerId],
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: walnutContractAddress,
+            abi: walnutV1Abi,
+            functionName: "getEncryptedOfferTenor",
+            args: [offerId],
+          }) as Promise<bigint>,
+        ]);
+
+        const accountAddress = account.address ?? "0x0000000000000000000000000000000000000000";
+        const baseDecrypt = (handle: { ctHash: bigint } | bigint) => {
+          const ctHash = typeof handle === "bigint" ? handle : handle.ctHash;
+          return decryptForView(ctHash, accountAddress);
+        };
+
+        const [amount, apr, tenor] = await Promise.all([
+          baseDecrypt(amountHandle),
+          baseDecrypt(aprHandle),
+          baseDecrypt(tenorHandle),
+        ]);
+
+        return {
+          amount: typeof amount === "bigint" ? amount : undefined,
+          apr: typeof apr === "bigint" ? apr : undefined,
+          tenor: typeof tenor === "bigint" ? tenor : undefined,
+        };
+      } catch {
+        return null;
+      }
+    },
+    [account.address, decryptForView, permit.hasPermit, publicClient]
+  );
+
+  const createOffer = useCallback(
+    async ({ amount, apr, tenor }: { amount: string; apr: string; tenor: string }) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
+
+      const amountValue = parsePositiveBigint(amount);
+      const aprValue = parsePositiveBigint(apr);
+      const tenorValue = parsePositiveBigint(tenor);
+
+      if (!amountValue || !aprValue || !tenorValue) {
+        addToast({ variant: "error", message: "Offer inputs must be positive integers." });
+        return false;
+      }
+
+      try {
+        const [encryptedAmount, encryptedApr, encryptedTenor] = await encryptor.encryptInputsAsync([
+          Encryptable.uint128(amountValue),
+          Encryptable.uint128(aprValue),
+          Encryptable.uint128(tenorValue),
+        ]);
+
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "postOffer",
+          args: [encryptedAmount, encryptedApr, encryptedTenor],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 5_000_000n, // High gas limit for FHE offer creation
+        });
+        setLastTxHash(hash);
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+        addToast({ variant: "success", message: "Offer created." });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to create offer.";
+        addToast({ variant: "error", message });
+        return false;
+      }
+    },
+    [addToast, canWrite, encryptor, publicClient, writer]
+  );
+
+  const matchOffer = useCallback(
+    async (offerId: bigint) => {
+      if (!canWrite) {
+        addToast({ variant: "error", message: "Connect your wallet to continue." });
+        return false;
+      }
+
+      try {
+        const hash = await writer.writeContractAsync({
+          address: walnutContractAddress,
+          abi: walnutV1Abi,
+          functionName: "matchOffer",
+          args: [offerId],
+          chain: arbitrumSepolia,
+          account: account.address!,
+          gas: 3_000_000n, // Gas limit for offer matching
+        });
+        setLastTxHash(hash);
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash });
+        }
+        addToast({ variant: "success", message: "Offer matched." });
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to match offer.";
+        addToast({ variant: "error", message });
+        return false;
+      }
+    },
+    [addToast, canWrite, publicClient, writer]
+  );
+
+  const isWriting = writer.isPending;
+  const isEncrypting = encryptor.isEncrypting;
 
   return {
-    address,
-    aggregatedCollateralValue,
-    aggregatedCollateralDecrypting,
-    aggregatedCollateralError,
+    account,
+    status,
+    setStatus,
+    lastTxHash,
     canRead,
+    canWrite,
     canUseContract,
-    mode,
-    activeContractAddress,
-    supportsWave2CoreFeatures,
-    supportsAdvancedFeatures,
+    isWalletReady,
+    isConnectionTransient,
+    isOnTargetChain,
+    permit,
+    switchChainAsync,
+    refreshBalances,
     collateral,
-    collateralDecrypting,
-    collateralHasCiphertext,
-    contractReachable,
     debt,
+    totalPoolCollateral,
+    totalPoolDebt,
+    collateralDecrypting,
     debtDecrypting,
-    debtHasCiphertext,
-    hasDecryptError,
-    hasDecryptPending,
-    hasEncryptedReadError,
-    decryptBlocked,
+    totalPoolCollateralDecrypting,
+    totalPoolDebtDecrypting,
     healthFactorValue,
     healthFactorDecrypting,
     healthFactorError,
-    healthFactorStatus,
-    isConnectionTransient,
-    isOnTargetChain,
-    isConnected,
-    isWalletReady,
-    isEncrypting,
-    isWriting,
-    lastTxHash,
-    liquidatable: liquidatable ?? false,
-    liquidatableLoading,
-    linkedWalletCount,
-    linkedWalletCountLoading,
-    linkedWallets,
-    linkedWalletsLoading,
-    permit,
-    fetchAggregatedCollateral,
     fetchHealthFactor,
-    finalizeWinnerSelection,
-    getAuctionBorrowers,
-    getPendingWinnerRequestId,
-    getAuctionSummary,
-    getCurrentBlockTimestamp,
-    openAuction,
-    refreshBalances,
-    registerENSWallet,
-    requestLiquidationCheck,
-    selectWinningBid,
-    setStatus,
-    status,
+    aggregatedCollateralValue,
+    aggregatedCollateralDecrypting,
+    aggregatedCollateralError,
+    fetchAggregatedCollateral,
+    liquidatable,
+    refreshLiquidatable,
+    linkedWallets,
+    linkedWalletCount,
+    linkedWalletsLoading,
+    creditTier,
+    creditTierLoading,
+    tierLTV,
+    tierLTVLoading,
+    requestCreditTierUpdate,
+    creditTierPollingActive,
+    liquidationPollingActive,
+    liquidationPollingMessage,
     submitEncryptedAmount,
+    requestLiquidationCheck,
+    openAuction,
     submitLiquidationBid,
-    submitRepay,
-    submitWithdraw,
-  };
+    selectWinningBid,
+    registerENSWallet,
+    getAuctionBorrowers,
+    getAuctionSummary,
+    getPendingWinnerRequestId,
+    getCurrentBlockTimestamp,
+    getOfferCount,
+    getOfferMeta,
+    getOfferTerms,
+    createOffer,
+    matchOffer,
+    hasDecryptPending,
+    hasDecryptError,
+    isWriting,
+    isEncrypting,
+  } as const;
 }
 
 export type WalnutProtocolState = ReturnType<typeof useWalnutProtocol>;

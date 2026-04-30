@@ -10,9 +10,9 @@
     "deploy:wave2:arbitrum-sepolia": "hardhat run scripts/deploy-wave2-sepolia.js --network arbitrumSepolia"
   },
   "dependencies": {
-    "@cofhe/abi": "^0.4.0",
-    "@cofhe/react": "^0.4.0",
-    "@cofhe/sdk": "^0.4.0",
+    "@cofhe/abi": "^0.5.0",
+    "@cofhe/react": "^0.5.0",
+    "@cofhe/sdk": "^0.5.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@radix-ui/react-checkbox": "1.1.3",
@@ -21,6 +21,7 @@
     "@reineira-os/sdk": "^0.2.0",
     "@tanstack/react-query": "^5.95.2",
     "@vercel/analytics": "1.3.1",
+    "bs58": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "gsap": "^3.14.2",
