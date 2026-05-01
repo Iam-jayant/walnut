@@ -1,6 +1,6 @@
 import type { Abi, Address } from "viem";
 
-import walnutV1Artifact from "@/artifacts/contracts/WalnutV1.sol/WalnutV1.json";
+import walnutV1Artifact from "@/lib/abi/WalnutV1.json";
 
 function requirePublicEnv(key: string, value: string | undefined) {
   if (!value) {
