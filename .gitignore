@@ -46,3 +46,4 @@ tmp-*.cjs
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+docs/
