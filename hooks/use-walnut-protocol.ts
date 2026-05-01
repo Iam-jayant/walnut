@@ -10,17 +10,26 @@ import { useToast } from "@/components/walnut/toast-provider";
 import {
   useCofheClient,
   useCofheEncrypt,
-  useCofheReadContractAndDecrypt,
   useCofheWriteContract,
 } from "@cofhe/react";
 import { Encryptable, FheTypes } from "@cofhe/sdk";
 import { walnutChainId, walnutContractAddress, walnutV1Abi } from "@/lib/walnut-contract";
+import { usePrivara } from "@/hooks/use-privara";
 
 const BALANCE_REFRESH_INTERVAL_MS = 30_000;
 const DEFAULT_LIQUIDATION_POLL_INTERVAL_MS = 15_000;
 const DEFAULT_LIQUIDATION_POLL_MAX = 20;
+const SENDER_NOT_ALLOWED_SELECTOR = "0xd0d25976";
+const MAX_HEALTH_FACTOR_BPS = 100_000n; // 10.00 on HEALTH_FACTOR_SCALE=10_000
 
 export type WalnutAction = "deposit" | "borrow" | "repay" | "withdraw";
+export type RepaySettlementState =
+  | "idle"
+  | "repay_pending"
+  | "repay_confirmed"
+  | "settlement_pending"
+  | "settlement_confirmed"
+  | "settlement_failed";
 
 export type AuctionSummary = {
   borrower: Address;
@@ -54,6 +63,27 @@ function parsePositiveBigint(input: string) {
 
 function isBigint(value: unknown): value is bigint {
   return typeof value === "bigint";
+}
+
+function tierFromRepaymentCount(count: bigint): bigint {
+  if (count >= 10n) return 4n;
+  if (count >= 7n) return 3n;
+  if (count >= 4n) return 2n;
+  if (count >= 2n) return 1n;
+  return 0n;
+}
+
+async function decryptUint128Handle(
+  encryptedStruct: unknown,
+  accountAddress: Address,
+  decryptForView: (ctHash: bigint | string, accountAddress: Address) => Promise<bigint | undefined>
+): Promise<bigint | undefined> {
+  const ctHash =
+    typeof encryptedStruct === "bigint"
+      ? encryptedStruct
+      : (encryptedStruct as { ctHash?: bigint } | null)?.ctHash;
+  if (typeof ctHash !== "bigint") return undefined;
+  return decryptForView(ctHash, accountAddress);
 }
 
 export function useCreditTier(borrower?: Address) {
@@ -100,9 +130,15 @@ export function useWalnutProtocol() {
   const permit = useWalnutPermit();
   const encryptor = useCofheEncrypt();
   const writer = useCofheWriteContract();
+  const privara = usePrivara();
 
   const [status, setStatus] = useState<string | null>(null);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+  const [repayTxHash, setRepayTxHash] = useState<string | null>(null);
+  const [settlementTxHash, setSettlementTxHash] = useState<string | null>(null);
+  const [repaySettlementState, setRepaySettlementState] = useState<RepaySettlementState>("idle");
+  const [repaySettlementError, setRepaySettlementError] = useState<string | null>(null);
+  const [lastRepayAmount, setLastRepayAmount] = useState<bigint | null>(null);
   const [healthFactorValue, setHealthFactorValue] = useState<bigint | undefined>(undefined);
   const [healthFactorDecrypting, setHealthFactorDecrypting] = useState(false);
   const [healthFactorError, setHealthFactorError] = useState<string | null>(null);
@@ -117,6 +153,7 @@ export function useWalnutProtocol() {
     toastId?: string;
   }>({ attempts: 0 });
   const [creditTierPollingActive, setCreditTierPollingActive] = useState(false);
+  const [fallbackCreditTier, setFallbackCreditTier] = useState<bigint | undefined>(undefined);
   const creditTierPollingRef = useRef<{
     toastId?: string;
   }>({});
@@ -134,45 +171,215 @@ export function useWalnutProtocol() {
 
   const { switchChainAsync } = useSwitchChain();
 
-  const collateral = useCofheReadContractAndDecrypt({
+  // Read encrypted values as structs (contract returns EncryptedValue{ctHash, utype})
+  const { data: collateralStruct, isLoading: collateralStructLoading, refetch: refetchCollateralStruct } = useReadContract({
     address: walnutContractAddress,
     abi: walnutV1Abi,
     functionName: "getEncryptedCollateral",
     args: [account.address ?? "0x0000000000000000000000000000000000000000"],
-    requiresPermit: true,
-  }, {
-    readQueryOptions: { enabled: canRead && Boolean(account.address) },
-  }) as CofheDecryptResult<bigint>;
+    query: {
+      enabled: canRead && Boolean(account.address),
+    },
+  });
 
-  const debt = useCofheReadContractAndDecrypt({
+  const { data: debtStruct, isLoading: debtStructLoading, refetch: refetchDebtStruct } = useReadContract({
     address: walnutContractAddress,
     abi: walnutV1Abi,
     functionName: "getEncryptedDebt",
     args: [account.address ?? "0x0000000000000000000000000000000000000000"],
-    requiresPermit: true,
-  }, {
-    readQueryOptions: { enabled: canRead && Boolean(account.address) },
-  }) as CofheDecryptResult<bigint>;
+    query: {
+      enabled: canRead && Boolean(account.address),
+    },
+  });
 
-  const totalPoolCollateral = useCofheReadContractAndDecrypt({
-    address: walnutContractAddress,
-    abi: walnutV1Abi,
-    functionName: "getEncryptedTotalPoolCollateral",
-    args: [],
-    requiresPermit: true,
-  }, {
-    readQueryOptions: { enabled: canRead },
-  }) as CofheDecryptResult<bigint>;
+  // Note: totalPoolCollateral and totalPoolDebt cannot be decrypted by regular users
+  // because the contract doesn't call FHE.allow(totalPool*, user) - only FHE.allowThis()
+  // These values are only accessible to the contract itself, not to external viewers
 
-  const totalPoolDebt = useCofheReadContractAndDecrypt({
-    address: walnutContractAddress,
-    abi: walnutV1Abi,
-    functionName: "getEncryptedTotalPoolDebt",
-    args: [],
-    requiresPermit: true,
-  }, {
-    readQueryOptions: { enabled: canRead },
-  }) as CofheDecryptResult<bigint>;
+  // Manually decrypt the ctHash from each struct
+  const [collateralValue, setCollateralValue] = useState<bigint | undefined>(undefined);
+  const [collateralDecrypting, setCollateralDecrypting] = useState(false);
+  const [collateralError, setCollateralError] = useState<Error | undefined>(undefined);
+
+  const [debtValue, setDebtValue] = useState<bigint | undefined>(undefined);
+  const [debtDecrypting, setDebtDecrypting] = useState(false);
+  const [debtError, setDebtError] = useState<Error | undefined>(undefined);
+  const decryptInflightRef = useRef(0);
+
+  // Define decryptForView before the useEffect hooks that depend on it
+  const decryptForView = useCallback(
+    async (ctHash: bigint | string, accountAddress: Address) => {
+      if (!cofheClient) {
+        console.log("[Walnut Debug] decryptForView: No cofheClient available");
+        return undefined;
+      }
+
+      console.log("[Walnut Debug] decryptForView starting:", {
+        ctHash: ctHash.toString(),
+        accountAddress,
+        chainId: walnutChainId,
+        hasPermitHash: !!permit.permitHash,
+        permitHash: permit.permitHash
+      });
+      decryptInflightRef.current += 1;
+
+      const builder = cofheClient
+        .decryptForView(ctHash, FheTypes.Uint128)
+        .setChainId(walnutChainId)
+        .setAccount(accountAddress);
+
+      const withPermitBuilder = permit.permitHash
+        ? builder.withPermit(permit.permitHash)
+        : builder.withPermit();
+
+      console.log("[Walnut Debug] decryptForView: Executing decryption with permit:", {
+        explicitPermit: !!permit.permitHash
+      });
+
+      try {
+        const decrypted = await withPermitBuilder.execute();
+        console.log("[Walnut Debug] decryptForView: Success!", {
+          decrypted: typeof decrypted === "bigint" ? decrypted.toString() : decrypted
+        });
+        return typeof decrypted === "bigint" ? decrypted : undefined;
+      } catch (error) {
+        console.error("[Walnut Debug] decryptForView: Failed!", {
+          errorType: typeof error,
+          errorConstructor: error?.constructor?.name,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+          errorObject: error,
+          ctHash: ctHash.toString(),
+          accountAddress,
+          permitHash: permit.permitHash,
+          chainId: walnutChainId
+        });
+        throw error;
+      } finally {
+        decryptInflightRef.current = Math.max(0, decryptInflightRef.current - 1);
+      }
+    },
+    [account.address, account.chainId, cofheClient, permit.hasPermit, permit.isPermitValid, permit.permitHash]
+  );
+
+  // Decrypt collateral when struct is available
+  useEffect(() => {
+    if (!collateralStruct || !account.address || !permit.hasPermit) return;
+    
+    const struct = collateralStruct as { ctHash: bigint; utype: number };
+    if (!struct.ctHash || struct.ctHash === 0n) {
+      setCollateralValue(0n);
+      return;
+    }
+
+    let active = true;
+    setCollateralDecrypting(true);
+    setCollateralError(undefined);
+
+    decryptForView(struct.ctHash, account.address)
+      .then((value) => {
+        if (active) {
+          setCollateralValue(value);
+          setCollateralDecrypting(false);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          console.error("[Walnut Debug] Collateral decrypt error:", error instanceof Error ? error.message : error);
+          setCollateralError(error instanceof Error ? error : new Error("Decryption failed"));
+          setCollateralDecrypting(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [collateralStruct, account.address, permit.hasPermit, decryptForView]);
+
+  // Decrypt debt when struct is available
+  useEffect(() => {
+    if (!debtStruct || !account.address || !permit.hasPermit) return;
+    
+    const struct = debtStruct as { ctHash: bigint; utype: number };
+    if (!struct.ctHash || struct.ctHash === 0n) {
+      setDebtValue(0n);
+      return;
+    }
+
+    let active = true;
+    setDebtDecrypting(true);
+    setDebtError(undefined);
+
+    decryptForView(struct.ctHash, account.address)
+      .then((value) => {
+        if (active) {
+          setDebtValue(value);
+          setDebtDecrypting(false);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          console.error("[Walnut Debug] Debt decrypt error:", error instanceof Error ? error.message : error);
+          setDebtError(error instanceof Error ? error : new Error("Decryption failed"));
+          setDebtDecrypting(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [debtStruct, account.address, permit.hasPermit, decryptForView]);
+
+  // Create compatible interface for backward compatibility
+  const collateral = {
+    encrypted: collateralStruct,
+    decrypted: {
+      data: collateralValue,
+      error: collateralError,
+      isFetching: collateralDecrypting,
+      isLoading: collateralStructLoading || collateralDecrypting,
+      refetch: async () => {
+        await refetchCollateralStruct();
+      },
+    },
+  };
+
+  const debt = {
+    encrypted: debtStruct,
+    decrypted: {
+      data: debtValue,
+      error: debtError,
+      isFetching: debtDecrypting,
+      isLoading: debtStructLoading || debtDecrypting,
+      refetch: async () => {
+        await refetchDebtStruct();
+      },
+    },
+  };
+
+  // Total pool values are not decryptable by regular users (contract doesn't grant FHE.allow access)
+  // Return stub objects that indicate these values are private
+  const totalPoolCollateral: CofheDecryptResult<bigint> = {
+    encrypted: undefined,
+    decrypted: {
+      data: undefined,
+      error: new Error("Total pool collateral is private (no FHE.allow access granted)"),
+      isFetching: false,
+      isLoading: false,
+      refetch: async () => {},
+    },
+  };
+
+  const totalPoolDebt: CofheDecryptResult<bigint> = {
+    encrypted: undefined,
+    decrypted: {
+      data: undefined,
+      error: new Error("Total pool debt is private (no FHE.allow access granted)"),
+      isFetching: false,
+      isLoading: false,
+      refetch: async () => {},
+    },
+  };
 
   const { data: liquidatableData, refetch: refreshLiquidatable } = useReadContract({
     address: walnutContractAddress,
@@ -185,46 +392,46 @@ export function useWalnutProtocol() {
   const liquidatable = Boolean(liquidatableData);
 
   const { creditTier, creditTierLoading, refreshCreditTier } = useCreditTier(account.address);
-  const { tierLTV, tierLTVLoading } = useTierLTV(creditTier);
-
-  const collateralDecrypting = collateral.decrypted.isFetching || collateral.decrypted.isLoading;
-  const debtDecrypting = debt.decrypted.isFetching || debt.decrypted.isLoading;
-  const totalPoolCollateralDecrypting =
-    totalPoolCollateral.decrypted.isFetching || totalPoolCollateral.decrypted.isLoading;
-  const totalPoolDebtDecrypting =
-    totalPoolDebt.decrypted.isFetching || totalPoolDebt.decrypted.isLoading;
+  const effectiveCreditTier = fallbackCreditTier ?? creditTier;
+  const { tierLTV, tierLTVLoading } = useTierLTV(effectiveCreditTier);
 
   const hasDecryptPending = collateralDecrypting || debtDecrypting;
   
-  // Only show decrypt error if we have permit and should be able to decrypt
-  // Ignore errors when user hasn't deposited yet (zero values are expected)
+  // Show error only if decryption actually failed (not just missing data or expected private values)
   const hasDecryptError = Boolean(
     canRead && 
     !hasDecryptPending && 
-    (collateral.decrypted.error || debt.decrypted.error) &&
-    // Don't show error if it's just a "no data" scenario
-    collateral.decrypted.error?.message !== "No ciphertext found" &&
-    debt.decrypted.error?.message !== "No ciphertext found"
+    (collateralError || debtError)
   );
 
-  const decryptForView = useCallback(
-    async (ctHash: bigint | string, accountAddress: Address) => {
-      if (!cofheClient) return undefined;
+  const refreshLocalCreditTier = useCallback(async () => {
+    if (!publicClient || !account.address || !permit.hasPermit || !canRead) {
+      setFallbackCreditTier(undefined);
+      return undefined;
+    }
 
-      const builder = cofheClient
-        .decryptForView(ctHash, FheTypes.Uint128)
-        .setChainId(walnutChainId)
-        .setAccount(accountAddress);
+    try {
+      const repaymentStruct = await publicClient.readContract({
+        address: walnutContractAddress,
+        abi: walnutV1Abi,
+        functionName: "getEncryptedRepaymentCount",
+        args: [account.address],
+      });
 
-      const withPermitBuilder = permit.permitHash
-        ? builder.withPermit(permit.permitHash)
-        : builder.withPermit();
+      const repaymentCount = await decryptUint128Handle(repaymentStruct, account.address, decryptForView);
+      if (typeof repaymentCount !== "bigint") return undefined;
 
-      const decrypted = await withPermitBuilder.execute();
-      return typeof decrypted === "bigint" ? decrypted : undefined;
-    },
-    [cofheClient, permit.permitHash]
-  );
+      const localTier = tierFromRepaymentCount(repaymentCount);
+      setFallbackCreditTier(localTier);
+      return localTier;
+    } catch {
+      return undefined;
+    }
+  }, [account.address, canRead, decryptForView, permit.hasPermit, publicClient]);
+
+  useEffect(() => {
+    void refreshLocalCreditTier();
+  }, [refreshLocalCreditTier]);
 
   useEffect(() => {
     let active = true;
@@ -284,12 +491,13 @@ export function useWalnutProtocol() {
         debt.decrypted.refetch(),
         totalPoolCollateral.decrypted.refetch(),
         totalPoolDebt.decrypted.refetch(),
+        refreshLocalCreditTier(),
       ]);
     } catch (error) {
       console.error("Failed to refresh balances:", error);
       // Silently fail - balances will retry on next interval
     }
-  }, [canRead, collateral.decrypted, debt.decrypted, totalPoolCollateral.decrypted, totalPoolDebt.decrypted]);
+  }, [canRead, collateral.decrypted, debt.decrypted, refreshLocalCreditTier, totalPoolCollateral.decrypted, totalPoolDebt.decrypted]);
 
   useEffect(() => {
     if (!canRead) return;
@@ -303,70 +511,138 @@ export function useWalnutProtocol() {
 
   const fetchHealthFactor = useCallback(
     async (borrower?: Address) => {
-      if (!canUseContract || !publicClient || !permit.hasPermit) return undefined;
-
-      const target = borrower ?? account.address;
-      if (!target) return undefined;
+      const targetAddress = borrower ?? account.address;
+      if (!publicClient || !targetAddress || !permit.hasPermit || !canRead) {
+        setHealthFactorError("Private access is required to compute health factor.");
+        setHealthFactorDecrypting(false);
+        return undefined;
+      }
 
       setHealthFactorDecrypting(true);
       setHealthFactorError(null);
-
       try {
-        const handle = (await publicClient.readContract({
-          address: walnutContractAddress,
-          abi: walnutV1Abi,
-          functionName: "getHealthFactor",
-          args: [target],
-        })) as bigint;
+        const currentCollateral =
+          targetAddress === account.address && typeof collateralValue === "bigint"
+            ? collateralValue
+            : await (async () => {
+                const collateralStruct = await publicClient.readContract({
+                  address: walnutContractAddress,
+                  abi: walnutV1Abi,
+                  functionName: "getEncryptedCollateral",
+                  args: [targetAddress],
+                });
+                return decryptUint128Handle(collateralStruct, targetAddress, decryptForView);
+              })();
 
-        const value = await decryptForView(handle, target);
+        const currentDebt =
+          targetAddress === account.address && typeof debtValue === "bigint"
+            ? debtValue
+            : await (async () => {
+                const debtStruct = await publicClient.readContract({
+                  address: walnutContractAddress,
+                  abi: walnutV1Abi,
+                  functionName: "getEncryptedDebt",
+                  args: [targetAddress],
+                });
+                return decryptUint128Handle(debtStruct, targetAddress, decryptForView);
+              })();
 
-        if (!borrower) {
-          setHealthFactorValue(value);
+        if (typeof currentCollateral !== "bigint" || typeof currentDebt !== "bigint") {
+          setHealthFactorError("Unable to decrypt balances for health factor.");
+          return undefined;
         }
 
-        return value;
+        const safeDebt = currentDebt === 0n ? 1n : currentDebt;
+        const computedHealthFactor = (currentCollateral * 10000n) / safeDebt;
+        const normalizedHealthFactor =
+          computedHealthFactor > MAX_HEALTH_FACTOR_BPS ? MAX_HEALTH_FACTOR_BPS : computedHealthFactor;
+        setHealthFactorValue(normalizedHealthFactor);
+        return normalizedHealthFactor;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to decrypt health factor.";
-        setHealthFactorError(message);
+        setHealthFactorError(error instanceof Error ? error.message : "Failed to compute health factor.");
         return undefined;
       } finally {
         setHealthFactorDecrypting(false);
       }
     },
-    [account.address, canUseContract, decryptForView, permit.hasPermit, publicClient]
+    [account.address, canRead, collateralValue, debtValue, decryptForView, permit.hasPermit, publicClient]
   );
 
   const fetchAggregatedCollateral = useCallback(
     async (owner?: Address) => {
-      if (!canUseContract || !publicClient || !permit.hasPermit) return undefined;
+      // Aggregated collateral computation requires a transaction (not a view function)
+      // because the contract needs to call FHE.allow() to grant decryption access.
+      // This is disabled for now to avoid unnecessary transactions.
+      console.warn("[Walnut Debug] getAggregatedCollateral requires a transaction (not a view function) - skipping");
+      setAggregatedCollateralError("Aggregated collateral requires a transaction to compute");
+      setAggregatedCollateralDecrypting(false);
+      return undefined;
+    },
+    []
+  );
 
-      const target = owner ?? account.address;
-      if (!target) return undefined;
-
-      setAggregatedCollateralDecrypting(true);
-      setAggregatedCollateralError(null);
+  const writeWithGasDebug = useCallback(
+    async (
+      config: Parameters<typeof writer.writeContractAsync>[0],
+      meta: { operation: string; action?: string }
+    ) => {
+      const runId = "pre-fix";
+      let finalConfig = config;
+      
+      try {
+        const [block, feeEstimate] = await Promise.all([
+          publicClient?.getBlock().catch(() => null),
+          publicClient?.estimateFeesPerGas().catch(() => null),
+        ]);
+        console.info("[Walnut Gas Debug] pre-write fee snapshot", {
+          operation: meta.operation,
+          action: meta.action ?? null,
+          blockBaseFee: block?.baseFeePerGas ? block.baseFeePerGas.toString() : null,
+          suggestedMaxFee: feeEstimate?.maxFeePerGas ? feeEstimate.maxFeePerGas.toString() : null,
+          suggestedMaxPriorityFee: feeEstimate?.maxPriorityFeePerGas
+            ? feeEstimate.maxPriorityFeePerGas.toString()
+            : null,
+        });
+        
+        // Add 20% buffer to gas fees to account for base fee fluctuations
+        if (feeEstimate?.maxFeePerGas) {
+          const bufferedMaxFee = (feeEstimate.maxFeePerGas * 120n) / 100n;
+          const bufferedPriorityFee = feeEstimate.maxPriorityFeePerGas 
+            ? (feeEstimate.maxPriorityFeePerGas * 120n) / 100n
+            : undefined;
+          
+          finalConfig = {
+            ...config,
+            maxFeePerGas: bufferedMaxFee,
+            ...(bufferedPriorityFee && { maxPriorityFeePerGas: bufferedPriorityFee }),
+          } as typeof config;
+          
+          console.info("[Walnut Gas Debug] Applied 20% buffer to gas fees", {
+            originalMaxFee: feeEstimate.maxFeePerGas.toString(),
+            bufferedMaxFee: bufferedMaxFee.toString(),
+          });
+        }
+      } catch {
+        // no-op: debug logging must not block tx flow
+      }
 
       try {
-        const handle = (await publicClient.readContract({
-          address: walnutContractAddress,
-          abi: walnutV1Abi,
-          functionName: "getAggregatedCollateral",
-          args: [target],
-        })) as bigint;
-
-        const value = await decryptForView(handle, target);
-        setAggregatedCollateralValue(value);
-        return value;
+        return await writer.writeContractAsync(finalConfig);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to decrypt aggregated collateral.";
-        setAggregatedCollateralError(message);
-        return undefined;
-      } finally {
-        setAggregatedCollateralDecrypting(false);
+        const message = error instanceof Error ? error.message : String(error);
+        const parsedMaxFee = message.match(/maxFeePerGas:\s*(\d+)/)?.[1] ?? null;
+        const parsedBaseFee = message.match(/baseFee:\s*(\d+)/)?.[1] ?? null;
+        console.error("[Walnut Gas Debug] write failed", {
+          operation: meta.operation,
+          action: meta.action ?? null,
+          message,
+          parsedMaxFee,
+          parsedBaseFee,
+        });
+        throw error;
       }
     },
-    [account.address, canUseContract, decryptForView, permit.hasPermit, publicClient]
+    [account.chainId, permit.hasPermit, permit.isPermitValid, publicClient, writer]
   );
 
   const submitEncryptedAmount = useCallback(
@@ -382,7 +658,23 @@ export function useWalnutProtocol() {
         return false;
       }
 
+      if (action === "repay" && typeof debtValue === "bigint" && value > debtValue) {
+        addToast({
+          variant: "error",
+          message: `Repay amount exceeds current debt (${debtValue.toString()}).`,
+        });
+        return false;
+      }
+
       try {
+        if (action === "repay") {
+          setRepaySettlementState("repay_pending");
+          setRepaySettlementError(null);
+          setRepayTxHash(null);
+          setSettlementTxHash(null);
+          setLastRepayAmount(value);
+        }
+
         setStatus("Encrypting amount...");
         const [encrypted] = await encryptor.encryptInputsAsync([Encryptable.uint128(value)]);
         const functionName: "deposit" | "borrow" | "repay" | "withdraw" =
@@ -395,19 +687,51 @@ export function useWalnutProtocol() {
             : "withdraw";
 
         setStatus("Submitting transaction...");
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName,
           args: [encrypted],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 5_000_000n, // High gas limit for FHE operations
-        });
+          // Let wagmi estimate gas automatically for FHE operations
+        }, { operation: functionName, action });
 
         setLastTxHash(hash);
+        if (action === "repay") {
+          setRepayTxHash(hash);
+        }
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
+        }
+
+        if (action === "repay" && account.address) {
+          setRepaySettlementState("repay_confirmed");
+          addToast({ variant: "pending", message: "Repay confirmed. Settling private interest..." });
+          setRepaySettlementState("settlement_pending");
+
+          const settlement = await privara.settleRepayInterest({
+            user: account.address,
+            amount: value,
+          });
+
+          if (!settlement.ok || !settlement.hash) {
+            const errorMessage = settlement.message ?? "Private settlement failed.";
+            setRepaySettlementState("settlement_failed");
+            setRepaySettlementError(errorMessage);
+            addToast({ variant: "error", message: errorMessage });
+            setStatus(null);
+            await refreshBalances();
+            return false;
+          }
+
+          setSettlementTxHash(settlement.hash);
+          setRepaySettlementState("settlement_confirmed");
+          setRepaySettlementError(null);
+          addToast({ variant: "success", message: "Repay and private settlement confirmed." });
+          setStatus(null);
+          await refreshBalances();
+          return true;
         }
 
         addToast({ variant: "success", message: "Transaction confirmed." });
@@ -416,12 +740,28 @@ export function useWalnutProtocol() {
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Transaction failed.";
+        if (action === "repay" && repaySettlementState !== "settlement_failed") {
+          setRepaySettlementState("settlement_failed");
+          setRepaySettlementError(message);
+        }
         addToast({ variant: "error", message });
         setStatus(null);
         return false;
       }
     },
-    [addToast, canWrite, encryptor, publicClient, refreshBalances, writer]
+    [
+      account.address,
+      account.chainId,
+      addToast,
+      canWrite,
+      debtValue,
+      encryptor,
+      privara,
+      publicClient,
+      refreshBalances,
+      repaySettlementState,
+      writeWithGasDebug,
+    ]
   );
 
   const requestLiquidationCheck = useCallback(
@@ -436,15 +776,14 @@ export function useWalnutProtocol() {
 
       try {
         setStatus("Requesting liquidation check...");
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName: "requestLiquidationCheck",
           args: [borrowerAddress],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 5_000_000n, // High gas limit for FHE operations
-        });
+        }, { operation: "requestLiquidationCheck" });
 
         setLastTxHash(hash);
         if (publicClient) {
@@ -465,8 +804,18 @@ export function useWalnutProtocol() {
             attempts += 1;
             liquidationPollingRef.current.attempts = attempts;
 
-            const next = await refreshLiquidatable();
-            const isLiquidatable = Boolean(next.data);
+            let isLiquidatable = false;
+            try {
+              const next = await publicClient?.readContract({
+                address: walnutContractAddress,
+                abi: walnutV1Abi,
+                functionName: "liquidatable",
+                args: [borrowerAddress],
+              });
+              isLiquidatable = Boolean(next);
+            } catch {
+              isLiquidatable = false;
+            }
 
             if (isLiquidatable) {
               if (liquidationPollingRef.current.toastId) {
@@ -505,7 +854,7 @@ export function useWalnutProtocol() {
         return false;
       }
     },
-    [addToast, canWrite, publicClient, refreshLiquidatable, removeToast, writer]
+    [addToast, canWrite, publicClient, removeToast, writeWithGasDebug]
   );
 
   useEffect(() => {
@@ -524,15 +873,14 @@ export function useWalnutProtocol() {
       }
 
       try {
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName: "openAuction",
           args: [borrowerAddress],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 3_000_000n, // Gas limit for auction operations
-        });
+        }, { operation: "openAuction" });
         setLastTxHash(hash);
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
@@ -545,7 +893,7 @@ export function useWalnutProtocol() {
         return false;
       }
     },
-    [addToast, canWrite, publicClient, writer]
+    [addToast, canWrite, publicClient, writeWithGasDebug]
   );
 
   const submitLiquidationBid = useCallback(
@@ -563,15 +911,14 @@ export function useWalnutProtocol() {
 
       try {
         const [encryptedBid] = await encryptor.encryptInputsAsync([Encryptable.uint128(bidValue)]);
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName: "submitBid",
           args: [borrowerAddress, encryptedBid],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 5_000_000n, // High gas limit for FHE bid submission
-        });
+        }, { operation: "submitBid" });
         setLastTxHash(hash);
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
@@ -584,7 +931,7 @@ export function useWalnutProtocol() {
         return false;
       }
     },
-    [addToast, canWrite, encryptor, publicClient, writer]
+    [addToast, canWrite, encryptor, publicClient, writeWithGasDebug]
   );
 
   const selectWinningBid = useCallback(
@@ -595,15 +942,14 @@ export function useWalnutProtocol() {
       }
 
       try {
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName: "selectWinningBid",
           args: [borrowerAddress],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 5_000_000n, // High gas limit for FHE winner selection
-        });
+        }, { operation: "selectWinningBid" });
         setLastTxHash(hash);
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
@@ -616,7 +962,7 @@ export function useWalnutProtocol() {
         return false;
       }
     },
-    [addToast, canWrite, publicClient, writer]
+    [addToast, canWrite, publicClient, writeWithGasDebug]
   );
 
   const registerENSWallet = useCallback(
@@ -627,15 +973,14 @@ export function useWalnutProtocol() {
       }
 
       try {
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName: "registerENSWallet",
           args: [ensName, walletAddress],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 2_000_000n, // Gas limit for ENS registration
-        });
+        }, { operation: "registerENSWallet" });
         setLastTxHash(hash);
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
@@ -648,7 +993,7 @@ export function useWalnutProtocol() {
         return false;
       }
     },
-    [addToast, canWrite, publicClient, writer]
+    [addToast, canWrite, publicClient, writeWithGasDebug]
   );
 
   const requestCreditTierUpdate = useCallback(async () => {
@@ -663,15 +1008,14 @@ export function useWalnutProtocol() {
     }
 
     try {
-      const hash = await writer.writeContractAsync({
+      const hash = await writeWithGasDebug({
         address: walnutContractAddress,
         abi: walnutV1Abi,
         functionName: "requestCreditTierUpdate",
         args: [account.address],
         chain: arbitrumSepolia,
         account: account.address!,
-        gas: 5_000_000n, // High gas limit for FHE credit tier update
-      });
+      }, { operation: "requestCreditTierUpdate" });
       setLastTxHash(hash);
       if (publicClient) {
         await publicClient.waitForTransactionReceipt({ hash });
@@ -707,11 +1051,58 @@ export function useWalnutProtocol() {
       return false;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Credit tier request failed.";
+      const isSenderNotAllowed =
+        message.includes(SENDER_NOT_ALLOWED_SELECTOR) || message.includes("SenderNotAllowed");
+
+      if (isSenderNotAllowed && publicClient && account.address && permit.hasPermit) {
+        try {
+          // Fallback path: compute tier locally from user's encrypted repayment count.
+          const repaymentStruct = await publicClient.readContract({
+            address: walnutContractAddress,
+            abi: walnutV1Abi,
+            functionName: "getEncryptedRepaymentCount",
+            args: [account.address],
+          });
+
+          const ctHash =
+            typeof repaymentStruct === "bigint"
+              ? repaymentStruct
+              : (repaymentStruct as { ctHash?: bigint }).ctHash;
+
+          if (typeof ctHash === "bigint") {
+            const repaymentCount = await decryptForView(ctHash, account.address);
+            if (typeof repaymentCount === "bigint") {
+              const localTier = tierFromRepaymentCount(repaymentCount);
+              setFallbackCreditTier(localTier);
+              addToast({
+                variant: "success",
+                message: `Credit tier available locally (tier ${localTier.toString()}).`,
+              });
+              setCreditTierPollingActive(false);
+              return true;
+            }
+          }
+        } catch {
+          // If fallback also fails, show the original contract error below.
+        }
+      }
+
       addToast({ variant: "error", message });
       setCreditTierPollingActive(false);
       return false;
     }
-  }, [addToast, canWrite, creditTier, publicClient, refreshCreditTier, removeToast, writer]);
+  }, [
+    account.address,
+    addToast,
+    canWrite,
+    creditTier,
+    decryptForView,
+    permit.hasPermit,
+    publicClient,
+    refreshCreditTier,
+    removeToast,
+    writeWithGasDebug,
+  ]);
 
   const getAuctionBorrowers = useCallback(async () => {
     if (!publicClient) return [] as Address[];
@@ -890,21 +1281,20 @@ export function useWalnutProtocol() {
       }
 
       try {
-        const [encryptedAmount, encryptedApr, encryptedTenor] = await encryptor.encryptInputsAsync([
-          Encryptable.uint128(amountValue),
+        const [encryptedApr, encryptedAmount, encryptedTenor] = await encryptor.encryptInputsAsync([
           Encryptable.uint128(aprValue),
+          Encryptable.uint128(amountValue),
           Encryptable.uint128(tenorValue),
         ]);
 
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName: "postOffer",
-          args: [encryptedAmount, encryptedApr, encryptedTenor],
+          args: [encryptedApr, encryptedAmount, encryptedTenor],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 5_000_000n, // High gas limit for FHE offer creation
-        });
+        }, { operation: "postOffer" });
         setLastTxHash(hash);
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
@@ -917,7 +1307,7 @@ export function useWalnutProtocol() {
         return false;
       }
     },
-    [addToast, canWrite, encryptor, publicClient, writer]
+    [addToast, canWrite, encryptor, publicClient, writeWithGasDebug]
   );
 
   const matchOffer = useCallback(
@@ -928,19 +1318,45 @@ export function useWalnutProtocol() {
       }
 
       try {
-        const hash = await writer.writeContractAsync({
+        const hash = await writeWithGasDebug({
           address: walnutContractAddress,
           abi: walnutV1Abi,
           functionName: "matchOffer",
           args: [offerId],
           chain: arbitrumSepolia,
           account: account.address!,
-          gas: 3_000_000n, // Gas limit for offer matching
-        });
+        }, { operation: "matchOffer" });
         setLastTxHash(hash);
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash });
         }
+        if (account.address) {
+          const terms = await getOfferTerms(offerId);
+          if (!terms?.amount || terms.amount <= 0n) {
+            addToast({
+              variant: "error",
+              message: "Offer matched, but encrypted terms are unavailable for settlement.",
+            });
+            return false;
+          }
+
+          const settlement = await privara.settleP2PMatch({
+            user: account.address,
+            amount: terms.amount,
+          });
+
+          if (!settlement.ok || !settlement.hash) {
+            addToast({
+              variant: "error",
+              message: settlement.message ?? "Offer matched, but private settlement failed.",
+            });
+            return false;
+          }
+
+          addToast({ variant: "success", message: "Offer matched and privately settled." });
+          return true;
+        }
+
         addToast({ variant: "success", message: "Offer matched." });
         return true;
       } catch (error) {
@@ -949,17 +1365,66 @@ export function useWalnutProtocol() {
         return false;
       }
     },
-    [addToast, canWrite, publicClient, writer]
+    [account.address, addToast, canWrite, getOfferTerms, privara, publicClient, writeWithGasDebug]
   );
+
+  const retryRepaySettlement = useCallback(async () => {
+    if (!account.address) {
+      addToast({ variant: "error", message: "Connect your wallet to continue." });
+      return false;
+    }
+
+    if (!lastRepayAmount || lastRepayAmount <= 0n) {
+      addToast({ variant: "error", message: "No repay amount is available for settlement retry." });
+      return false;
+    }
+
+    try {
+      setRepaySettlementState("settlement_pending");
+      setRepaySettlementError(null);
+      const settlement = await privara.settleRepayInterest({
+        user: account.address,
+        amount: lastRepayAmount,
+      });
+
+      if (!settlement.ok || !settlement.hash) {
+        const message = settlement.message ?? "Private settlement retry failed.";
+        setRepaySettlementState("settlement_failed");
+        setRepaySettlementError(message);
+        addToast({ variant: "error", message });
+        return false;
+      }
+
+      setSettlementTxHash(settlement.hash);
+      setRepaySettlementState("settlement_confirmed");
+      setRepaySettlementError(null);
+      addToast({ variant: "success", message: "Private settlement confirmed." });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Private settlement retry failed.";
+      setRepaySettlementState("settlement_failed");
+      setRepaySettlementError(message);
+      addToast({ variant: "error", message });
+      return false;
+    }
+  }, [account.address, addToast, lastRepayAmount, privara]);
 
   const isWriting = writer.isPending;
   const isEncrypting = encryptor.isEncrypting;
+
+  // Derived variables for backward compatibility
+  const totalPoolCollateralDecrypting = false; // Not decryptable by users
+  const totalPoolDebtDecrypting = false; // Not decryptable by users
 
   return {
     account,
     status,
     setStatus,
     lastTxHash,
+    repayTxHash,
+    settlementTxHash,
+    repaySettlementState,
+    repaySettlementError,
     canRead,
     canWrite,
     canUseContract,
@@ -990,7 +1455,7 @@ export function useWalnutProtocol() {
     linkedWallets,
     linkedWalletCount,
     linkedWalletsLoading,
-    creditTier,
+    creditTier: effectiveCreditTier,
     creditTierLoading,
     tierLTV,
     tierLTVLoading,
@@ -1013,6 +1478,7 @@ export function useWalnutProtocol() {
     getOfferTerms,
     createOffer,
     matchOffer,
+    retryRepaySettlement,
     hasDecryptPending,
     hasDecryptError,
     isWriting,
@@ -1021,3 +1487,4 @@ export function useWalnutProtocol() {
 }
 
 export type WalnutProtocolState = ReturnType<typeof useWalnutProtocol>;
+
