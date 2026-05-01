@@ -379,6 +379,16 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
+    padding-inline: 0.25rem;
+  }
+
+  .walnut-health-score {
+    font-family: var(--font-mono);
+    font-size: 1.02rem;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
   }
 
   .walnut-status-tile {

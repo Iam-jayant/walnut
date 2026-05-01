@@ -15,18 +15,19 @@ import { Button } from "@/components/ui/button";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { LiquidationBadge } from "@/components/walnut/liquidation-badge";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
-import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { useWalnutProtocol } from "../../hooks/use-walnut-protocol";
 import {
   BASIS_POINTS_SCALE,
   HEALTH_FACTOR_AT_RISK_THRESHOLD,
   HEALTH_FACTOR_SAFE_THRESHOLD,
+  HEALTH_FACTOR_SCORE_MAX,
   HEALTH_FACTOR_SCALE,
 } from "@/lib/protocol-constants";
 
 export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [isRevealingValues, setIsRevealingValues] = useState(false);
-  const protocol = useWalnutProtocol({ mode: "advanced" });
+  const protocol = useWalnutProtocol();
   const collateralDecrypted =
     typeof protocol.collateral.decrypted.data === "bigint"
       ? protocol.collateral.decrypted.data
@@ -65,6 +66,24 @@ export default function WalnutDashboardPage() {
     return "0";
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
+  const totalPoolCollateralLabel = useMemo(() => {
+    if (!protocol.canRead || !showDecrypted) return "******";
+    if (protocol.totalPoolCollateralDecrypting) return "Loading...";
+    if (typeof protocol.totalPoolCollateral.decrypted.data === "bigint") {
+      return protocol.totalPoolCollateral.decrypted.data.toString();
+    }
+    return "0";
+  }, [protocol.canRead, protocol.totalPoolCollateral.decrypted.data, protocol.totalPoolCollateralDecrypting, showDecrypted]);
+
+  const totalPoolDebtLabel = useMemo(() => {
+    if (!protocol.canRead || !showDecrypted) return "******";
+    if (protocol.totalPoolDebtDecrypting) return "Loading...";
+    if (typeof protocol.totalPoolDebt.decrypted.data === "bigint") {
+      return protocol.totalPoolDebt.decrypted.data.toString();
+    }
+    return "0";
+  }, [protocol.canRead, protocol.totalPoolDebt.decrypted.data, protocol.totalPoolDebtDecrypting, showDecrypted]);
+
   const healthFactorValue = protocol.healthFactorValue;
 
   const healthFactorLoading = Boolean(
@@ -75,14 +94,16 @@ export default function WalnutDashboardPage() {
     if (!showDecrypted) return "******";
     if (healthFactorLoading) return "Loading...";
     if (healthFactorValue === undefined) return "N/A";
-    return (Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)).toFixed(2);
+    const raw = Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE);
+    const clamped = Math.max(0, Math.min(HEALTH_FACTOR_SCORE_MAX, raw));
+    return clamped.toFixed(2);
   }, [healthFactorLoading, healthFactorValue, showDecrypted]);
 
   const healthGaugePercent = useMemo(() => {
     if (!showDecrypted || healthFactorLoading || healthFactorValue === undefined) return 14;
     const hf = Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE);
     if (!Number.isFinite(hf) || hf <= 0) return 8;
-    return Math.max(8, Math.min(100, (hf / 2) * 100));
+    return Math.max(8, Math.min(100, (hf / HEALTH_FACTOR_SCORE_MAX) * 100));
   }, [healthFactorLoading, healthFactorValue, showDecrypted]);
 
   const healthStatusLabel = useMemo(() => {
@@ -144,18 +165,32 @@ export default function WalnutDashboardPage() {
   const debtMetric = showDecrypted ? debtLabel : "******";
   const availableMetric = showDecrypted ? availableCollateralLabel : "******";
 
+  const creditTierLabel = useMemo(() => {
+    if (!protocol.canRead || !showDecrypted) return "******";
+    if (protocol.creditTierLoading) return "Loading...";
+    if (typeof protocol.creditTier === "bigint") {
+      return `Tier ${protocol.creditTier.toString()}`;
+    }
+    return "N/A";
+  }, [protocol.canRead, protocol.creditTier, protocol.creditTierLoading, showDecrypted]);
+
+  const tierLtvLabel = useMemo(() => {
+    if (!protocol.canRead || !showDecrypted) return "******";
+    if (protocol.tierLTVLoading) return "Loading...";
+    if (typeof protocol.tierLTV === "bigint") {
+      const percent = Number(protocol.tierLTV) / 100;
+      return `${percent.toFixed(2)}%`;
+    }
+    return "N/A";
+  }, [protocol.canRead, protocol.tierLTV, protocol.tierLTVLoading, showDecrypted]);
+
   async function revealValues() {
     if (isRevealingValues) return;
 
     setIsRevealingValues(true);
     try {
       await protocol.refreshBalances();
-
-      // Only request a fresh on-chain health-factor handle when we do not
-      // already have a decrypted value for the current session.
-      if (healthFactorValue === undefined) {
-        await protocol.fetchHealthFactor();
-      }
+      await protocol.fetchHealthFactor();
     } finally {
       setIsRevealingValues(false);
     }
@@ -246,6 +281,47 @@ export default function WalnutDashboardPage() {
         </div>
       </GlassPanel>
 
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+        <GlassPanel className="walnut-card walnut-card-strong">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="walnut-label">Credit Tier</p>
+              <h2 className="mt-2 font-display text-2xl text-foreground">{creditTierLabel}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">Current max LTV: {tierLtvLabel}</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="glass-button"
+              onClick={() => {
+                void protocol.requestCreditTierUpdate();
+              }}
+              isLoading={protocol.creditTierPollingActive || protocol.isWriting}
+              loadingText="Checking..."
+              disabled={!protocol.canWrite}
+            >
+              Request Update
+            </Button>
+          </div>
+        </GlassPanel>
+
+        <GlassPanel className="walnut-card walnut-card-strong">
+          <p className="walnut-label">Pool Stats</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="walnut-kpi-shell">
+              <p className="walnut-label">Total Collateral</p>
+              <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{totalPoolCollateralLabel}</p>
+              <p className="walnut-meta">Encrypted pool supply</p>
+            </div>
+            <div className="walnut-kpi-shell">
+              <p className="walnut-label">Total Debt</p>
+              <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{totalPoolDebtLabel}</p>
+              <p className="walnut-meta">Encrypted pool utilization</p>
+            </div>
+          </div>
+        </GlassPanel>
+      </div>
+
       {!protocol.permit.hasPermit && (
         <GlassPanel className="walnut-card walnut-alert-warning border-amber-300/40 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -322,9 +398,15 @@ export default function WalnutDashboardPage() {
               >
                 <div className="walnut-health-gauge-core">
                   <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Risk</span>
-                  <span className="mt-1 font-mono text-[1.45rem] leading-none text-foreground">
+                  <span className="walnut-health-score mt-1 text-foreground">
                     {showDecrypted && healthFactorValue !== undefined
-                      ? `${(Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)).toFixed(1)}x`
+                      ? `${Math.max(
+                          0,
+                          Math.min(
+                            HEALTH_FACTOR_SCORE_MAX,
+                            Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)
+                          )
+                        ).toFixed(1)}/${HEALTH_FACTOR_SCORE_MAX}`
                       : "--"}
                   </span>
                 </div>
@@ -353,12 +435,6 @@ export default function WalnutDashboardPage() {
           </div>
         </GlassPanel>
       </div>
-
-      {protocol.status && (
-        <GlassPanel className="walnut-alert border-accent/40">
-          <p className="text-sm text-foreground">{protocol.status}</p>
-        </GlassPanel>
-      )}
 
       <SystemStatusPanel protocol={protocol} />
     </div>
