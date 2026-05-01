@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --webpack",
+    "dev": "next dev --webpack",
+    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "deploy:arbitrum-sepolia": "hardhat run scripts/deploy-sepolia.js --network arbitrumSepolia",
@@ -35,7 +36,7 @@
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
-    "@cofhe/hardhat-plugin": "^0.4.0",
+    "@cofhe/hardhat-plugin": "^0.5.2",
     "@fhenixprotocol/cofhe-contracts": "^0.1.3",
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
     "@nomicfoundation/hardhat-verify": "^2.1.3",
