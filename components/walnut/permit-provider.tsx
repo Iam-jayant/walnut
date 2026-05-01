@@ -7,7 +7,7 @@ import {
   useCofheAllPermits,
   useCofheSelectPermit,
 } from "@cofhe/react";
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 
 type WalnutPermitContextValue = {
@@ -36,11 +36,34 @@ export function WalnutPermitProvider({ children }: { children: ReactNode }) {
   const selectPermit = useCofheSelectPermit();
   const [isCreatingPermit, setIsCreatingPermit] = useState(false);
   const [permitError, setPermitError] = useState<string | null>(null);
-  const autoRequestedRef = useRef(false);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   const requestPermitCreation = useCallback(async () => {
-    if (!isConnected || !address || !chainId) return;
-    if (!walletClient || !publicClient) return;
+    if (!isConnected || !address || !chainId) {
+      console.log("[Permit Debug] Cannot create permit - missing requirements:", {
+        isConnected,
+        address,
+        chainId
+      });
+      return;
+    }
+    if (!walletClient || !publicClient) {
+      console.log("[Permit Debug] Cannot create permit - missing clients:", {
+        walletClient: !!walletClient,
+        publicClient: !!publicClient
+      });
+      return;
+    }
+
+    console.log("[Permit Debug] Starting permit creation for:", {
+      address,
+      chainId,
+      chainName: chainId === 421614 ? "Arbitrum Sepolia" : "Unknown"
+    });
 
     setPermitError(null);
     setIsCreatingPermit(true);
@@ -48,11 +71,20 @@ export function WalnutPermitProvider({ children }: { children: ReactNode }) {
     try {
       const permit = await cofheClient.permits.getOrCreateSelfPermit(chainId, address);
 
+      console.log("[Permit Debug] Permit created/retrieved:", {
+        hash: permit?.hash,
+        issuer: permit?.issuer,
+      });
+
       if (permit?.hash) {
         selectPermit(permit.hash);
+        console.log("[Permit Debug] Permit selected:", permit.hash);
+      } else {
+        console.error("[Permit Debug] Permit created but has no hash!");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown permit creation error";
+      console.error("[Permit Debug] Permit creation failed:", message, error);
       setPermitError(message);
     } finally {
       setIsCreatingPermit(false);
@@ -60,39 +92,63 @@ export function WalnutPermitProvider({ children }: { children: ReactNode }) {
   }, [address, chainId, cofheClient.permits, isConnected, publicClient, selectPermit, walletClient]);
 
   useEffect(() => {
-    if (!isConnected || !address) return;
-    if (!activePermit?.permit?.hash || !chainId) return;
+    if (!hasMounted) return;
+    if (!isConnected || !address || !chainId) return;
+    if (!activePermit?.permit?.hash) return;
 
-    window.localStorage.setItem(getStorageKey(chainId, address), activePermit.permit.hash);
-  }, [activePermit?.permit?.hash, address, chainId, isConnected]);
+    const storageKey = getStorageKey(chainId, address);
+    window.localStorage.setItem(storageKey, activePermit.permit.hash);
+    
+    console.log("[Permit Debug] Saved active permit to localStorage:", {
+      key: storageKey,
+      hash: activePermit.permit.hash,
+      issuer: activePermit.permit.issuer,
+      isValid: activePermit.isValid
+    });
+  }, [activePermit?.permit?.hash, activePermit?.isValid, activePermit?.permit?.issuer, address, chainId, hasMounted, isConnected]);
 
   useEffect(() => {
+    if (!hasMounted) return;
     if (!isConnected || !address || !chainId) return;
-    if (activePermit?.permit?.hash) return;
-    if (!allPermits.length) return;
+    if (activePermit?.permit?.hash) {
+      console.log("[Permit Debug] Active permit already exists:", activePermit.permit.hash);
+      return;
+    }
+    if (!allPermits.length) {
+      console.log("[Permit Debug] No permits available yet");
+      return;
+    }
 
     const storageKey = getStorageKey(chainId, address);
     const savedHash = window.localStorage.getItem(storageKey);
+    
+    console.log("[Permit Debug] Restoring permit from storage:", {
+      storageKey,
+      savedHash,
+      availablePermits: allPermits.length
+    });
+    
     const match = savedHash
       ? allPermits.find((permit) => permit.hash === savedHash)
       : undefined;
 
-    selectPermit(match?.hash ?? allPermits[0].hash);
-  }, [activePermit?.permit?.hash, address, allPermits, chainId, isConnected, selectPermit]);
+    const permitToSelect = match?.hash ?? allPermits[0].hash;
+    if (activePermit?.permit?.hash === permitToSelect) return;
+    console.log("[Permit Debug] Selecting permit:", {
+      selected: permitToSelect,
+      wasFromStorage: !!match,
+      fallbackToFirst: !match
+    });
+    
+    selectPermit(permitToSelect);
+  }, [activePermit?.permit?.hash, address, allPermits, chainId, hasMounted, isConnected, selectPermit]);
 
+  // Keep permit creation user-initiated to avoid hydration-time state churn/flicker.
   useEffect(() => {
-    if (!isConnected || !address) {
-      autoRequestedRef.current = false;
-      setPermitError(null);
-      return;
-    }
-
-    if (activePermit?.permit?.hash || allPermits.length > 0) return;
-    if (autoRequestedRef.current) return;
-
-    autoRequestedRef.current = true;
-    void requestPermitCreation();
-  }, [activePermit?.permit?.hash, address, allPermits.length, isConnected, requestPermitCreation]);
+    if (!hasMounted) return;
+    if (isConnected && address) return;
+    setPermitError(null);
+  }, [address, hasMounted, isConnected]);
 
   const value = useMemo<WalnutPermitContextValue>(
     () => ({

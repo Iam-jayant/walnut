@@ -34,7 +34,7 @@ export function ProtocolAlerts({ protocol }: ProtocolHealthProps) {
     alerts.push({ key: "wallet-reconnect", message: "Restoring wallet session...", tone: "info" });
   }
 
-  if (!protocol.isConnected && !protocol.isConnectionTransient) {
+  if (!protocol.isWalletReady && !protocol.isConnectionTransient) {
     alerts.push({ key: "wallet", message: "Connect your wallet to continue.", tone: "warning" });
   }
 

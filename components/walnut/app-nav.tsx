@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAccountModal, useConnectModal } from "@rainbow-me/rainbowkit";
-import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +15,8 @@ const appLinks = [
   { label: "Repay", href: "/app/repay" },
   { label: "Withdraw", href: "/app/withdraw" },
   { label: "Liquidation", href: "/app/liquidation" },
+  { label: "P2P", href: "/app/p2p" },
+  { label: "History", href: "/app/history" },
   { label: "Settings", href: "/app/settings" },
 ];
 
@@ -29,14 +30,9 @@ export function AppNav() {
   const { address, isConnected, status } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { openAccountModal } = useAccountModal();
-  const [mounted, setMounted] = useState(false);
 
   const primaryLinks = appLinks.slice(0, 6);
   const utilityLinks = appLinks.slice(6);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const isWalletReady = Boolean(isConnected && address);
   const isReconnecting = status === "reconnecting" || (isConnected && !address);
@@ -94,28 +90,24 @@ export function AppNav() {
         </nav>
 
         <div className="flex items-center gap-2">
-          {mounted ? (
-            <>
-              <span className="hidden rounded-full border border-black/10 bg-white px-3 py-1 font-mono text-xs text-muted-foreground xl:inline">
-                {walletLabel}
-              </span>
-              {isWalletReady ? (
-                <Button variant="outline" className="glass-button" onClick={() => openAccountModal?.()}>
-                  Manage Wallet
-                </Button>
-              ) : (
-                <Button
-                  className="bg-accent text-accent-foreground hover:bg-accent/85"
-                  disabled={!openConnectModal || isReconnecting}
-                  onClick={() => openConnectModal?.()}
-                >
-                  {isReconnecting ? "Reconnecting..." : "Connect Wallet"}
-                </Button>
-              )}
-            </>
-          ) : (
-            <div className="h-10 w-32 animate-pulse rounded-md bg-gray-200" />
-          )}
+          <>
+            <span className="hidden rounded-full border border-black/10 bg-white px-3 py-1 font-mono text-xs text-muted-foreground xl:inline">
+              {walletLabel}
+            </span>
+            {isWalletReady ? (
+              <Button variant="outline" className="glass-button" onClick={() => openAccountModal?.()}>
+                Manage Wallet
+              </Button>
+            ) : (
+              <Button
+                className="bg-accent text-accent-foreground hover:bg-accent/85"
+                disabled={!openConnectModal || isReconnecting}
+                onClick={() => openConnectModal?.()}
+              >
+                {isReconnecting ? "Reconnecting..." : "Connect Wallet"}
+              </Button>
+            )}
+          </>
         </div>
       </div>
 

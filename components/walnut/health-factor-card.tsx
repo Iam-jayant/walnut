@@ -3,6 +3,7 @@ import {
   HEALTH_FACTOR_AT_RISK_THRESHOLD,
   HEALTH_FACTOR_SAFE_THRESHOLD,
   HEALTH_FACTOR_SCALE,
+  HEALTH_FACTOR_SCORE_MAX,
 } from "@/lib/protocol-constants";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,9 @@ export function HealthFactorCard({
     if (!showDecrypted) return "******";
     if (isDecrypting) return "Loading...";
     if (healthFactor === undefined) return "N/A";
-    return (Number(healthFactor) / Number(HEALTH_FACTOR_SCALE)).toFixed(2);
+    const raw = Number(healthFactor) / Number(HEALTH_FACTOR_SCALE);
+    const clamped = Math.max(0, Math.min(HEALTH_FACTOR_SCORE_MAX, raw));
+    return clamped.toFixed(2);
   };
 
   const statusColors: Record<HealthFactorStatus, string> = {
@@ -51,7 +54,7 @@ export function HealthFactorCard({
     if (!showDecrypted || isDecrypting || healthFactor === undefined) return 14;
     const hf = Number(healthFactor) / Number(HEALTH_FACTOR_SCALE);
     if (!Number.isFinite(hf) || hf <= 0) return 8;
-    return Math.max(8, Math.min(100, (hf / 2) * 100));
+    return Math.max(8, Math.min(100, (hf / HEALTH_FACTOR_SCORE_MAX) * 100));
   })();
 
   return (
