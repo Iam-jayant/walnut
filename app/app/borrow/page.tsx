@@ -19,7 +19,7 @@ export default function BorrowPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [borrowInFlight, setBorrowInFlight] = useState(false);
-  const protocol = useWalnutProtocol({ mode: "advanced" });
+  const protocol = useWalnutProtocol();
 
   const pendingBorrow = borrowInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && protocol.debtDecrypting;
@@ -40,10 +40,11 @@ export default function BorrowPage() {
   const amountNumber = Number(amount || "0");
   const newDebt = currentDebt + amountNumber;
   const ltvRatio = collateral > 0 ? Math.min(999, (newDebt / collateral) * 100) : 0;
+  const tierLtvLimit = typeof protocol.tierLTV === "bigint" ? Number(protocol.tierLTV) / 100 : LTV_LIMIT_PERCENT;
   const canRenderRiskPreview = showDecrypted && protocol.canRead && !protocol.debtDecrypting && collateral > 0;
   const previewLtv = canRenderRiskPreview ? `${ltvRatio.toFixed(2)}%` : "--";
   const previewHealthFactor = canRenderRiskPreview && newDebt > 0 ? (collateral / newDebt).toFixed(2) : "--";
-  const exceedsLTV = canRenderRiskPreview ? ltvRatio > LTV_LIMIT_PERCENT : false;
+  const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvLimit : false;
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
@@ -84,7 +85,7 @@ export default function BorrowPage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="walnut-status-chip walnut-status-chip-ghost">Risk Preview</span>
-          <span className="walnut-status-chip walnut-status-chip-ghost">{`${LTV_LIMIT_PERCENT}% LTV Cap`}</span>
+          <span className="walnut-status-chip walnut-status-chip-ghost">{`${tierLtvLimit.toFixed(2)}% LTV Cap`}</span>
         </div>
       </GlassPanel>
 
@@ -192,11 +193,6 @@ export default function BorrowPage() {
             </div>
           </GlassPanel>
 
-          {protocol.status && (
-            <GlassPanel className="walnut-alert border-accent/40">
-              <p className="text-sm text-foreground">{protocol.status}</p>
-            </GlassPanel>
-          )}
 
           <SystemStatusPanel protocol={protocol} />
         </div>

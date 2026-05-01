@@ -13,9 +13,10 @@ export default function RepayPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [repayInFlight, setRepayInFlight] = useState(false);
-  const protocol = useWalnutProtocol({ mode: "advanced" });
+  const protocol = useWalnutProtocol();
+  const settlementPending = protocol.repaySettlementState === "settlement_pending";
 
-  const pendingRepay = repayInFlight || protocol.isEncrypting;
+  const pendingRepay = repayInFlight || protocol.isEncrypting || settlementPending;
   const pendingDecrypt = showDecrypted && protocol.debtDecrypting;
 
   const currentDebt = useMemo(() => {
@@ -33,6 +34,9 @@ export default function RepayPage() {
     return currentDebt - typedAmount;
   }, [currentDebt, typedAmount]);
 
+  const hasKnownDebt = showDecrypted && typeof protocol.debt.decrypted.data === "bigint";
+  const isOverRepay = hasKnownDebt && typedAmount > currentDebt;
+
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
     if (protocol.debtDecrypting) return "Loading...";
@@ -44,10 +48,11 @@ export default function RepayPage() {
 
   async function handleRepay() {
     if (pendingRepay || !amount) return;
+    if (isOverRepay) return;
 
     setRepayInFlight(true);
     try {
-      const success = await protocol.submitRepay(amount);
+      const success = await protocol.submitEncryptedAmount("repay", amount);
 
       if (success) {
         setAmount("");
@@ -73,7 +78,7 @@ export default function RepayPage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="walnut-status-chip walnut-status-chip-ghost">Principal Live</span>
-          <span className="walnut-status-chip walnut-status-chip-ghost">Settlement Wave 3</span>
+          <span className="walnut-status-chip walnut-status-chip-ghost">Private Settlement Live</span>
         </div>
       </GlassPanel>
 
@@ -85,7 +90,7 @@ export default function RepayPage() {
             <div>
               <p className="walnut-label">Repay Studio</p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Complete principal repayment now. Private interest settlement is scheduled for Wave 3.
+                Complete principal repayment and private interest settlement in one flow.
               </p>
             </div>
             <span className="walnut-status-chip walnut-status-chip-ghost">Encrypted</span>
@@ -128,17 +133,71 @@ export default function RepayPage() {
             <p className="walnut-label">Repayment Progress</p>
             <div className="mt-3 space-y-2">
               <div className="walnut-progress flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full ${pendingRepay ? "bg-accent animate-pulse" : "bg-muted"}`} />
+                <div
+                  className={`h-2 w-2 rounded-full ${
+                    protocol.repaySettlementState === "repay_pending"
+                      ? "bg-accent animate-pulse"
+                      : protocol.repaySettlementState === "repay_confirmed" ||
+                        protocol.repaySettlementState === "settlement_pending" ||
+                        protocol.repaySettlementState === "settlement_confirmed"
+                      ? "bg-emerald-500"
+                      : "bg-muted"
+                  }`}
+                />
                 <p className="text-sm text-foreground">
-                  Step 1: Repay principal on-chain {pendingRepay ? "[in progress]" : ""}
+                  Step 1: Repay principal on-chain
                 </p>
               </div>
               <div className="walnut-progress flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-muted" />
-                <p className="text-sm text-muted-foreground">Step 2: Private interest settlement (Coming in Wave 3)</p>
+                <div
+                  className={`h-2 w-2 rounded-full ${
+                    protocol.repaySettlementState === "settlement_pending"
+                      ? "bg-accent animate-pulse"
+                      : protocol.repaySettlementState === "settlement_confirmed"
+                      ? "bg-emerald-500"
+                      : protocol.repaySettlementState === "settlement_failed"
+                      ? "bg-red-500"
+                      : "bg-muted"
+                  }`}
+                />
+                <p className="text-sm text-muted-foreground">Step 2: Private interest settlement</p>
               </div>
             </div>
           </div>
+
+          {(protocol.repayTxHash || protocol.settlementTxHash) && (
+            <div className="walnut-card border-accent/30">
+              <p className="walnut-label">Transaction Hashes</p>
+              <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                {protocol.repayTxHash && (
+                  <p>
+                    Repay:{" "}
+                    <a
+                      className="text-accent underline"
+                      href={`https://sepolia.arbiscan.io/tx/${protocol.repayTxHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {protocol.repayTxHash.slice(0, 10)}...{protocol.repayTxHash.slice(-8)}
+                    </a>
+                  </p>
+                )}
+                {protocol.settlementTxHash && (
+                  <p>
+                    Settlement:{" "}
+                    <a
+                      className="text-accent underline"
+                      href={`https://sepolia.arbiscan.io/tx/${protocol.settlementTxHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {protocol.settlementTxHash.slice(0, 10)}...{protocol.settlementTxHash.slice(-8)}
+                    </a>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             {!protocol.permit.hasPermit && (
@@ -156,11 +215,26 @@ export default function RepayPage() {
               className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
               onClick={handleRepay}
               isLoading={pendingRepay}
-              loadingText={protocol.isEncrypting ? "Encrypting..." : "Repaying..."}
-              disabled={!amount || pendingRepay}
+              loadingText={
+                protocol.isEncrypting
+                  ? "Encrypting..."
+                  : settlementPending
+                  ? "Settling..."
+                  : "Repaying..."
+              }
+              disabled={!amount || pendingRepay || isOverRepay}
             >
               Repay
             </Button>
+            {protocol.repaySettlementState === "settlement_failed" && (
+              <Button
+                variant="outline"
+                className="glass-button"
+                onClick={() => void protocol.retryRepaySettlement()}
+              >
+                Retry Private Settlement
+              </Button>
+            )}
             <Button
               variant="outline"
               className="glass-button min-w-39 justify-center"
@@ -198,19 +272,21 @@ export default function RepayPage() {
           <GlassPanel className="walnut-card">
             <p className="walnut-label">Status</p>
             <p className="mt-2 text-sm text-foreground">
-              {pendingRepay
+              {isOverRepay
+                ? "Repay amount cannot be greater than current debt."
+                : protocol.repaySettlementState === "settlement_failed"
+                ? protocol.repaySettlementError ?? "Repay succeeded, but private settlement failed."
+                : protocol.repaySettlementState === "settlement_pending"
+                ? "Repay confirmed. Waiting for private settlement confirmation..."
+                : protocol.repaySettlementState === "settlement_confirmed"
+                ? "Repay and private settlement both confirmed."
+                : pendingRepay
                 ? "Repayment transaction in progress..."
-                : protocol.status || "Ready to submit principal repayment."}
+                : "Ready to submit principal repayment."}
             </p>
           </GlassPanel>
         </div>
       </div>
-
-      {protocol.status && (
-        <GlassPanel className="walnut-alert border-accent/40">
-          {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
-        </GlassPanel>
-      )}
 
       <SystemStatusPanel protocol={protocol} />
     </div>

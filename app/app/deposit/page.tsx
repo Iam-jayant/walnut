@@ -19,7 +19,7 @@ export default function DepositPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [depositInFlight, setDepositInFlight] = useState(false);
-  const protocol = useWalnutProtocol({ mode: "advanced" });
+  const protocol = useWalnutProtocol();
 
   const pendingDeposit = depositInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && protocol.collateralDecrypting;
@@ -193,17 +193,11 @@ export default function DepositPage() {
             <p className="mt-2 text-sm text-foreground">
               {pendingDeposit
                 ? "Transaction in progress..."
-                : protocol.status || "Ready for your next secure deposit."}
+                : "Ready for your next secure deposit."}
             </p>
           </GlassPanel>
         </div>
       </div>
-
-      {protocol.status && (
-        <GlassPanel className="walnut-alert border-accent/40">
-          {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
-        </GlassPanel>
-      )}
 
       <SystemStatusPanel protocol={protocol} />
     </div>

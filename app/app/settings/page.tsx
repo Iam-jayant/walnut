@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { useWalnutPermit } from "@/components/walnut/permit-provider";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
+import { useToast } from "@/components/walnut/toast-provider";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { usePublicClient } from "wagmi";
 
@@ -36,7 +37,8 @@ export default function SettingsPage() {
   const { address, chain } = useAccount();
   const publicClient = usePublicClient();
   const permit = useWalnutPermit();
-  const protocol = useWalnutProtocol({ mode: "advanced" });
+  const protocol = useWalnutProtocol();
+  const { addToast } = useToast();
   const [ensNameInput, setEnsNameInput] = useState("");
   const [walletInput, setWalletInput] = useState("");
   const [showAggregated, setShowAggregated] = useState(false);
@@ -144,7 +146,7 @@ export default function SettingsPage() {
   async function handleLinkWallet() {
     const normalizedWallet = walletForSubmit;
     if (!isAddress(normalizedWallet)) {
-      protocol.setStatus("Additional wallet address is invalid.");
+      addToast({ variant: "error", message: "Additional wallet address is invalid." });
       return;
     }
 
@@ -321,12 +323,6 @@ export default function SettingsPage() {
           </Button>
         </div>
       </GlassPanel>
-
-      {protocol.status && (
-        <GlassPanel className="walnut-alert border-accent/40">
-          <p className="text-sm text-foreground">{protocol.status}</p>
-        </GlassPanel>
-      )}
 
       <SystemStatusPanel protocol={protocol} />
     </div>

@@ -13,7 +13,7 @@ export default function WithdrawPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [withdrawInFlight, setWithdrawInFlight] = useState(false);
-  const protocol = useWalnutProtocol({ mode: "advanced" });
+  const protocol = useWalnutProtocol();
 
   const pendingWithdraw = withdrawInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && (protocol.collateralDecrypting || protocol.debtDecrypting);
@@ -77,7 +77,7 @@ export default function WithdrawPage() {
 
     setWithdrawInFlight(true);
     try {
-      const success = await protocol.submitWithdraw(amount);
+      const success = await protocol.submitEncryptedAmount("withdraw", amount);
       if (success) {
         setAmount("");
       }
@@ -220,17 +220,11 @@ export default function WithdrawPage() {
             <p className="mt-2 text-sm text-foreground">
               {pendingWithdraw
                 ? "Withdrawal transaction in progress..."
-                : protocol.status || "Ready to submit encrypted withdrawal."}
+                : "Ready to submit encrypted withdrawal."}
             </p>
           </GlassPanel>
         </div>
       </div>
-
-      {protocol.status && (
-        <GlassPanel className="walnut-alert border-accent/40">
-          {protocol.status && <p className="text-sm text-foreground">{protocol.status}</p>}
-        </GlassPanel>
-      )}
 
       <SystemStatusPanel protocol={protocol} />
     </div>
