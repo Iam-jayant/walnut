@@ -1,91 +1,55 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function CtaSection() {
-  const [isVisible, setIsVisible] = useState(false);
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) setIsVisible(true);
-      },
-      { threshold: 0.2 }
-    );
-
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setMousePosition({
-      x: ((e.clientX - rect.left) / rect.width) * 100,
-      y: ((e.clientY - rect.top) / rect.height) * 100,
-    });
-  };
-
   return (
-    <section ref={sectionRef} className="relative py-32 lg:py-48 overflow-hidden">
-      <div className="max-w-350 mx-auto px-6 lg:px-12">
-        <div
-          className={`relative interactive-tilt glass-panel rounded-2xl transition-all duration-1000 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
-          onMouseMove={handleMouseMove}
-        >
-          {/* Spotlight effect */}
-          <div 
-            className="absolute inset-0 opacity-10 pointer-events-none transition-opacity duration-300 rounded-2xl"
-            style={{
-              background: `radial-gradient(600px circle at ${mousePosition.x}% ${mousePosition.y}%, var(--color-accent), transparent 40%)`
-            }}
-          />
+    <section className="relative bg-white py-24 overflow-hidden">
+      {/* Subtle gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-b from-gray-50 to-white"></div>
+      
+      <div className="relative z-10 mx-auto max-w-4xl px-6 text-center">
+        {/* Main heading */}
+        <h2 className="text-4xl lg:text-5xl font-sans font-semibold text-black mb-6 tracking-tight">
+          Ready to borrow privately?
+        </h2>
+        
+        {/* Subtext */}
+        <p className="text-lg text-gray-600 mb-10 max-w-2xl mx-auto leading-relaxed">
+          Experience confidential lending on Arbitrum Sepolia. Your positions stay encrypted.
+        </p>
+        
+        {/* CTA Buttons */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <Button
+            asChild
+            size="lg"
+            className="h-14 px-8 rounded-full bg-black text-white hover:bg-black/90 text-base font-medium group shadow-lg hover:shadow-xl transition-all"
+          >
+            <Link href="/app">
+              Launch App
+              <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+            </Link>
+          </Button>
           
-          <div className="relative z-10 px-8 lg:px-16 py-16 lg:py-24">
-            <div className="flex flex-col items-center justify-center gap-8 text-center">
-              {/* Content */}
-              <div>
-                <h2 className="text-4xl lg:text-6xl font-display tracking-tight mb-6 leading-[1.1]">
-                  DeFi should not expose you.
-                </h2>
-
-                <p className="text-lg text-muted-foreground mb-10 leading-relaxed max-w-2xl mx-auto">
-                  Your financial information is yours alone. Join Walnut to borrow and lend with complete privacy.
-                </p>
-              </div>
-
-              {/* CTAs */}
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                <Button
-                  asChild
-                  size="lg"
-                  className="h-14 rounded-full bg-accent px-8 text-base text-accent-foreground hover:bg-accent/85 group"
-                >
-                  <Link href="/app">
-                    Start Using Walnut
-                    <ArrowRight className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" />
-                  </Link>
-                </Button>
-                <Button
-                  asChild
-                  size="lg"
-                  variant="outline"
-                  className="h-14 rounded-full border-black/15 bg-white px-8 text-base hover:bg-black/10"
-                >
-                  <a href="https://github.com/Iam-jayant/walnut" target="_blank" rel="noopener noreferrer">
-                    Read the Docs
-                  </a>
-                </Button>
-              </div>
-            </div>
-          </div>
+          <Button
+            asChild
+            size="lg"
+            variant="outline"
+            className="h-14 px-8 rounded-full border-2 border-black/20 bg-white hover:bg-gray-50 text-base font-medium transition-all"
+          >
+            <a href="https://github.com/Iam-jayant/walnut" target="_blank" rel="noopener noreferrer">
+              View Documentation
+            </a>
+          </Button>
         </div>
+        
+        {/* Small note */}
+        <p className="mt-8 text-xs text-gray-500">
+          Currently live on Arbitrum Sepolia testnet
+        </p>
       </div>
     </section>
   );
