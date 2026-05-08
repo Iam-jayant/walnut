@@ -9,8 +9,8 @@
 
 # production
 /build
-/artifacts
 /cache
+/artifacts
 coverage
 
 # debug
@@ -27,6 +27,7 @@ yarn-error.log*
 
 # editor/local workspace
 .vscode/
+.cursor/
 
 # local planning artifacts
 .kiro/
@@ -42,6 +43,12 @@ build-output.log
 tmp-*.log
 tmp-*.json
 tmp-*.cjs
+
+# local test and diagnostic scripts
+scripts/check-permit-status.js
+scripts/diagnose-frontend.js
+scripts/phase0-smoke.mjs
+test/frontend-integration.test.js
 
 # typescript
 *.tsbuildinfo

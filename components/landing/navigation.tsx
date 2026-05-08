@@ -2,147 +2,123 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Menu, X } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const navLinks = [
-  { name: "Product", href: "#product" },
-  { name: "How It Works", href: "#how-it-works" },
-  { name: "Privacy", href: "#security" },
-  { name: "Docs", href: "https://github.com/Iam-jayant/walnut", external: true },
-  { name: "GitHub", href: "https://github.com/Iam-jayant/walnut", external: true },
+  { name: "Home", href: "/" },
+  { name: "Privacy", href: "#" },
+  { name: "Vision", href: "#" },
+  { name: "Docs", href: "#" },
 ];
 
 export function Navigation() {
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState("");
+  const [isVisible, setIsVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
+      const currentScrollY = window.scrollY;
+      
+      // Hide navbar on scroll down, show on scroll up
+      if (currentScrollY > lastScrollY && currentScrollY > 100) {
+        setIsVisible(false);
+      } else {
+        setIsVisible(true);
+      }
+      
+      setLastScrollY(currentScrollY);
+
+      // Active section detection
+      const sections = ["product", "how-it-works", "security"];
+      const scrollPosition = window.scrollY + 200;
+
+      for (const section of sections) {
+        const element = document.getElementById(section);
+        if (element) {
+          const { offsetTop, offsetHeight } = element;
+          if (scrollPosition >= offsetTop && scrollPosition < offsetTop + offsetHeight) {
+            setActiveSection(`#${section}`);
+            break;
+          }
+        }
+      }
+
+      if (window.scrollY < 100) {
+        setActiveSection("");
+      }
     };
-    window.addEventListener("scroll", handleScroll);
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [lastScrollY]);
+
+  const isActive = (href: string) => {
+    if (href === "/") {
+      return window.location.pathname === "/";
+    }
+    if (href.startsWith("#")) {
+      return activeSection === href;
+    }
+    return false;
+  };
 
   return (
-    <header
-      className={`fixed z-50 transition-all duration-500 ${
-        isScrolled 
-          ? "top-4 left-4 right-4" 
-          : "top-0 left-0 right-0"
-      }`}
+    <nav 
+      className={cn(
+        "fixed top-0 left-0 right-0 z-50 h-24 flex items-center justify-center px-6 pointer-events-none transition-transform duration-500",
+        isVisible ? "translate-y-0" : "-translate-y-full"
+      )}
     >
-      <nav 
-        className={`mx-auto transition-all duration-500 ${
-          isScrolled || isMobileMenuOpen
-            ? "glass-panel rounded-2xl shadow-2xl max-w-310"
-            : "bg-transparent max-w-335"
-        }`}
-      >
-        <div 
-          className={`flex items-center justify-between transition-all duration-500 px-6 lg:px-8 ${
-            isScrolled ? "h-14" : "h-20"
-          }`}
-        >
-          {/* Logo */}
-          <a href="#" className="flex items-center gap-2 group">
-            <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-xl" : "text-2xl"}`}>Walnut</span>
-          </a>
+      <div className="w-full max-w-7xl flex items-center justify-between pointer-events-auto">
+        {/* LOGO */}
+        <Link href="/" className="group flex items-center no-underline">
+          <Image 
+            src="/walnut logo.png" 
+            alt="Walnut" 
+            width={250} 
+            height={100}
+            className="h-8 w-auto"
+            priority
+          />
+        </Link>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-12">
-            {navLinks.map((link) => (
-              <a
+        {/* NAVIGATION PILL (CENTERED ABSOLUTELY) */}
+        <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex max-w-[calc(100%-640px)] items-center p-1.5 rounded-full bg-white/95 backdrop-blur-[32px] border border-black/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] gap-0.5">
+          {navLinks.map((link) => {
+            const active = isActive(link.href);
+
+            return (
+              <Link
                 key={link.name}
                 href={link.href}
-                target={link.external ? "_blank" : undefined}
-                rel={link.external ? "noopener noreferrer" : undefined}
-                className="relative text-sm text-foreground/75 transition-colors duration-300 hover:text-foreground group"
+                className={cn(
+                  "relative px-4 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 whitespace-nowrap",
+                  active ? "text-foreground" : "text-foreground/50 hover:text-foreground/80"
+                )}
               >
-                {link.name}
-                <span className="absolute -bottom-1 left-0 w-0 h-px bg-foreground transition-all duration-300 group-hover:w-full" />
-              </a>
-            ))}
-          </div>
-
-          {/* Desktop CTA */}
-          <div className="hidden md:flex items-center gap-4">
-            <Button
-              asChild
-              size="sm"
-              className={`rounded-full bg-accent text-accent-foreground transition-all duration-500 hover:bg-accent/85 ${isScrolled ? "h-8 px-4 text-xs" : "px-6"}`}
-            >
-              <Link href="/app">Launch App</Link>
-            </Button>
-          </div>
-
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2"
-            aria-label="Toggle menu"
-          >
-            {isMobileMenuOpen ? (
-              <X className="w-6 h-6" />
-            ) : (
-              <Menu className="w-6 h-6" />
-            )}
-          </button>
+                {active && (
+                  <span className="absolute inset-0 rounded-full bg-white border border-black/[0.08] shadow-[0_2px_8px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.9)]" />
+                )}
+                <span className="relative z-10">{link.name}</span>
+              </Link>
+            );
+          })}
         </div>
 
-      </nav>
-      
-      {/* Mobile Menu - Full Screen Overlay */}
-      <div
-        className={`md:hidden fixed inset-0 bg-background z-40 transition-all duration-500 ${
-          isMobileMenuOpen 
-            ? "opacity-100 pointer-events-auto" 
-            : "opacity-0 pointer-events-none"
-        }`}
-        style={{ top: 0 }}
-      >
-        <div className="flex flex-col h-full px-8 pt-28 pb-8">
-          {/* Navigation Links */}
-          <div className="flex-1 flex flex-col justify-center gap-8">
-            {navLinks.map((link, i) => (
-              <a
-                key={link.name}
-                href={link.href}
-                target={link.external ? "_blank" : undefined}
-                rel={link.external ? "noopener noreferrer" : undefined}
-                onClick={() => !link.external && setIsMobileMenuOpen(false)}
-                className={`text-5xl font-display text-foreground hover:text-muted-foreground transition-all duration-500 ${
-                  isMobileMenuOpen 
-                    ? "opacity-100 translate-y-0" 
-                    : "opacity-0 translate-y-4"
-                }`}
-                style={{ transitionDelay: isMobileMenuOpen ? `${i * 75}ms` : "0ms" }}
-              >
-                {link.name}
-              </a>
-            ))}
-          </div>
-          
-          {/* Bottom CTAs */}
-          <div className={`pt-8 border-t border-foreground/10 transition-all duration-500 ${
-            isMobileMenuOpen 
-              ? "opacity-100 translate-y-0" 
-              : "opacity-0 translate-y-4"
-          }`}
-          style={{ transitionDelay: isMobileMenuOpen ? "300ms" : "0ms" }}
+        {/* ACTIONS */}
+        <div className="flex items-center gap-4">
+          <Link
+            href="/app"
+            className="hidden md:flex items-center justify-center gap-2 bg-accent hover:bg-accent/90 border border-black/10 px-6 py-2.5 rounded-full backdrop-blur-[24px] transition-all duration-500 text-sm font-semibold text-accent-foreground group shadow-[0_8px_32px_0_rgba(0,0,0,0.12)]"
           >
-            <Button 
-              asChild
-              className="h-14 w-full rounded-full bg-accent text-accent-foreground text-base hover:bg-accent/85"
-            >
-              <Link href="/app" onClick={() => setIsMobileMenuOpen(false)}>
-                Launch App
-              </Link>
-            </Button>
-          </div>
+            Launch App
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Link>
         </div>
       </div>
-    </header>
+    </nav>
   );
 }
