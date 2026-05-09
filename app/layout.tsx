@@ -2,8 +2,7 @@ import React from "react"
 import type { Metadata } from 'next'
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
-import { Web3Providers } from '@/components/web3-providers'
-import { ToastProvider } from '@/components/walnut/toast-provider'
+import { ThemeProvider } from '@/components/theme-provider'
 import '@rainbow-me/rainbowkit/styles.css'
 import './globals.css'
 
@@ -37,9 +36,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
       <body className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} font-sans antialiased`} suppressHydrationWarning>
-        <Web3Providers>
-          <ToastProvider>{children}</ToastProvider>
-        </Web3Providers>
+        <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light">
+          {children}
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

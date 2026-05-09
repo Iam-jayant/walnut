@@ -7,8 +7,9 @@ import { CallbackSystem } from "@/components/privacy/callback-system";
 import { UseCases } from "@/components/privacy/use-cases";
 import { TechnicalSpecs } from "@/components/privacy/technical-specs";
 import { ScrollProgress } from "@/components/landing/scroll-progress";
+import type { Metadata } from 'next';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Privacy Architecture - Walnut Protocol',
   description: 'Deep dive into Walnut\'s confidential lending infrastructure powered by Fhenix CoFHE and Fully Homomorphic Encryption.',
 };
