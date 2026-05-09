@@ -59,7 +59,7 @@ export function UseCases() {
   return (
     <section ref={sectionRef} className="relative py-32 overflow-hidden">
       {/* Section number */}
-      <div className="absolute top-32 right-12 text-[280px] font-bold text-white opacity-[0.02] pointer-events-none select-none">
+      <div className="absolute top-32 right-12 text-[280px] font-bold text-gray-900 opacity-[0.02] pointer-events-none select-none">
         07
       </div>
 
@@ -84,7 +84,7 @@ export function UseCases() {
               Lending Primitives
             </span>
           </h2>
-          <p className="text-xl text-gray-400 max-w-3xl leading-relaxed">
+          <p className="text-xl text-gray-600 max-w-3xl leading-relaxed">
             Walnut's FHE architecture enables lending features that are structurally impossible
             in traditional transparent DeFi.
           </p>
@@ -106,19 +106,19 @@ export function UseCases() {
                   {/* Icon and title */}
                   <div className="flex items-start gap-4 mb-6">
                     <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border ${
-                      accentColor === "orange" ? "bg-orange-500/10 border-orange-500/20" :
-                      accentColor === "green" ? "bg-green-500/10 border-green-500/20" :
-                      accentColor === "purple" ? "bg-purple-500/10 border-purple-500/20" :
-                      "bg-blue-500/10 border-blue-500/20"
+                      accentColor === "orange" ? "bg-cyan-50 border-cyan-200" :
+                      accentColor === "green" ? "bg-green-100 border-green-200" :
+                      accentColor === "purple" ? "bg-purple-100 border-purple-200" :
+                      "bg-blue-100 border-blue-200"
                     }`}>
                       <Icon className={`w-6 h-6 ${
-                        accentColor === "orange" ? "text-orange-400" :
-                        accentColor === "green" ? "text-green-400" :
-                        accentColor === "purple" ? "text-purple-400" :
-                        "text-blue-400"
+                        accentColor === "orange" ? "text-[#0AD9DC]" :
+                        accentColor === "green" ? "text-green-500" :
+                        accentColor === "purple" ? "text-purple-500" :
+                        "text-blue-500"
                       }`} strokeWidth={1.5} />
                     </div>
-                    <h3 className="text-2xl font-bold text-white pt-2">{useCase.title}</h3>
+                    <h3 className="text-2xl font-bold text-gray-900 pt-2">{useCase.title}</h3>
                   </div>
 
                   {/* Problem */}
@@ -127,21 +127,21 @@ export function UseCases() {
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
                       Traditional DeFi Problem
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed">{useCase.problem}</p>
+                    <p className="text-sm text-gray-700 leading-relaxed">{useCase.problem}</p>
                   </div>
 
                   {/* Solution */}
                   <div className={`mb-4 p-4 rounded-lg border ${
-                    accentColor === "orange" ? "bg-orange-500/5 border-orange-500/20" :
-                    accentColor === "green" ? "bg-green-500/5 border-green-500/20" :
-                    accentColor === "purple" ? "bg-purple-500/5 border-purple-500/20" :
-                    "bg-blue-500/5 border-blue-500/20"
+                    accentColor === "orange" ? "bg-cyan-500/5 border-cyan-200" :
+                    accentColor === "green" ? "bg-green-500/5 border-green-200" :
+                    accentColor === "purple" ? "bg-purple-500/5 border-purple-200" :
+                    "bg-blue-500/5 border-blue-200"
                   }`}>
                     <div className={`text-xs font-mono uppercase tracking-wider mb-2 flex items-center gap-2 ${
-                      accentColor === "orange" ? "text-orange-400" :
-                      accentColor === "green" ? "text-green-400" :
-                      accentColor === "purple" ? "text-purple-400" :
-                      "text-blue-400"
+                      accentColor === "orange" ? "text-[#0AD9DC]" :
+                      accentColor === "green" ? "text-green-500" :
+                      accentColor === "purple" ? "text-purple-500" :
+                      "text-blue-500"
                     }`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${
                         accentColor === "orange" ? "bg-orange-500" :
@@ -151,12 +151,12 @@ export function UseCases() {
                       }`}></span>
                       <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0AD9DC] to-[#00B8BB] font-semibold">Walnut</span> Solution
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed">{useCase.solution}</p>
+                    <p className="text-sm text-gray-700 leading-relaxed">{useCase.solution}</p>
                   </div>
 
                   {/* Privacy guarantees */}
                   <div className="mb-4">
-                    <div className="text-xs font-mono uppercase tracking-wider text-gray-500 mb-3">Privacy Guarantees</div>
+                    <div className="text-xs font-mono uppercase tracking-wider text-gray-600 mb-3">Privacy Guarantees</div>
                     <div className="space-y-2">
                       {useCase.privacy.map((guarantee, i) => (
                         <div key={i} className="flex items-start gap-2">
@@ -166,7 +166,7 @@ export function UseCases() {
                             accentColor === "purple" ? "bg-purple-400" :
                             "bg-blue-400"
                           }`} />
-                          <span className="text-sm text-gray-400">{guarantee}</span>
+                          <span className="text-sm text-gray-600">{guarantee}</span>
                         </div>
                       ))}
                     </div>
@@ -177,7 +177,7 @@ export function UseCases() {
                     {useCase.tech.map((tech, i) => (
                       <span
                         key={i}
-                        className="px-2 py-1 text-xs font-mono bg-white/5 border border-white/10 rounded text-gray-300"
+                        className="px-2 py-1 text-xs font-mono bg-gray-100 border border-gray-200 rounded text-gray-700"
                       >
                         {tech}
                       </span>
@@ -195,3 +195,5 @@ export function UseCases() {
     </section>
   );
 }
+
+
