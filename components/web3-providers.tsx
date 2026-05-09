@@ -21,7 +21,7 @@ export function Web3Providers({ children }: { children: ReactNode }) {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light">
-      <WagmiProvider config={wagmiConfig} reconnectOnMount>
+      <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>
           <RainbowKitProvider
             theme={lightTheme({

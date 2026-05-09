@@ -29,18 +29,19 @@ function getStorageKey(chainId: number | undefined, address: string | undefined)
 
 export function WalnutPermitProvider({ children }: { children: ReactNode }) {
   const { address, isConnected, chainId } = useAccount();
+  const [hasMounted, setHasMounted] = useState(false);
+  const [isCreatingPermit, setIsCreatingPermit] = useState(false);
+  const [permitError, setPermitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
   const cofheClient = useCofheClient();
   const { walletClient, publicClient } = useCofheConnection();
   const activePermit = useCofheActivePermit();
   const allPermits = useCofheAllPermits();
   const selectPermit = useCofheSelectPermit();
-  const [isCreatingPermit, setIsCreatingPermit] = useState(false);
-  const [permitError, setPermitError] = useState<string | null>(null);
-  const [hasMounted, setHasMounted] = useState(false);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
 
   const requestPermitCreation = useCallback(async () => {
     if (!isConnected || !address || !chainId) {
@@ -167,6 +168,11 @@ export function WalnutPermitProvider({ children }: { children: ReactNode }) {
     }),
     [activePermit?.isValid, activePermit?.permit?.hash, allPermits.length, isConnected, isCreatingPermit, permitError, requestPermitCreation],
   );
+
+  // Don't render children until mounted to avoid hydration issues
+  if (!hasMounted) {
+    return <>{children}</>;
+  }
 
   return <WalnutPermitContext.Provider value={value}>{children}</WalnutPermitContext.Provider>;
 }
