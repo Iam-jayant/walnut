@@ -147,11 +147,11 @@ export default function P2PPage() {
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">P2P</p>
         <h1 className="mt-2 font-display text-3xl text-foreground">Private Loan Marketplace</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Create encrypted offers on the left and match counterparty requests on the right. Matching now triggers private settlement in Wave 3.
+          Create encrypted offers on the left and match counterparty requests on the right. Matching triggers private settlement.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="walnut-status-chip walnut-status-chip-ghost">Encrypted Terms</span>
-          <span className="walnut-status-chip walnut-status-chip-ghost">Settlement Wave 3</span>
+          <span className="walnut-status-chip walnut-status-chip-ghost">Private Settlement</span>
         </div>
       </GlassPanel>
 
