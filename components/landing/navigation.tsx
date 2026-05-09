@@ -3,17 +3,19 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
   { name: "Home", href: "/" },
-  { name: "Privacy", href: "#" },
+  { name: "Privacy", href: "/privacy" },
+  { name: "Docs", href: "/docs" },
   { name: "Vision", href: "#" },
-  { name: "Docs", href: "#" },
 ];
 
 export function Navigation() {
+  const pathname = usePathname();
   const [activeSection, setActiveSection] = useState("");
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
@@ -57,7 +59,13 @@ export function Navigation() {
 
   const isActive = (href: string) => {
     if (href === "/") {
-      return window.location.pathname === "/";
+      return pathname === "/";
+    }
+    if (href === "/privacy") {
+      return pathname === "/privacy";
+    }
+    if (href === "/docs") {
+      return pathname === "/docs";
     }
     if (href.startsWith("#")) {
       return activeSection === href;
@@ -89,11 +97,14 @@ export function Navigation() {
         <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex max-w-[calc(100%-640px)] items-center p-1.5 rounded-full bg-white/95 backdrop-blur-[32px] border border-black/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] gap-0.5">
           {navLinks.map((link) => {
             const active = isActive(link.href);
+            const isExternal = link.href.startsWith("http");
 
             return (
               <Link
                 key={link.name}
                 href={link.href}
+                target={isExternal ? "_blank" : undefined}
+                rel={isExternal ? "noopener noreferrer" : undefined}
                 className={cn(
                   "relative px-4 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 whitespace-nowrap",
                   active ? "text-foreground" : "text-foreground/50 hover:text-foreground/80"
