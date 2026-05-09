@@ -10,6 +10,12 @@ import { Button } from "@/components/ui/button";
 export function HeroSection() {
   const [isVisible, setIsVisible] = useState(false);
   const [focusIndex, setFocusIndex] = useState(0);
+  const [healthFactor, setHealthFactor] = useState(1.85);
+  const [isDecrypting, setIsDecrypting] = useState(false);
+  const [showValues, setShowValues] = useState(false);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const focusTerms = ["Numbers", "Collateral", "Debt", "Risk Signals"];
 
@@ -25,14 +31,81 @@ export function HeroSection() {
     return () => window.clearInterval(intervalId);
   }, [focusTerms.length]);
 
+  // Simulate health factor fluctuation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHealthFactor((prev) => {
+        const change = (Math.random() - 0.5) * 0.1;
+        const newValue = prev + change;
+        return Math.max(1.2, Math.min(2.5, newValue));
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    setMousePosition({ x, y });
+    
+    // Calculate tilt
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const tiltX = ((y - centerY) / centerY) * -8;
+    const tiltY = ((x - centerX) / centerX) * 8;
+    
+    setTilt({ x: tiltX, y: tiltY });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ x: 0, y: 0 });
+  };
+
+  const handleDecrypt = () => {
+    setIsDecrypting(true);
+    setTimeout(() => {
+      setShowValues(true);
+      setIsDecrypting(false);
+    }, 1500);
+  };
+
+  const handleEncrypt = () => {
+    setShowValues(false);
+  };
+
   return (
-    <section className="relative flex min-h-screen flex-col justify-center overflow-hidden pt-36 pb-16 bg-white">
-      {/* Interactive Grid Background */}
-      <HeroGrid />
+    <section className="relative flex min-h-screen flex-col justify-center overflow-visible pt-10 pb-0 bg-white">
+      {/* Interactive Grid Background - Extended far down */}
+      <div className="absolute inset-0 bottom-[-600px] z-0 overflow-hidden pointer-events-none">
+        <HeroGridContent />
+      </div>
 
       <div className="relative z-10 mx-auto w-full max-w-350 px-5 lg:px-10">
         <div className="grid items-center gap-[3.6rem] lg:grid-cols-2">
           <div>
+            {/* Wave 1 Winner Badge */}
+            <div
+              className={`mb-4 transition-all duration-700 ${
+                isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+              }`}
+            >
+              <div className="inline-flex items-center gap-3 rounded-full border-2 border-[#0AD9DC]/30 bg-gradient-to-r from-[#0AD9DC]/10 via-cyan-50 to-[#00B8BB]/10 px-4 py-2 shadow-[0_0_20px_rgba(10,217,220,0.2)]">
+                <svg className="w-5 h-5 text-[#0AD9DC]" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+                <span className="text-sm font-bold text-gray-900">
+                  Wave 1 Winner
+                </span>
+                <span className="h-4 w-px bg-gray-300" />
+                <span className="text-xs font-medium text-gray-600">
+                  Fhenix Privacy-by-Design Buildathon
+                </span>
+              </div>
+            </div>
+
             <div
               className={`mb-7 transition-all duration-700 ${
                 isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
@@ -120,59 +193,168 @@ export function HeroSection() {
               isVisible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
             }`}
           >
-            <div className="interactive-tilt glass-panel rounded-2xl p-[1.65rem] lg:ml-auto lg:max-w-[92%]">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h3 className="text-[13px] font-mono uppercase tracking-wide text-muted-foreground">Protocol View</h3>
-                  <p className="mt-1 text-[1.58rem] font-display">Encrypted Position</p>
-                </div>
-                <div className="h-9 w-9 rounded-full border border-accent/40 bg-accent/20 shadow-[0_0_24px_rgba(0,0,0,0.18)]" />
-              </div>
+            <div 
+              ref={cardRef}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
+              className="relative lg:ml-auto lg:max-w-[85%] perspective-1000"
+              style={{
+                transform: `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
+                transition: 'transform 0.1s ease-out',
+              }}
+            >
+              {/* Advanced glass card with edge glow */}
+              <div className="relative rounded-3xl p-[1px] bg-gradient-to-br from-white/40 via-white/20 to-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
+                {/* Edge glow effect */}
+                <div 
+                  className="absolute inset-0 rounded-3xl opacity-0 hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+                  style={{
+                    background: `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(255,255,255,0.4), transparent 40%)`,
+                  }}
+                />
+                
+                {/* Inner glass card */}
+                <div className="relative rounded-3xl bg-white/80 backdrop-blur-xl p-7 overflow-hidden border border-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                  {/* Subtle animated gradient overlay */}
+                  <div className="absolute inset-0 opacity-[0.02]">
+                    <div className="absolute inset-0 bg-gradient-to-br from-black/10 via-transparent to-black/5 animate-pulse" />
+                  </div>
 
-              <div className="mb-6 space-y-4.5">
-                <div className="space-y-2">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Collateral</p>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[1.54rem] font-display">******</span>
-                    <span className="text-sm text-muted-foreground">(private)</span>
+                  {/* Corner glows */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-white/30 to-transparent rounded-full blur-2xl" />
+                  <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-black/5 to-transparent rounded-full blur-2xl" />
+
+                  <div className="relative z-10">
+                    <div className="mb-8 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground/80">Protocol View</h3>
+                        <p className="mt-1.5 text-[1.75rem] font-sans font-semibold tracking-tight">Encrypted Position</p>
+                      </div>
+                      <button
+                        onClick={showValues ? handleEncrypt : handleDecrypt}
+                        className="relative h-11 w-11 rounded-full border border-black/10 bg-gradient-to-br from-white to-gray-50 shadow-[0_4px_12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.12)] transition-all duration-300 hover:scale-105 active:scale-95 group"
+                      >
+                        {isDecrypting && (
+                          <div className="absolute inset-0 rounded-full border-2 border-black/20 border-t-black/60 animate-spin" />
+                        )}
+                        {!isDecrypting && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            {showValues ? (
+                              <svg className="w-5 h-5 text-black/70 group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-5 h-5 text-black/70 group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </div>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="mb-8 space-y-6">
+                      <div className="space-y-2.5 group">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70 flex items-center gap-2">
+                          Collateral
+                          {showValues && (
+                            <span className="inline-flex items-center gap-1 text-[8px] px-2 py-0.5 rounded-full bg-black/5 text-black/60 border border-black/10 font-semibold">
+                              <span className="w-1 h-1 rounded-full bg-black/40 animate-pulse" />
+                              LIVE
+                            </span>
+                          )}
+                        </p>
+                        <div className="flex items-baseline gap-2">
+                          <span className={`text-[1.65rem] font-sans font-semibold tracking-tight transition-all duration-500 ${showValues ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+                            {showValues ? (
+                              <span className="animate-[fadeIn_0.5s_ease-in]">12,450 USDC</span>
+                            ) : (
+                              "••••••"
+                            )}
+                          </span>
+                          <span className="text-xs text-muted-foreground/60 font-medium">(private)</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70 flex items-center gap-2">
+                          Debt
+                          {showValues && (
+                            <span className="inline-flex items-center gap-1 text-[8px] px-2 py-0.5 rounded-full bg-black/5 text-black/60 border border-black/10 font-semibold">
+                              <span className="w-1 h-1 rounded-full bg-black/40 animate-pulse" />
+                              LIVE
+                            </span>
+                          )}
+                        </p>
+                        <div className="flex items-baseline gap-2">
+                          <span className={`text-[1.15rem] font-sans font-semibold tracking-tight transition-all duration-500 ${showValues ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+                            {showValues ? (
+                              <span className="animate-[fadeIn_0.5s_ease-in_0.1s]">8,200 USDC</span>
+                            ) : (
+                              "•••"
+                            )}
+                          </span>
+                          <span className="text-xs text-muted-foreground/60 font-medium">(private)</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70 flex items-center gap-2">
+                          Health Factor
+                          <span className={`inline-flex items-center gap-1 text-[8px] px-2 py-0.5 rounded-full font-semibold transition-all duration-300 ${
+                            healthFactor > 1.5 
+                              ? 'bg-green-500/10 text-green-700 border border-green-500/20' 
+                              : 'bg-black/5 text-black/60 border border-black/10'
+                          }`}>
+                            <span className={`w-1 h-1 rounded-full animate-pulse ${
+                              healthFactor > 1.5 ? 'bg-green-600' : 'bg-black/50'
+                            }`} />
+                            {healthFactor > 1.5 ? 'SAFE' : 'WATCH'}
+                          </span>
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <p className="text-[1.15rem] font-sans font-bold tracking-tight transition-all duration-300">
+                            {healthFactor.toFixed(2)}
+                          </p>
+                          <div className="flex-1 h-2 bg-black/5 rounded-full overflow-hidden border border-black/10">
+                            <div 
+                              className={`h-full transition-all duration-500 ${
+                                healthFactor > 1.5 ? 'bg-gradient-to-r from-green-500 to-green-600' : 'bg-gradient-to-r from-black/40 to-black/30'
+                              }`}
+                              style={{ width: `${Math.min(100, (healthFactor / 2.5) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {[
+                        ["LTV", "80% cap"],
+                        ["Auction", "sealed bid"],
+                        ["Wallets", "ENS linked"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-black/10 bg-gradient-to-br from-white to-gray-50/50 py-3 px-3 text-center hover:border-black/20 hover:shadow-md hover:scale-[1.02] transition-all duration-200 group">
+                          <p className="text-[9px] uppercase tracking-wider text-muted-foreground/70 group-hover:text-muted-foreground transition-colors font-semibold">{label}</p>
+                          <p className="mt-1.5 text-[11px] font-semibold text-foreground/80 group-hover:text-foreground transition-colors">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Debt</p>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[1rem] font-display">***</span>
-                    <span className="text-sm text-muted-foreground">(private)</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-mono uppercase tracking-wide text-muted-foreground">Health Factor</p>
-                  <p className="text-[1.06rem] font-display">**.**</p>
-                </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  ["LTV", "80% cap"],
-                  ["Auction", "sealed bid"],
-                  ["Wallets", "ENS linked"],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-xl border border-black/12 bg-white py-2 px-3 text-center">
-                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-                    <p className="mt-1 text-xs font-medium text-foreground">{value}</p>
-                  </div>
-                ))}
-              </div>
+            </div>
+            
+            {/* Powered by text */}
+            <div className="mt-4 text-right">
+              <p className="text-xs text-muted-foreground/60">
+                * Powered by Fhenix CoFHE
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Decorative end line with cyan reflection */}
-        <div className="mt-16 lg:mt-20 relative">
-          <div className="h-px bg-gradient-to-r from-transparent via-black/10 to-transparent" />
-          <div className="absolute inset-0 h-px bg-gradient-to-r from-transparent via-[#0AD9DC]/30 to-transparent blur-sm" />
-        </div>
+        {/* Removed decorative end line - replaced by metrics strip */}
       </div>
     </section>
   );
@@ -208,8 +390,13 @@ export function IntroPanel() {
   };
 
   return (
-    <section ref={sectionRef} className="relative py-0 overflow-hidden bg-white">
-      <div className="max-w-350 mx-auto px-6 lg:px-12 py-8 lg:py-10">
+    <section ref={sectionRef} className="relative py-5 overflow-visible bg-white">
+      {/* Continue grid from hero */}
+      <div className="absolute inset-0 top-[-400px] z-0 overflow-hidden pointer-events-none">
+        <HeroGridContent />
+      </div>
+      
+      <div className="max-w-350 mx-auto px-6 lg:px-12 py-8 lg:py-10 relative z-10">
         <div className="max-w-[82%] mx-auto">
           <div
             className={`relative glass-panel rounded-3xl min-h-[280px] flex items-center transition-all duration-1000 ${
@@ -292,19 +479,15 @@ export function IntroPanel() {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-const HeroGrid = () => {
+const HeroGridContent = () => {
   const mouseX = useMotionValue(-1000);
   const mouseY = useMotionValue(-1000);
   const mobileGridMask = 'radial-gradient(180px circle at 50% 42%, black 0%, transparent 100%)';
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      const gridEl = document.getElementById('hero-grid');
-      if (gridEl) {
-        const { left, top } = gridEl.getBoundingClientRect();
-        mouseX.set(e.clientX - left);
-        mouseY.set(e.clientY - top);
-      }
+      mouseX.set(e.clientX);
+      mouseY.set(e.clientY);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -312,13 +495,10 @@ const HeroGrid = () => {
   }, [mouseX, mouseY]);
 
   return (
-    <div
-      id="hero-grid"
-      className="absolute inset-0 z-0 overflow-hidden bg-background pointer-events-none"
-    >
+    <>
       {/* Global faint background grid */}
       <motion.div
-        className="absolute inset-0 opacity-20 pointer-events-none"
+        className="absolute inset-0 opacity-30 pointer-events-none"
         animate={{ backgroundPosition: ['0px 0px', '64px 64px'] }}
         transition={{ duration: 30, ease: 'linear', repeat: Infinity }}
         style={{
@@ -331,7 +511,7 @@ const HeroGrid = () => {
 
       {/* Glowing active cyan grid lines localized to cursor */}
       <motion.div
-        className="absolute inset-0 pointer-events-none opacity-[0.45]"
+        className="absolute inset-0 pointer-events-none opacity-[0.55]"
         animate={{ backgroundPosition: ['0px 0px', '64px 64px'] }}
         transition={{ duration: 30, ease: 'linear', repeat: Infinity }}
         style={{
@@ -344,7 +524,7 @@ const HeroGrid = () => {
 
       {/* Mobile grid glow */}
       <motion.div
-        className="absolute inset-0 pointer-events-none opacity-[0.24] md:hidden"
+        className="absolute inset-0 pointer-events-none opacity-[0.34] md:hidden"
         animate={{ backgroundPosition: ['0px 0px', '64px 64px'] }}
         transition={{ duration: 30, ease: 'linear', repeat: Infinity }}
         style={{
@@ -354,6 +534,19 @@ const HeroGrid = () => {
           WebkitMaskImage: mobileGridMask,
         }}
       />
+    </>
+  );
+};
+
+const HeroGrid = ({ extended = false }: { extended?: boolean }) => {
+  return (
+    <div
+      id="hero-grid"
+      className={`absolute z-0 overflow-hidden bg-background pointer-events-none ${
+        extended ? 'inset-0 bottom-[-200px]' : 'inset-0'
+      }`}
+    >
+      <HeroGridContent />
     </div>
   );
 };
