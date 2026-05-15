@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
-import { LTV_LIMIT_PERCENT } from "@/lib/protocol-constants";
+import { useTokenBalances } from "@/hooks/use-token-balances";
+import { BORROW_APR_PERCENT, LTV_LIMIT_PERCENT } from "@/lib/protocol-constants";
 
 function toNumber(value: unknown) {
   if (typeof value === "bigint") return Number(value);
@@ -20,6 +21,7 @@ export default function BorrowPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [borrowInFlight, setBorrowInFlight] = useState(false);
   const protocol = useWalnutProtocol();
+  const { wUSDCBalance, refreshBalances } = useTokenBalances();
 
   const pendingBorrow = borrowInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && protocol.debtDecrypting;
@@ -39,12 +41,26 @@ export default function BorrowPage() {
   const projectedDebt = useMemo(() => currentDebtBigint + typedAmount, [currentDebtBigint, typedAmount]);
   const amountNumber = Number(amount || "0");
   const newDebt = currentDebt + amountNumber;
+  
+  // Wave 4: Credit tier and LTV calculation (Task 19.1)
+  const creditTier = typeof protocol.creditTier === "bigint" ? Number(protocol.creditTier) : 0;
+  const tierLtvBps = typeof protocol.tierLTV === "bigint" ? Number(protocol.tierLTV) : 7000; // Default to 70%
+  const tierLtvPercent = tierLtvBps / 100; // Convert basis points to percentage
+  
+  // Wave 4: Maximum borrow amount based on collateral and LTV (Task 19.1)
+  const maxBorrowAmount = useMemo(() => {
+    if (collateral <= 0) return 0;
+    return Math.floor((collateral * tierLtvBps) / 10000);
+  }, [collateral, tierLtvBps]);
+  
   const ltvRatio = collateral > 0 ? Math.min(999, (newDebt / collateral) * 100) : 0;
-  const tierLtvLimit = typeof protocol.tierLTV === "bigint" ? Number(protocol.tierLTV) / 100 : LTV_LIMIT_PERCENT;
   const canRenderRiskPreview = showDecrypted && protocol.canRead && !protocol.debtDecrypting && collateral > 0;
   const previewLtv = canRenderRiskPreview ? `${ltvRatio.toFixed(2)}%` : "--";
   const previewHealthFactor = canRenderRiskPreview && newDebt > 0 ? (collateral / newDebt).toFixed(2) : "--";
-  const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvLimit : false;
+  const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvPercent : false;
+  
+  // Wave 4: Validate borrow amount against maximum (Task 19.1)
+  const exceedsMaxBorrow = amountNumber > maxBorrowAmount;
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
@@ -63,6 +79,8 @@ export default function BorrowPage() {
       const success = await protocol.submitEncryptedAmount("borrow", amount);
       if (success) {
         setAmount("");
+        // Wave 4: Refresh wUSDC balance after borrow (Task 19.1)
+        await refreshBalances();
       }
     } finally {
       setBorrowInFlight(false);
@@ -85,7 +103,8 @@ export default function BorrowPage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="walnut-status-chip walnut-status-chip-ghost">Risk Preview</span>
-          <span className="walnut-status-chip walnut-status-chip-ghost">{`${tierLtvLimit.toFixed(2)}% LTV Cap`}</span>
+          <span className="walnut-status-chip walnut-status-chip-ghost">{`${tierLtvPercent.toFixed(2)}% LTV Cap`}</span>
+          <span className="walnut-status-chip walnut-status-chip-ghost">{`${BORROW_APR_PERCENT}% APR`}</span>
         </div>
       </GlassPanel>
 
@@ -106,7 +125,7 @@ export default function BorrowPage() {
 
             <div>
               <label htmlFor="borrow-amount" className="mb-2 block text-sm text-foreground">
-                Borrow Amount
+                Borrow Amount (wUSDC)
               </label>
               <Input
                 id="borrow-amount"
@@ -116,6 +135,9 @@ export default function BorrowPage() {
                 placeholder="Enter amount"
                 className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Max: {canRenderRiskPreview ? maxBorrowAmount.toLocaleString() : "******"} wUSDC
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -137,17 +159,19 @@ export default function BorrowPage() {
               ))}
             </div>
 
-            {exceedsLTV && (
+            {(exceedsLTV || exceedsMaxBorrow) && (
               <div className="walnut-alert walnut-alert-danger">
                 <p className="text-sm text-red-700">
-                  {`This amount is above the ${LTV_LIMIT_PERCENT}% safety limit. Please enter a lower amount.`}
+                  {exceedsMaxBorrow 
+                    ? `This amount exceeds your maximum borrow limit of ${maxBorrowAmount.toLocaleString()} wUSDC. Please enter a lower amount.`
+                    : `This amount is above the ${tierLtvPercent.toFixed(2)}% LTV limit. Please enter a lower amount.`}
                 </p>
               </div>
             )}
 
-            <div className="walnut-alert walnut-alert-warning">
+            <div className="walnut-alert walnut-alert-info">
               <p className="text-xs text-muted-foreground">
-                {`Keep your borrow amount under ${LTV_LIMIT_PERCENT}% of collateral for a safer position.`}
+                {`Your credit tier ${creditTier} allows up to ${tierLtvPercent.toFixed(2)}% LTV at ${BORROW_APR_PERCENT}% APR.`}
               </p>
             </div>
 
@@ -168,9 +192,9 @@ export default function BorrowPage() {
                 onClick={handleBorrow}
                 isLoading={pendingBorrow}
                 loadingText={protocol.isEncrypting ? "Encrypting..." : "Borrowing..."}
-                disabled={!amount || pendingBorrow || exceedsLTV}
+                disabled={!amount || pendingBorrow || exceedsLTV || exceedsMaxBorrow}
               >
-                Borrow
+                Borrow wUSDC
               </Button>
               <Button
                 variant="outline"
@@ -198,14 +222,39 @@ export default function BorrowPage() {
         </div>
 
         <div className="grid gap-4">
+          {/* Wave 4: Credit Tier Display (Task 19.1) */}
+          <GlassPanel className="walnut-card walnut-card-strong">
+            <p className="walnut-label">Credit Tier</p>
+            <div className="mt-3 flex items-baseline gap-2">
+              <p className="font-display text-3xl text-foreground">Tier {creditTier}</p>
+              <p className="text-sm text-muted-foreground">of 4</p>
+            </div>
+            <div className="mt-3 grid gap-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Max LTV:</span>
+                <span className="font-mono text-foreground">{tierLtvPercent.toFixed(2)}%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Borrow APR:</span>
+                <span className="font-mono text-foreground">{BORROW_APR_PERCENT}%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Max Borrow:</span>
+                <span className="font-mono text-foreground">
+                  {canRenderRiskPreview ? `${maxBorrowAmount.toLocaleString()} wUSDC` : "******"}
+                </span>
+              </div>
+            </div>
+          </GlassPanel>
+
           <GlassPanel className="walnut-card walnut-card-strong walnut-kpi-card">
-            <p className="walnut-label">Current Debt</p>
+            <p className="walnut-label">Current Debt (wUSDC)</p>
             <p className="walnut-value">{debtLabel}</p>
             <p className="walnut-meta">Your current borrowed balance</p>
           </GlassPanel>
 
           <GlassPanel className="walnut-card walnut-card-strong walnut-kpi-card">
-            <p className="walnut-label">Projected Debt</p>
+            <p className="walnut-label">Projected Debt (wUSDC)</p>
             <p className="walnut-value">{projectedDebtLabel}</p>
             <p className="walnut-meta">Estimated debt after this transaction confirms</p>
           </GlassPanel>

@@ -16,6 +16,7 @@ import { GlassPanel } from "@/components/walnut/glass-panel";
 import { LiquidationBadge } from "@/components/walnut/liquidation-badge";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "../../hooks/use-walnut-protocol";
+import { useTokenBalances } from "../../hooks/use-token-balances";
 import {
   BASIS_POINTS_SCALE,
   HEALTH_FACTOR_AT_RISK_THRESHOLD,
@@ -28,6 +29,7 @@ export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [isRevealingValues, setIsRevealingValues] = useState(false);
   const protocol = useWalnutProtocol();
+  const tokenBalances = useTokenBalances();
   const collateralDecrypted =
     typeof protocol.collateral.decrypted.data === "bigint"
       ? protocol.collateral.decrypted.data
@@ -205,6 +207,24 @@ export default function WalnutDashboardPage() {
     }
   }
 
+  // Helper function to format token amounts
+  function formatTokenAmount(amount: bigint, decimals: number): string {
+    const divisor = BigInt(10 ** decimals);
+    const integerPart = amount / divisor;
+    const fractionalPart = amount % divisor;
+    const fractionalStr = fractionalPart.toString().padStart(decimals, "0");
+    // Show up to 6 decimal places
+    const displayDecimals = Math.min(6, decimals);
+    const truncatedFractional = fractionalStr.slice(0, displayDecimals);
+    return `${integerPart}.${truncatedFractional}`;
+  }
+
+  // Helper function to format USD value (6 decimals)
+  function formatUSDValue(usdValue: bigint | undefined): string {
+    if (usdValue === undefined) return "N/A";
+    return `$${formatTokenAmount(usdValue, 6)}`;
+  }
+
   return (
     <div className="space-y-5">
       <GlassPanel className="walnut-hero walnut-card-strong overflow-hidden p-5 sm:p-6">
@@ -280,6 +300,118 @@ export default function WalnutDashboardPage() {
           </div>
         </div>
       </GlassPanel>
+
+      {/* Token Balances Section */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Wallet Token Balances */}
+        <GlassPanel className="walnut-card walnut-card-strong">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="walnut-label">Wallet Balances</p>
+              <p className="mt-1 text-sm text-muted-foreground">ERC20 tokens in your wallet</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="glass-button"
+              onClick={() => void tokenBalances.refreshBalances()}
+              disabled={tokenBalances.isLoading}
+            >
+              <RefreshCcw className="h-3 w-3" />
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {tokenBalances.tokenBalances.length === 0 && !tokenBalances.isLoading && (
+              <p className="text-sm text-muted-foreground">No token balances found</p>
+            )}
+            {tokenBalances.tokenBalances.map((token) => (
+              <div
+                key={token.token}
+                className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-4 py-3"
+              >
+                <div>
+                  <p className="font-medium text-foreground">{token.symbol}</p>
+                  <p className="mt-1 font-mono text-sm text-muted-foreground">
+                    {formatTokenAmount(token.balance, token.decimals)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">USD Value</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">
+                    {token.usdValueLoading
+                      ? "Loading..."
+                      : token.usdValueError
+                      ? "N/A"
+                      : formatUSDValue(token.usdValue)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassPanel>
+
+        {/* Vault Holdings & wUSDC Balance */}
+        <GlassPanel className="walnut-card walnut-card-strong">
+          <div>
+            <p className="walnut-label">Vault Holdings</p>
+            <p className="mt-1 text-sm text-muted-foreground">Deposited collateral tokens</p>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {tokenBalances.vaultHoldings.length === 0 && !tokenBalances.isLoading && (
+              <p className="text-sm text-muted-foreground">No vault holdings</p>
+            )}
+            {tokenBalances.vaultHoldings.map((holding, index) => (
+              <div
+                key={`${holding.token}-${index}`}
+                className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-4 py-3"
+              >
+                <div>
+                  <p className="font-medium text-foreground">{holding.symbol}</p>
+                  <p className="mt-1 font-mono text-sm text-muted-foreground">
+                    {formatTokenAmount(holding.amount, holding.decimals)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">USD Value</p>
+                  <p className="mt-1 font-mono text-sm text-foreground">
+                    {formatUSDValue(holding.usdValue)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* wUSDC Balance */}
+          <div className="mt-4 border-t border-black/10 pt-4">
+            <p className="walnut-label">wUSDC Balance (Encrypted)</p>
+            <div className="mt-3 rounded-xl border border-black/10 bg-white/90 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">wUSDC</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Encrypted stablecoin</p>
+                </div>
+                <div className="text-right">
+                  {!tokenBalances.canRead ? (
+                    <p className="font-mono text-sm text-muted-foreground">******</p>
+                  ) : tokenBalances.wUSDCBalance.decrypting ? (
+                    <p className="text-sm text-muted-foreground">Decrypting...</p>
+                  ) : tokenBalances.wUSDCBalance.error ? (
+                    <p className="text-sm text-red-600">Error</p>
+                  ) : tokenBalances.wUSDCBalance.decrypted !== undefined ? (
+                    <p className="font-mono text-sm text-foreground">
+                      {formatTokenAmount(tokenBalances.wUSDCBalance.decrypted, 6)}
+                    </p>
+                  ) : (
+                    <p className="font-mono text-sm text-muted-foreground">0.000000</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </GlassPanel>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
         <GlassPanel className="walnut-card walnut-card-strong">
