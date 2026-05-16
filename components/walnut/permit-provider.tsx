@@ -166,14 +166,10 @@ export function WalnutPermitProvider({ children }: { children: ReactNode }) {
         void requestPermitCreation();
       },
     }),
-    [activePermit?.isValid, activePermit?.permit?.hash, allPermits.length, isConnected, isCreatingPermit, permitError, requestPermitCreation],
+    [activePermit?.isValid, activePermit?.permit?.hash, activePermit?.permit?.issuer, allPermits.length, isConnected, isCreatingPermit, permitError, requestPermitCreation],
   );
 
-  // Don't render children until mounted to avoid hydration issues
-  if (!hasMounted) {
-    return <>{children}</>;
-  }
-
+  // Always provide context, even before mount to avoid context errors
   return <WalnutPermitContext.Provider value={value}>{children}</WalnutPermitContext.Provider>;
 }
 
