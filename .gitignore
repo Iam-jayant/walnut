@@ -12,6 +12,7 @@
 /cache
 /artifacts
 coverage
+coverage.json
 
 # debug
 npm-debug.log*
@@ -20,7 +21,11 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files
-.env*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # vercel
 .vercel
@@ -29,28 +34,31 @@ yarn-error.log*
 .vscode/
 .cursor/
 
-# local planning artifacts
+# Kiro AI assistant
 .kiro/
-FIXES_APPLIED.md
-QUICK_START_TESTING.md
-TESTING_*.md
-TROUBLESHOOTING.md
-WALNUT_CODEBASE_ANALYSIS.md
-WALNUT_MASTER_ROADMAP.md
-
-# temporary local run artifacts
-build-output.log
-tmp-*.log
-tmp-*.json
-tmp-*.cjs
-
-# local test and diagnostic scripts
-scripts/check-permit-status.js
-scripts/diagnose-frontend.js
-scripts/phase0-smoke.mjs
-test/frontend-integration.test.js
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# hardhat
+cache/
+artifacts/
+typechain-types/
+
+# test artifacts
+test/_archive/
+*.test.log
+
+# temporary files
+tmp-*.log
+tmp-*.json
+tmp-*.cjs
+build-output.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+
 docs/
