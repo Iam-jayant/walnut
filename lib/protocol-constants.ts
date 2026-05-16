@@ -7,3 +7,7 @@ export const HEALTH_FACTOR_AT_RISK_THRESHOLD = 10_500n;
 
 export const LTV_LIMIT_PERCENT = 80;
 export const LTV_LIMIT_BPS = 8_000n;
+
+// Wave 4: Borrow APR (8% annual percentage rate)
+export const BORROW_APR_PERCENT = 8;
+export const BORROW_APR_BPS = 800n;

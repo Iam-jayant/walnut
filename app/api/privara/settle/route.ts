@@ -4,10 +4,9 @@ import { ReineiraSDK } from "@reineira-os/sdk";
 export const runtime = "nodejs";
 
 type SettleRequest = {
-  kind: "repay_interest" | "p2p_match";
   user: string;
-  counterparty?: string;
-  amount: string;
+  interestAmount: string;
+  protocolFee: string;
   network?: "testnet" | "mainnet";
   chainId?: number;
 };
@@ -38,28 +37,42 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as SettleRequest;
 
-    if (!body?.user || !body?.amount || !body?.kind) {
+    // Validate required fields
+    if (!body?.user || !body?.interestAmount || !body?.protocolFee) {
       return NextResponse.json(
-        { ok: false, message: "Invalid settlement payload." },
+        { ok: false, message: "Missing required fields: user, interestAmount, protocolFee" },
         { status: 400 }
       );
     }
 
-    const amount = BigInt(body.amount);
-    if (amount <= 0n) {
+    const interestAmount = BigInt(body.interestAmount);
+    const protocolFee = BigInt(body.protocolFee);
+    
+    if (interestAmount <= 0n) {
       return NextResponse.json(
-        { ok: false, message: "Settlement amount must be greater than zero." },
+        { ok: false, message: "Interest amount must be greater than zero." },
         { status: 400 }
       );
     }
 
+    if (protocolFee < 0n) {
+      return NextResponse.json(
+        { ok: false, message: "Protocol fee must be non-negative." },
+        { status: 400 }
+      );
+    }
+
+    // Check for required environment variables
     const privateKey = envOrThrow("PRIVARA_SETTLEMENT_PRIVATE_KEY");
+    const lenderPoolAddress = envOrThrow("LENDER_POOL_ADDRESS");
+    
     const normalizedPrivateKey = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
     const rpcUrl =
       process.env.ARBITRUM_SEPOLIA_RPC_URL ??
       process.env.NEXT_PUBLIC_RPC_URL_PRIMARY ??
       envOrThrow("NEXT_PUBLIC_RPC_URL_PRIMARY");
 
+    // Initialize SDK with lender pool address context
     const sdk = ReineiraSDK.create({
       network: body.network ?? "testnet",
       privateKey: normalizedPrivateKey,
@@ -69,16 +82,48 @@ export async function POST(request: Request) {
 
     await sdk.initialize();
 
-    // Keep server-side settlement behavior equivalent to the previous client-side path.
+    // Create escrow with interest amount as escrow value
+    // Owner is the lender pool address (receives the interest payment)
     const escrow = await sdk.escrow.create({
-      amount,
-      owner: body.user,
+      amount: interestAmount,
+      owner: lenderPoolAddress,
     });
-    const tx = await escrow.redeem();
 
-    return NextResponse.json({ ok: true, hash: tx.hash });
+    // Fund the escrow using the private key from environment variables
+    const fundTx = await escrow.fund(interestAmount, { autoApprove: true });
+
+    // Construct Arbiscan URL for the settlement transaction
+    const chainId = body.chainId ?? 421614; // Default to Arbitrum Sepolia
+    const arbiscanBaseUrl = chainId === 421614 
+      ? "https://sepolia.arbiscan.io" 
+      : "https://arbiscan.io";
+    const arbiscanUrl = `${arbiscanBaseUrl}/tx/${fundTx.tx.hash}`;
+
+    return NextResponse.json({ 
+      ok: true, 
+      hash: fundTx.tx.hash,
+      arbiscanUrl,
+      escrowId: escrow.id.toString(),
+    });
   } catch (error) {
     const message = formatError(error);
+    
+    // Check for missing private key error
+    if (message.includes("Missing required env var: PRIVARA_SETTLEMENT_PRIVATE_KEY")) {
+      return NextResponse.json(
+        { ok: false, message: "Missing private key" },
+        { status: 500 }
+      );
+    }
+
+    // Check for missing lender pool address error
+    if (message.includes("Missing required env var: LENDER_POOL_ADDRESS")) {
+      return NextResponse.json(
+        { ok: false, message: "Missing lender pool address" },
+        { status: 500 }
+      );
+    }
+
     const isCofheInitFailure =
       message.includes("FHE initialization failed") ||
       message.includes("CofhejsError") ||
@@ -95,6 +140,7 @@ export async function POST(request: Request) {
       );
     }
 
+    // Escrow creation failure
     return NextResponse.json({ ok: false, message }, { status: 500 });
   }
 }
