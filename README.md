@@ -22,10 +22,21 @@ Network: Arbitrum Sepolia (Chain ID: 421614)
 
 ### Wave 4: Token Economics (Current)
 
-**Real Token Deposits**
-- Deposit real ERC20 tokens (USDC, WETH) as collateral
-- Chainlink price oracles for accurate USD valuation
+**Multi-Token Collateral Support (5 Tokens)**
+- ✅ **WETH** - Wrapped Ethereum (most liquid base pair)
+- ✅ **USDC** - USD Coin (most popular stablecoin)
+- ✅ **USDT** - Tether (second most popular stablecoin)
+- ✅ **WBTC** - Wrapped Bitcoin (Bitcoin exposure on Ethereum)
+- ✅ **LINK** - Chainlink Token (popular DeFi token)
+- Chainlink price oracles for accurate real-time USD valuation
 - Encrypted USD accounting for privacy-preserving LTV calculations
+- Deposit any combination of supported tokens as collateral
+
+**Real Token Deposits**
+- Deposit real ERC20 tokens as collateral
+- Multi-token collateral aggregation (e.g., USDC + WETH + WBTC)
+- Automatic USD conversion via Chainlink oracles
+- Encrypted total collateral value
 
 **Encrypted Stablecoin Borrowing**
 - Borrow wUSDC (encrypted stablecoin) against collateral
