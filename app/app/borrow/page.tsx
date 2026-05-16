@@ -64,7 +64,10 @@ export default function BorrowPage() {
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.debtDecrypting) return "Loading...";
+    if (protocol.debtDecrypting && typeof protocol.debt.decrypted.data === "undefined") {
+      // Only show "Loading..." if we don't have any previous value
+      return "Loading...";
+    }
     if (typeof protocol.debt.decrypted.data === "bigint") {
       return protocol.debt.decrypted.data.toString();
     }
@@ -89,9 +92,12 @@ export default function BorrowPage() {
 
   const projectedDebtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.debtDecrypting) return "Loading...";
+    if (protocol.debtDecrypting && typeof protocol.debt.decrypted.data === "undefined") {
+      // Only show "Loading..." if we don't have any previous value
+      return "Loading...";
+    }
     return projectedDebt.toString();
-  }, [projectedDebt, protocol.canRead, protocol.debtDecrypting, showDecrypted]);
+  }, [projectedDebt, protocol.canRead, protocol.debtDecrypting, showDecrypted, protocol.debt.decrypted.data]);
 
   return (
     <div className="space-y-6">
