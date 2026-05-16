@@ -25,6 +25,48 @@ const WALNUT_V2_ADDRESS = process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS as Address
 const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
 const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 
+// Supported tokens on Arbitrum Sepolia
+const SUPPORTED_TOKENS = [
+  {
+    address: MOCK_USDC_ADDRESS,
+    symbol: "USDC",
+    name: "USD Coin",
+    decimals: 6,
+  },
+  {
+    address: "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73" as Address,
+    symbol: "WETH",
+    name: "Wrapped Ethereum",
+    decimals: 18,
+  },
+  {
+    address: "0x152b0df80135c63b4cb1fbe00ddce7e9a8ffcb04" as Address,
+    symbol: "LINK",
+    name: "Chainlink Token",
+    decimals: 18,
+  },
+  // Note: USDT, WBTC addresses are placeholders in deployment script
+  // I will Uncomment when real testnet addresses are available during mainnet (I declare this - Jayant)
+  // {
+  //   address: "0xf7b2f7B8B4E3c6E5e3c3E5e3c3E5e3c3E5e3c3E5" as Address,
+  //   symbol: "USDT",
+  //   name: "Tether USD",
+  //   decimals: 6,
+  // },
+  // {
+  //   address: "0xf7b2f7B8B4E3c6E5e3c3E5e3c3E5e3c3E5e3c3E6" as Address,
+  //   symbol: "WBTC",
+  //   name: "Wrapped Bitcoin",
+  //   decimals: 8,
+  // },
+  // {
+  //   address: "0xf7b2f7B8B4E3c6E5e3c3E5e3c3E5e3c3E5e3c3E7" as Address,
+  //   symbol: "LINK",
+  //   name: "Chainlink",
+  //   decimals: 18,
+  // },
+] as const;
+
 // ERC20 ABI (minimal)
 const ERC20_ABI = [
   {
@@ -96,7 +138,22 @@ export default function DepositPage() {
 
   // Get token info
   const tokenInfo = useMemo(() => {
-    return tokenBalances.find((t) => t.token.toLowerCase() === selectedToken.toLowerCase());
+    // First try to find from wallet balances
+    const fromBalances = tokenBalances.find((t) => t.token.toLowerCase() === selectedToken.toLowerCase());
+    if (fromBalances) return fromBalances;
+    
+    // Fallback to supported tokens list
+    const fromSupported = SUPPORTED_TOKENS.find((t) => t.address.toLowerCase() === selectedToken.toLowerCase());
+    if (fromSupported) {
+      return {
+        token: fromSupported.address,
+        symbol: fromSupported.symbol,
+        decimals: fromSupported.decimals,
+        balance: 0n,
+      };
+    }
+    
+    return undefined;
   }, [tokenBalances, selectedToken]);
 
   // Parse amount to bigint
@@ -144,7 +201,8 @@ export default function DepositPage() {
 
   // Check if approval is needed
   const needsApproval = useMemo(() => {
-    if (!currentAllowance || parsedAmount === 0n) return false;
+    if (parsedAmount === 0n) return false;
+    if (!currentAllowance) return true; // Need approval if allowance is undefined
     return currentAllowance < parsedAmount;
   }, [currentAllowance, parsedAmount]);
 
@@ -168,6 +226,11 @@ export default function DepositPage() {
       setDepositStep("approve_pending");
       setErrorMessage(null);
 
+      // Fetch current gas price with buffer
+      const gasPrice = await publicClient?.getGasPrice();
+      const bufferedMaxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined; // +50% buffer
+      const maxPriorityFeePerGas = 1000000n; // 0.001 gwei tip
+
       const hash = await approveAsync({
         address: selectedToken,
         abi: ERC20_ABI,
@@ -175,6 +238,9 @@ export default function DepositPage() {
         args: [WALNUT_V2_ADDRESS, parsedAmount],
         chain: arbitrumSepolia,
         account: account.address,
+        gas: 100000n, // Explicit gas limit for approval
+        maxFeePerGas: bufferedMaxFeePerGas,
+        maxPriorityFeePerGas,
       });
 
       setApproveTxHash(hash);
@@ -203,11 +269,56 @@ export default function DepositPage() {
     }
   };
 
-  // Handle deposit
+  // Handle deposit (with auto-approval if needed)
   const handleDeposit = async () => {
     if (!account.address || parsedAmount === 0n) return;
 
     try {
+      // Fetch current gas price with buffer to avoid race conditions
+      const gasPrice = await publicClient?.getGasPrice();
+      const bufferedMaxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined; // +50% buffer
+      const maxPriorityFeePerGas = 1000000n; // 0.001 gwei tip
+
+      // Check if approval is needed first
+      if (needsApproval) {
+        setDepositStep("approve_pending");
+        setErrorMessage(null);
+
+        const approveHash = await approveAsync({
+          address: selectedToken,
+          abi: ERC20_ABI,
+          functionName: "approve",
+          args: [WALNUT_V2_ADDRESS, parsedAmount],
+          chain: arbitrumSepolia,
+          account: account.address,
+          gas: 100000n, // Explicit gas limit for approval
+          maxFeePerGas: bufferedMaxFeePerGas,
+          maxPriorityFeePerGas,
+        });
+
+        setApproveTxHash(approveHash);
+        addToast({ variant: "pending", message: "Approving tokens..." });
+
+        // Wait for approval confirmation
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        }
+
+        setDepositStep("approve_confirmed");
+        addToast({ variant: "success", message: "Approval confirmed! Proceeding to deposit..." });
+
+        // Refetch allowance
+        await refetchAllowance();
+
+        // Small delay to ensure state updates
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Fetch gas price again for deposit (in case it changed)
+      const depositGasPrice = await publicClient?.getGasPrice();
+      const depositBufferedMaxFeePerGas = depositGasPrice ? (depositGasPrice * 150n) / 100n : undefined;
+
+      // Now proceed with deposit
       setDepositStep("deposit_pending");
       setErrorMessage(null);
 
@@ -218,6 +329,9 @@ export default function DepositPage() {
         args: [selectedToken, parsedAmount],
         chain: arbitrumSepolia,
         account: account.address,
+        gas: 500000n, // Explicit gas limit for deposit
+        maxFeePerGas: depositBufferedMaxFeePerGas,
+        maxPriorityFeePerGas,
       });
 
       setDepositTxHash(hash);
@@ -300,10 +414,14 @@ export default function DepositPage() {
               id="token-select"
               value={selectedToken}
               onChange={(e) => setSelectedToken(e.target.value as Address)}
-              className="h-12 w-full rounded-md border border-black/10 bg-white px-3 text-lg text-foreground"
+              className="h-12 w-full rounded-md border border-black/10 bg-white px-3 text-base font-sans text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={isProcessing}
             >
-              <option value={MOCK_USDC_ADDRESS}>USDC</option>
+              {SUPPORTED_TOKENS.map((token) => (
+                <option key={token.address} value={token.address} className="font-sans">
+                  {token.symbol} - {token.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -411,24 +529,13 @@ export default function DepositPage() {
           )}
 
           <div className="flex flex-wrap gap-2">
-            {depositStep === "idle" && needsApproval && (
-              <Button
-                className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
-                onClick={handleApprove}
-                disabled={!canSubmit}
-              >
-                Approve {tokenInfo?.symbol}
-              </Button>
-            )}
-            {depositStep === "idle" && !needsApproval && (
-              <Button
-                className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
-                onClick={handleDeposit}
-                disabled={!canSubmit}
-              >
-                Deposit
-              </Button>
-            )}
+            <Button
+              className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
+              onClick={handleDeposit}
+              disabled={!canSubmit}
+            >
+              {needsApproval ? `Approve & Deposit` : `Deposit`}
+            </Button>
             {(depositStep === "error") && (
               <Button
                 variant="outline"
