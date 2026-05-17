@@ -19,6 +19,11 @@ const TASK_MANAGER_ABI = [
 let taskManager;
 let mockCipherCounter = 1n;
 
+function resetMockState() {
+  taskManager = null;
+  mockCipherCounter = 1n;
+}
+
 async function getTaskManager() {
   if (!taskManager) {
     taskManager = await ethers.getContractAt(TASK_MANAGER_ABI, TASK_MANAGER_ADDRESS);
@@ -247,4 +252,5 @@ module.exports = {
   decryptTotalPoolDebt,
   setupCollateral,
   setupPosition,
+  resetMockState,
 };

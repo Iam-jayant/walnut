@@ -6,7 +6,7 @@ const {
   decryptCollateral,
   decryptDebt,
   decryptAggregatedCollateral,
-} = require("./helpers/fhe-helpers");
+} = require("../../../helpers/fhe-helpers");
 
 const TASK_MANAGER_ADDRESS = "0xeA30c4B8b44078Bbf8a6ef5b9f1eC1626C7848D9";
 
