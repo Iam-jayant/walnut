@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -25,9 +25,22 @@ import {
   HEALTH_FACTOR_SCALE,
 } from "@/lib/protocol-constants";
 
+const USDC_DECIMALS = 1_000_000;
+
+const formatUSDC = (rawValue: bigint | number | string): string => {
+  const num = typeof rawValue === "bigint" ? Number(rawValue) : Number(rawValue);
+  return (num / USDC_DECIMALS).toFixed(2);
+};
+
+const toUSDCNumber = (rawValue: bigint | number | string): number => {
+  const num = typeof rawValue === "bigint" ? Number(rawValue) : Number(rawValue);
+  return num / USDC_DECIMALS;
+};
+
 export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [isRevealingValues, setIsRevealingValues] = useState(false);
+  const [isGrantingPermissions, setIsGrantingPermissions] = useState(false);
   const protocol = useWalnutProtocol();
   const tokenBalances = useTokenBalances();
   const collateralDecrypted =
@@ -51,39 +64,41 @@ export default function WalnutDashboardPage() {
   ] as const;
 
   const collateralLabel = useMemo(() => {
-    if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.collateralDecrypting) return "Loading...";
+    if (!showDecrypted) return "******";
+    if (!protocol.canRead) return "******";
+    if (protocol.collateralDecrypting || protocol.permit.isPermitInitializing) return "Loading...";
     if (typeof protocol.collateral.decrypted.data === "bigint") {
-      return protocol.collateral.decrypted.data.toString();
+      return formatUSDC(protocol.collateral.decrypted.data);
     }
-    return "0";
-  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateralDecrypting, showDecrypted]);
+    return "—";
+  }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateralDecrypting, protocol.permit.isPermitInitializing, showDecrypted]);
 
   const debtLabel = useMemo(() => {
-    if (!protocol.canRead || !showDecrypted) return "******";
-    if (protocol.debtDecrypting) return "Loading...";
+    if (!showDecrypted) return "******";
+    if (!protocol.canRead) return "******";
+    if (protocol.debtDecrypting || protocol.permit.isPermitInitializing) return "Loading...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
-      return protocol.debt.decrypted.data.toString();
+      return formatUSDC(protocol.debt.decrypted.data);
     }
-    return "0";
-  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
+    return "—";
+  }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, protocol.permit.isPermitInitializing, showDecrypted]);
 
   const totalPoolCollateralLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
     if (protocol.totalPoolCollateralDecrypting) return "Loading...";
     if (typeof protocol.totalPoolCollateral.decrypted.data === "bigint") {
-      return protocol.totalPoolCollateral.decrypted.data.toString();
+      return formatUSDC(protocol.totalPoolCollateral.decrypted.data);
     }
-    return "0";
+    return "0.00";
   }, [protocol.canRead, protocol.totalPoolCollateral.decrypted.data, protocol.totalPoolCollateralDecrypting, showDecrypted]);
 
   const totalPoolDebtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
     if (protocol.totalPoolDebtDecrypting) return "Loading...";
     if (typeof protocol.totalPoolDebt.decrypted.data === "bigint") {
-      return protocol.totalPoolDebt.decrypted.data.toString();
+      return formatUSDC(protocol.totalPoolDebt.decrypted.data);
     }
-    return "0";
+    return "0.00";
   }, [protocol.canRead, protocol.totalPoolDebt.decrypted.data, protocol.totalPoolDebtDecrypting, showDecrypted]);
 
   const healthFactorValue = protocol.healthFactorValue;
@@ -95,11 +110,16 @@ export default function WalnutDashboardPage() {
   const healthFactorDisplay = useMemo(() => {
     if (!showDecrypted) return "******";
     if (healthFactorLoading) return "Loading...";
-    if (healthFactorValue === undefined) return "N/A";
-    const raw = Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE);
-    const clamped = Math.max(0, Math.min(HEALTH_FACTOR_SCORE_MAX, raw));
-    return clamped.toFixed(2);
-  }, [healthFactorLoading, healthFactorValue, showDecrypted]);
+    
+    const col = typeof collateralDecrypted === "bigint" ? toUSDCNumber(collateralDecrypted) : NaN;
+    const debt = typeof debtDecrypted === "bigint" ? toUSDCNumber(debtDecrypted) : NaN;
+    
+    if (isNaN(col) || col === 0) return "N/A";
+    if (isNaN(debt) || debt === 0) return "∞";
+    
+    const healthFactor = col / debt;
+    return healthFactor.toFixed(2);
+  }, [healthFactorLoading, collateralDecrypted, debtDecrypted, showDecrypted]);
 
   const healthGaugePercent = useMemo(() => {
     if (!showDecrypted || healthFactorLoading || healthFactorValue === undefined) return 14;
@@ -138,8 +158,8 @@ export default function WalnutDashboardPage() {
     if (!protocol.canRead || !showDecrypted) return "******";
     const collateralValue = protocol.collateral.decrypted.data;
     const debtValue = protocol.debt.decrypted.data;
-    if (typeof collateralValue !== "bigint" || typeof debtValue !== "bigint") return "0";
-    return (collateralValue > debtValue ? collateralValue - debtValue : 0n).toString();
+    if (typeof collateralValue !== "bigint" || typeof debtValue !== "bigint") return "—";
+    return formatUSDC(collateralValue > debtValue ? collateralValue - debtValue : 0n);
   }, [
     protocol.canRead,
     protocol.collateral.decrypted.data,
@@ -155,10 +175,16 @@ export default function WalnutDashboardPage() {
     return Math.min(100, Number(scaled) / 100);
   }, [protocol.collateral.decrypted.data, protocol.debt.decrypted.data]);
 
-  const readinessLabel = protocol.permit.hasPermit ? "Private access ready" : "Setup pending";
-  const readinessTone = protocol.permit.hasPermit
-    ? "walnut-chip-ok"
-    : "walnut-chip-pending";
+  const readinessLabel = protocol.permit.isPermitInitializing 
+    ? "Loading..." 
+    : protocol.permit.hasPermit 
+      ? "Private access ready" 
+      : "Setup pending";
+  const readinessTone = protocol.permit.isPermitInitializing
+    ? "walnut-chip-pending"
+    : protocol.permit.hasPermit
+      ? "walnut-chip-ok"
+      : "walnut-chip-pending";
 
   const showKpiValues = showDecrypted && protocol.canRead;
   const utilizationLabel = showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "******";
@@ -195,6 +221,19 @@ export default function WalnutDashboardPage() {
       await protocol.fetchHealthFactor();
     } finally {
       setIsRevealingValues(false);
+    }
+  }
+
+  async function grantReadPermissions() {
+    if (isGrantingPermissions || !protocol.canWrite) return;
+
+    setIsGrantingPermissions(true);
+    try {
+      await protocol.grantReadPermissions();
+    } catch (error) {
+      console.error("Failed to grant read permissions:", error);
+    } finally {
+      setIsGrantingPermissions(false);
     }
   }
 
@@ -362,9 +401,11 @@ export default function WalnutDashboardPage() {
             {tokenBalances.vaultHoldings.length === 0 && !tokenBalances.isLoading && (
               <p className="text-sm text-muted-foreground">No vault holdings</p>
             )}
-            {tokenBalances.vaultHoldings.map((holding, index) => (
+            {tokenBalances.vaultHoldings
+              .filter((holding) => holding.amount > 0n) // Only show non-zero holdings
+              .map((holding) => (
               <div
-                key={`${holding.token}-${index}`}
+                key={holding.token}
                 className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-4 py-3"
               >
                 <div>
@@ -470,6 +511,30 @@ export default function WalnutDashboardPage() {
             >
               <ShieldCheck className="mr-2 h-4 w-4" />
               Enable Private Access
+            </Button>
+          </div>
+        </GlassPanel>
+      )}
+
+      {protocol.permit.hasPermit && showDecrypted && (collateralLabel === "—" || debtLabel === "—") && (
+        <GlassPanel className="walnut-card walnut-alert-warning border-amber-300/40 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="walnut-label">Grant Read Permissions</p>
+              <p className="mt-2 text-sm text-foreground">
+                Call grantReadPermissions() on the contract to allow decryption of your encrypted values.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
+              onClick={() => void grantReadPermissions()}
+              isLoading={isGrantingPermissions}
+              loadingText="Granting..."
+              disabled={!protocol.canWrite}
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              Grant Permissions
             </Button>
           </div>
         </GlassPanel>
