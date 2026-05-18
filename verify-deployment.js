@@ -195,17 +195,17 @@ if (!foundOldReferences) {
   console.log('  ✅ No old Ethereum Sepolia references found');
 }
 
-// Check WalnutV1 contract artifact
-console.log('\n📄 Checking WalnutV1 contract artifact...');
+// Check WalnutV2 contract artifact
+console.log('\n📄 Checking WalnutV2 contract artifact...');
 try {
-  const artifactPath = 'artifacts/contracts/WalnutV1.sol/WalnutV1.json';
+  const artifactPath = 'artifacts/contracts/wave4/WalnutV2.sol/WalnutV2.json';
   if (fs.existsSync(artifactPath)) {
-    console.log('  ✅ WalnutV1.json artifact exists');
+    console.log('  ✅ WalnutV2.json artifact exists');
   } else {
-    warnings.push('WalnutV1.json artifact not found (run: npx hardhat compile)');
+    warnings.push('WalnutV2.json artifact not found (run: npx hardhat compile)');
   }
 } catch (error) {
-  warnings.push('Could not check WalnutV1 artifact');
+  warnings.push('Could not check WalnutV2 artifact');
 }
 
 // Summary
