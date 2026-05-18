@@ -5,7 +5,7 @@ import { useAccount, usePublicClient } from "wagmi";
 import { decodeEventLog } from "viem";
 
 import { GlassPanel } from "@/components/walnut/glass-panel";
-import { walnutContractAddress, walnutV1Abi } from "@/lib/walnut-contract";
+import { walnutContractAddress, walnutV2Abi } from "@/lib/walnut-contract";
 
 const HISTORY_BLOCK_WINDOW = 120_000n;
 
@@ -67,7 +67,7 @@ export default function HistoryPage() {
           .map((log) => {
             try {
               const decoded = decodeEventLog({
-                abi: walnutV1Abi,
+                abi: walnutV2Abi,
                 data: log.data,
                 topics: log.topics,
               });
