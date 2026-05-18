@@ -2,6 +2,31 @@ const { expect } = require("chai");
 const { ethers, network } = require("hardhat");
 const { encrypt, decrypt, decryptCollateral, resetMockState } = require("../../../helpers/fhe-helpers");
 
+const TASK_MANAGER_ADDRESS = "0xeA30c4B8b44078Bbf8a6ef5b9f1eC1626C7848D9";
+
+async function asTaskManager(callback) {
+  await network.provider.request({
+    method: "hardhat_impersonateAccount",
+    params: [TASK_MANAGER_ADDRESS],
+  });
+
+  await network.provider.send("hardhat_setBalance", [
+    TASK_MANAGER_ADDRESS,
+    "0x56BC75E2D63100000",
+  ]);
+
+  const signer = await ethers.getSigner(TASK_MANAGER_ADDRESS);
+
+  try {
+    return await callback(signer);
+  } finally {
+    await network.provider.request({
+      method: "hardhat_stopImpersonatingAccount",
+      params: [TASK_MANAGER_ADDRESS],
+    });
+  }
+}
+
 describe("WalnutV2 - Deposit Flow", function () {
   let walnutV2;
   let wUSDC;
@@ -459,6 +484,20 @@ describe("WalnutV2 - Deposit Flow", function () {
         expect(debt).to.equal(0n);
       });
 
+      it("Should reject a second borrow that would push total debt over LTV", async function () {
+        const firstBorrow = ethers.parseUnits("600", 6);
+        const secondBorrow = ethers.parseUnits("200", 6);
+
+        await walnutV2.connect(user1).borrow(await encrypt(firstBorrow));
+        await walnutV2.connect(user1).borrow(await encrypt(secondBorrow));
+
+        const debt = await decrypt(await walnutV2.getEncryptedDebt(user1.address));
+        const balance = await decrypt(await wUSDC.balanceOf(user1.address));
+
+        expect(debt).to.equal(firstBorrow);
+        expect(balance).to.equal(firstBorrow);
+      });
+
       it("Should reject borrow with zero collateral", async function () {
         // User2 has no collateral
         const borrowAmount = ethers.parseUnits("100", 6);
@@ -529,6 +568,103 @@ describe("WalnutV2 - Deposit Flow", function () {
         expect(user1Debt).to.equal(user1Borrow);
         expect(user2Debt).to.equal(user2Borrow);
       });
+    });
+  });
+
+  describe("Repay Function", function () {
+    beforeEach(async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+      await mockUSDC.connect(user1).approve(await walnutV2.getAddress(), depositAmount);
+      await walnutV2.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+
+      const borrowAmount = ethers.parseUnits("500", 6);
+      await walnutV2.connect(user1).borrow(await encrypt(borrowAmount));
+    });
+
+    it("Should not burn wUSDC or change debt for insufficient repayment", async function () {
+      const partialRepay = ethers.parseUnits("100", 6);
+
+      await walnutV2.connect(user1).repay(await encrypt(partialRepay));
+
+      const debt = await decrypt(await walnutV2.getEncryptedDebt(user1.address));
+      const balance = await decrypt(await wUSDC.balanceOf(user1.address));
+
+      expect(debt).to.equal(ethers.parseUnits("500", 6));
+      expect(balance).to.equal(ethers.parseUnits("500", 6));
+    });
+
+    it("Should burn wUSDC and clear debt for sufficient repayment", async function () {
+      const fullRepay = ethers.parseUnits("500", 6);
+
+      await walnutV2.connect(user1).repay(await encrypt(fullRepay));
+
+      const debt = await decrypt(await walnutV2.getEncryptedDebt(user1.address));
+      const balance = await decrypt(await wUSDC.balanceOf(user1.address));
+
+      expect(debt).to.equal(0n);
+      expect(balance).to.equal(0n);
+    });
+  });
+
+  describe("Withdraw Function", function () {
+    beforeEach(async function () {
+      const depositAmount = ethers.parseUnits("1000", 6);
+      await mockUSDC.connect(user1).approve(await walnutV2.getAddress(), depositAmount);
+      await walnutV2.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+    });
+
+    it("Should transfer collateral and update state immediately for debt-free positions", async function () {
+      const withdrawAmount = ethers.parseUnits("100", 6);
+      const initialBalance = await mockUSDC.balanceOf(user1.address);
+
+      const tx = await walnutV2.connect(user1).withdraw(await mockUSDC.getAddress(), withdrawAmount);
+      const receipt = await tx.wait();
+      const event = receipt.logs.find((log) => {
+        try {
+          const parsed = walnutV2.interface.parseLog(log);
+          return parsed && parsed.name === "WithdrawFinalized";
+        } catch {
+          return false;
+        }
+      });
+
+      expect(event).to.not.be.undefined;
+      const parsedEvent = walnutV2.interface.parseLog(event);
+      expect(parsedEvent.args.user).to.equal(user1.address);
+      expect(parsedEvent.args.token).to.equal(await mockUSDC.getAddress());
+      expect(parsedEvent.args.amount).to.equal(withdrawAmount);
+      expect(parsedEvent.args.approved).to.equal(true);
+
+      expect(await mockUSDC.balanceOf(user1.address)).to.equal(initialBalance + withdrawAmount);
+
+      const collateral = await decryptCollateral(walnutV2, user1.address);
+      expect(collateral).to.equal(ethers.parseUnits("900", 6));
+
+      const vault = await walnutV2.vaults(user1.address, 0);
+      expect(vault.amount).to.equal(ethers.parseUnits("900", 6));
+    });
+
+    it("Should reject withdrawals above the user's vault balance", async function () {
+      const withdrawAmount = ethers.parseUnits("1200", 6);
+
+      try {
+        await walnutV2.connect(user1).withdraw(await mockUSDC.getAddress(), withdrawAmount);
+        expect.fail("Should have reverted");
+      } catch (error) {
+        expect(error.message).to.include("Insufficient vault");
+      }
+    });
+
+    it("Should reject direct withdrawal after borrowing", async function () {
+      const borrowAmount = await encrypt(ethers.parseUnits("100", 6));
+      await walnutV2.connect(user1).borrow(borrowAmount);
+
+      try {
+        await walnutV2.connect(user1).withdraw(await mockUSDC.getAddress(), ethers.parseUnits("100", 6));
+        expect.fail("Should have reverted");
+      } catch (error) {
+        expect(error.message).to.include("Open debt withdraw unsupported");
+      }
     });
   });
 

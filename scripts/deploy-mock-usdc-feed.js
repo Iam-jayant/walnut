@@ -1,19 +1,18 @@
 const hre = require("hardhat");
 require("dotenv").config({ override: true });
 
-/**
- * @title Deploy Mock USDC Price Feed
- * @notice Deploys MockUSDCPriceFeed and registers it with WalnutPriceOracle
- */
-
-const ORACLE_ADDRESS = "0xA8621c45bfe3A4f163b17Ba509735118fbC7610e";
-const MOCK_USDC_ADDRESS = "0x8B7Af5BB6afc6A087fd94A97f53Bf13dFD63E1E2";
+const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS;
+const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS;
 
 async function main() {
   console.log("========================================");
   console.log("Deploy Mock USDC Price Feed");
   console.log("Network: Arbitrum Sepolia");
   console.log("========================================\n");
+
+  if (!ORACLE_ADDRESS || !MOCK_USDC_ADDRESS) {
+    throw new Error("Missing NEXT_PUBLIC_ORACLE_ADDRESS or NEXT_PUBLIC_MOCK_USDC_ADDRESS");
+  }
 
   const [deployer] = await hre.ethers.getSigners();
   const deployerAddress = await deployer.getAddress();

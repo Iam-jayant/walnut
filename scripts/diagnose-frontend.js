@@ -30,7 +30,7 @@ if (fs.existsSync(envPath)) {
 
 // Check 2: Contract ABI
 console.log('\n2️⃣ Checking Contract ABI...');
-const abiPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'WalnutV1.sol', 'WalnutV1.json');
+const abiPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'wave4', 'WalnutV2.sol', 'WalnutV2.json');
 
 if (fs.existsSync(abiPath)) {
   const abi = JSON.parse(fs.readFileSync(abiPath, 'utf-8'));
@@ -42,10 +42,8 @@ if (fs.existsSync(abiPath)) {
     'repay',
     'withdraw',
     'requestCreditTierUpdate',
-    'requestLiquidationCheck',
     'getEncryptedCollateral',
-    'getEncryptedDebt',
-    'getHealthFactor'
+    'getEncryptedDebt'
   ];
   
   console.log(`   ✅ ABI found with ${functions.length} functions`);

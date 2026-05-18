@@ -4,10 +4,14 @@ require("dotenv").config({ override: true });
 async function main() {
   console.log("Verifying Wave 4 Deployment...\n");
 
-  const fherc20Address = "0xC5C8188ECb061dFAaA0bab0865dBd5dDA0218740";
-  const walnutV2Address = "0xaEBF0CD234779DA76cD2F938Fdd029F80b6F98da";
-  const oracleAddress = "0xA8621c45bfe3A4f163b17Ba509735118fbC7610e";
-  const mockUSDCAddress = "0x8B7Af5BB6afc6A087fd94A97f53Bf13dFD63E1E2";
+  const fherc20Address = process.env.NEXT_PUBLIC_FHERC20_ADDRESS;
+  const walnutV2Address = process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS;
+  const oracleAddress = process.env.NEXT_PUBLIC_ORACLE_ADDRESS;
+  const mockUSDCAddress = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS;
+
+  if (!fherc20Address || !walnutV2Address || !oracleAddress || !mockUSDCAddress) {
+    throw new Error("Missing Wave 4 deployment address in environment");
+  }
 
   // Check WalnutFHERC20
   const fherc20 = await hre.ethers.getContractAt("WalnutFHERC20", fherc20Address);
@@ -42,12 +46,14 @@ async function main() {
   const priceOracle = await hre.ethers.getContractAt("WalnutPriceOracle", oracleAddress);
   const oracleOwner = await priceOracle.owner();
   const usdcFeed = await priceOracle.priceFeeds(mockUSDCAddress);
+  const usdcValue = await priceOracle.getUSDValue(mockUSDCAddress, hre.ethers.parseUnits("100", 6));
   
   console.log("WalnutPriceOracle:");
   console.log("  Address:", oracleAddress);
   console.log("  Owner:", oracleOwner);
   console.log("  USDC Price Feed:", usdcFeed);
   console.log("  ✓ USDC feed configured:", usdcFeed !== "0x0000000000000000000000000000000000000000");
+  console.log("  ✓ 100 USDC value:", hre.ethers.formatUnits(usdcValue, 6), "USD");
   console.log();
 
   // Check MockUSDC

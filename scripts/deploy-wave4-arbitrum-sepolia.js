@@ -144,15 +144,22 @@ async function main() {
   const oracleAddress = await oracle.getAddress();
   console.log("✅ WalnutPriceOracle deployed at:", oracleAddress);
 
+  console.log("\n   Deploying MockUSDCPriceFeed for testnet USDC...");
+  const MockUSDCPriceFeed = await hre.ethers.getContractFactory("MockUSDCPriceFeed");
+  const mockUSDCFeed = await MockUSDCPriceFeed.deploy();
+  await mockUSDCFeed.waitForDeployment();
+  const mockUSDCFeedAddress = await mockUSDCFeed.getAddress();
+  console.log("   ✅ MockUSDCPriceFeed deployed at:", mockUSDCFeedAddress);
+
   // Configure price feeds for all supported tokens
   console.log("\n   Configuring price feeds for 5 supported tokens...");
   
   // 1. USDC/USD (MockUSDC for now)
-  const setUSDCFeedTx = await oracle.setPriceFeed(mockUSDCAddress, PRICE_FEEDS.USDC_USD);
+  const setUSDCFeedTx = await oracle.setPriceFeed(mockUSDCAddress, mockUSDCFeedAddress);
   await setUSDCFeedTx.wait();
   console.log("   ✅ 1/5 USDC/USD feed configured");
   console.log("       Token: MockUSDC (testnet)");
-  console.log("       Feed:", PRICE_FEEDS.USDC_USD);
+  console.log("       Feed:", mockUSDCFeedAddress);
   
   // 2. ETH/USD (WETH)
   if (TOKEN_ADDRESSES.WETH) {
