@@ -16,6 +16,17 @@ function toNumber(value: unknown) {
   return 0;
 }
 
+const parseUSDCInput = (value: string): bigint => {
+  if (!value || !/^\d+(\.\d+)?$/.test(value)) return 0n;
+  const [whole = "0", fraction = ""] = value.split(".");
+  return BigInt(`${whole}${fraction.padEnd(6, "0").slice(0, 6)}`);
+};
+
+const formatUSDC = (rawValue: bigint | number | string): string => {
+  const num = typeof rawValue === "bigint" ? Number(rawValue) : Number(rawValue);
+  return (num / 1_000_000).toFixed(2);
+};
+
 export default function BorrowPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
@@ -34,12 +45,11 @@ export default function BorrowPage() {
   }, [protocol.debt.decrypted.data]);
 
   const typedAmount = useMemo(() => {
-    if (!amount || !/^\d+$/.test(amount)) return 0n;
-    return BigInt(amount);
+    return parseUSDCInput(amount);
   }, [amount]);
 
   const projectedDebt = useMemo(() => currentDebtBigint + typedAmount, [currentDebtBigint, typedAmount]);
-  const amountNumber = Number(amount || "0");
+  const amountNumber = Number(typedAmount);
   const newDebt = currentDebt + amountNumber;
   
   // Wave 4: Credit tier and LTV calculation (Task 19.1)
@@ -56,7 +66,16 @@ export default function BorrowPage() {
   const ltvRatio = collateral > 0 ? Math.min(999, (newDebt / collateral) * 100) : 0;
   const canRenderRiskPreview = showDecrypted && protocol.canRead && !protocol.debtDecrypting && collateral > 0;
   const previewLtv = canRenderRiskPreview ? `${ltvRatio.toFixed(2)}%` : "--";
-  const previewHealthFactor = canRenderRiskPreview && newDebt > 0 ? (collateral / newDebt).toFixed(2) : "--";
+  
+  // Industry standard health factor: (collateral × 10000) / debt
+  // This matches the dashboard calculation and WalnutV2 contract logic
+  const previewHealthFactor = useMemo(() => {
+    if (!canRenderRiskPreview || newDebt <= 0) return "--";
+    const healthFactorRaw = (collateral * 10000) / newDebt;
+    const healthFactorClamped = Math.min(healthFactorRaw, 100000); // Cap at 10.0
+    return (healthFactorClamped / 10000).toFixed(2);
+  }, [canRenderRiskPreview, collateral, newDebt]);
+  
   const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvPercent : false;
   
   // Wave 4: Validate borrow amount against maximum (Task 19.1)
@@ -69,9 +88,9 @@ export default function BorrowPage() {
       return "Loading...";
     }
     if (typeof protocol.debt.decrypted.data === "bigint") {
-      return protocol.debt.decrypted.data.toString();
+      return formatUSDC(protocol.debt.decrypted.data);
     }
-    return "0";
+    return "0.00";
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   async function handleBorrow() {
@@ -96,7 +115,7 @@ export default function BorrowPage() {
       // Only show "Loading..." if we don't have any previous value
       return "Loading...";
     }
-    return projectedDebt.toString();
+    return formatUSDC(projectedDebt);
   }, [projectedDebt, protocol.canRead, protocol.debtDecrypting, showDecrypted, protocol.debt.decrypted.data]);
 
   return (
@@ -137,12 +156,12 @@ export default function BorrowPage() {
                 id="borrow-amount"
                 inputMode="numeric"
                 value={amount}
-                onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))}
-                placeholder="Enter amount"
+                onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))}
+                placeholder="0.00"
                 className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                Max: {canRenderRiskPreview ? maxBorrowAmount.toLocaleString() : "******"} wUSDC
+                Max: {canRenderRiskPreview ? formatUSDC(maxBorrowAmount) : "******"} wUSDC
               </p>
             </div>
 
@@ -169,7 +188,7 @@ export default function BorrowPage() {
               <div className="walnut-alert walnut-alert-danger">
                 <p className="text-sm text-red-700">
                   {exceedsMaxBorrow 
-                    ? `This amount exceeds your maximum borrow limit of ${maxBorrowAmount.toLocaleString()} wUSDC. Please enter a lower amount.`
+                    ? `This amount exceeds your maximum borrow limit of ${formatUSDC(maxBorrowAmount)} wUSDC. Please enter a lower amount.`
                     : `This amount is above the ${tierLtvPercent.toFixed(2)}% LTV limit. Please enter a lower amount.`}
                 </p>
               </div>
@@ -247,7 +266,7 @@ export default function BorrowPage() {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Max Borrow:</span>
                 <span className="font-mono text-foreground">
-                  {canRenderRiskPreview ? `${maxBorrowAmount.toLocaleString()} wUSDC` : "******"}
+                  {canRenderRiskPreview ? `${formatUSDC(maxBorrowAmount)} wUSDC` : "******"}
                 </span>
               </div>
             </div>
