@@ -9,6 +9,17 @@ import { GlassPanel } from "@/components/walnut/glass-panel";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
+const formatUSDC = (rawValue: bigint | number | string): string => {
+  const num = typeof rawValue === "bigint" ? Number(rawValue) : Number(rawValue);
+  return (num / 1_000_000).toFixed(2);
+};
+
+const parseUSDCInput = (value: string): bigint => {
+  if (!value || !/^\d+(\.\d+)?$/.test(value)) return 0n;
+  const [whole = "0", fraction = ""] = value.split(".");
+  return BigInt(`${whole}${fraction.padEnd(6, "0").slice(0, 6)}`);
+};
+
 export default function RepayPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
@@ -25,8 +36,7 @@ export default function RepayPage() {
   }, [protocol.debt.decrypted.data]);
 
   const typedAmount = useMemo(() => {
-    if (!amount || !/^\d+$/.test(amount)) return 0n;
-    return BigInt(amount);
+    return parseUSDCInput(amount);
   }, [amount]);
 
   const postRepayDebt = useMemo(() => {
@@ -41,9 +51,9 @@ export default function RepayPage() {
     if (!protocol.canRead || !showDecrypted) return "******";
     if (protocol.debtDecrypting) return "Loading...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
-      return protocol.debt.decrypted.data.toString();
+      return formatUSDC(protocol.debt.decrypted.data);
     }
-    return "0";
+    return "0.00";
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
   async function handleRepay() {
@@ -65,7 +75,7 @@ export default function RepayPage() {
   const projectedDebtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return "******";
     if (protocol.debtDecrypting) return "Loading...";
-    return postRepayDebt.toString();
+    return formatUSDC(postRepayDebt);
   }, [postRepayDebt, protocol.canRead, protocol.debtDecrypting, showDecrypted]);
 
   return (
@@ -102,10 +112,10 @@ export default function RepayPage() {
             </label>
             <Input
               id="repay-amount"
-              inputMode="numeric"
+              inputMode="decimal"
               value={amount}
-              onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="Enter amount"
+              onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))}
+              placeholder="0.00"
               className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
             />
           </div>
