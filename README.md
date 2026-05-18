@@ -1,470 +1,337 @@
 # Walnut Protocol
 
-Privacy-first lending protocol powered by Fully Homomorphic Encryption (FHE). Keep your financial data encrypted on-chain while enabling full lending functionality with real token economics.
+Walnut is a confidential lending and borrowing protocol built on Fhenix CoFHE. Users deposit real ERC20 collateral and borrow an encrypted stablecoin, wUSDC, while protocol-critical position data remains encrypted on-chain.
 
-**Live on Arbitrum Sepolia**
+The core idea is simple: the protocol can enforce collateral, debt, repayment, and credit rules without publishing a user's financial position.
 
-**WalnutV1** (Waves 1-3)
-- Contract: `0x04c998DD105E444570ba1eCACB3F5524D5695aA0`
-- [View on Arbiscan](https://sepolia.arbiscan.io/address/0x04c998DD105E444570ba1eCACB3F5524D5695aA0)
+Tagline: Deposit USDC. Borrow wUSDC. Nobody sees how much.
 
-**WalnutV2** (Wave 4 - Token Economics)
-- WalnutV2: `0xaEBF0CD234779DA76cD2F938Fdd029F80b6F98da` [View](https://sepolia.arbiscan.io/address/0xaEBF0CD234779DA76cD2F938Fdd029F80b6F98da)
-- WalnutFHERC20 (wUSDC): `0xC5C8188ECb061dFAaA0bab0865dBd5dDA0218740` [View](https://sepolia.arbiscan.io/address/0xC5C8188ECb061dFAaA0bab0865dBd5dDA0218740)
-- WalnutPriceOracle: `0xA8621c45bfe3A4f163b17Ba509735118fbC7610e` [View](https://sepolia.arbiscan.io/address/0xA8621c45bfe3A4f163b17Ba509735118fbC7610e)
-- MockUSDC: `0x8B7Af5BB6afc6A087fd94A97f53Bf13dFD63E1E2` [View](https://sepolia.arbiscan.io/address/0x8B7Af5BB6afc6A087fd94A97f53Bf13dFD63E1E2)
+## Current Deployment
 
-Network: Arbitrum Sepolia (Chain ID: 421614)
+Network: Arbitrum Sepolia  
+Chain ID: `421614`
 
----
+| Contract | Purpose | Address |
+| --- | --- | --- |
+| WalnutV2 | Active lending protocol | `0xD647A9533C9C8831E7E95a4dcB2Dda1afDfF934d` |
+| WalnutFHERC20 | Encrypted wUSDC token | `0x561152D0a49A6CeFE6046d6762efF57cD7aA57DF` |
+| WalnutPriceOracle | Token to USD oracle adapter | `0x5d598F3C9b45191d9f131cCbF957E969Eb173b98` |
+| MockUSDC | Testnet collateral token, 6 decimals | `0xaf80C080857956021C0200dFdFC48349eB02F3ff` |
+| MockUSDCPriceFeed | Testnet USDC/USD price feed | `0xb93D1D4A01E5ed25a96519154F976117d333740b` |
+| WalnutV1 | Earlier Waves 1-3 feature contract | `0x04c998DD105E444570ba1eCACB3F5524D5695aA0` |
 
-## Features
+The active application is configured to use WalnutV2. WalnutV1 remains deployed as a reference implementation for earlier encrypted lending, liquidation, P2P, and aggregation experiments.
 
-### Wave 4: Token Economics (Current)
+## What Is Implemented
 
-**Multi-Token Collateral Support (5 Tokens)**
-- ✅ **WETH** - Wrapped Ethereum (most liquid base pair)
-- ✅ **USDC** - USD Coin (most popular stablecoin)
-- ✅ **USDT** - Tether (second most popular stablecoin)
-- ✅ **WBTC** - Wrapped Bitcoin (Bitcoin exposure on Ethereum)
-- ✅ **LINK** - Chainlink Token (popular DeFi token)
-- Chainlink price oracles for accurate real-time USD valuation
-- Encrypted USD accounting for privacy-preserving LTV calculations
-- Deposit any combination of supported tokens as collateral
+WalnutV2 implements the current submission flow:
 
-**Real Token Deposits**
-- Deposit real ERC20 tokens as collateral
-- Multi-token collateral aggregation (e.g., USDC + WETH + WBTC)
-- Automatic USD conversion via Chainlink oracles
-- Encrypted total collateral value
+| Area | Implementation |
+| --- | --- |
+| Collateral | Users deposit real MockUSDC into WalnutV2. Deposits are tracked as plaintext vault holdings and encrypted USD collateral. |
+| Borrowing | Users encrypt borrow amounts client-side and borrow wUSDC through WalnutFHERC20. Debt is stored as `euint128`. |
+| Repayment | Users repay encrypted wUSDC. The contract burns wUSDC through the protocol minter path and updates encrypted repayment counters. |
+| Withdrawals | Debt-free users can withdraw deposited collateral directly. Withdrawals update encrypted collateral and plaintext vault accounting. |
+| Credit tiers | Repayment count is encrypted. Public tier is derived through CoFHE callback flow. |
+| Oracle pricing | WalnutPriceOracle converts token amounts to USD value. MockUSDC uses a fixed testnet feed at 1.00 USD. |
+| Private settlement | Repay flow integrates Reineira/Privara settlement for private interest settlement metadata. |
+| Frontend | Next.js dashboard, wallet connection, permit-based decryption, deposit, borrow, repay, withdraw, and portfolio views. |
 
-**Encrypted Stablecoin Borrowing**
-- Borrow wUSDC (encrypted stablecoin) against collateral
-- Balances remain encrypted via FHE
-- Dynamic LTV ratios based on credit tier (70%-90%)
+Sensitive values are stored as encrypted `euint128` values:
 
-**Time-Based Interest Accrual**
-- 8% APR for borrowers
-- 2% APR protocol fee (25% of interest)
-- 6% APR net yield to lenders (75% of interest)
-- Precise interest calculation with 1e6 precision
-
-**Credit Tier System**
-- Tier 0: 70% LTV (new users)
-- Tier 1: 75% LTV (3+ repayments)
-- Tier 2: 80% LTV (10+ repayments)
-- Tier 3: 85% LTV (25+ repayments)
-- Tier 4: 90% LTV (50+ repayments)
-
-**Privara Settlement Integration**
-- Private interest payment flows via Reineira SDK
-- Dual transaction display (repayment + settlement)
-- Confidential escrow for protocol fees
-
-### Wave 1-3: Core FHE Features (WalnutV1)
-
-**Private Lending**
-- Deposit, borrow, repay, and withdraw with encrypted amounts
-- Collateral and debt remain private on-chain
-- LTV verification without exposing balances
-
-**Encrypted Credit Scoring**
-- Dynamic LTV based on encrypted repayment history
-- 5 credit tiers computed on encrypted data
-
-**Sealed-Bid Liquidation**
-- Liquidators submit encrypted bids
-- Bids remain private until settlement
-
-**P2P Lending**
-- Post offers with encrypted APR, size, and tenor
-- Terms revealed only after matching
-
-**ENS Wallet Aggregation**
-- Link multiple wallets via ENS
-- Aggregate collateral without exposing wallet relationships
-
----
-
-## Architecture
-
-### Wave 4 Architecture
-
-```mermaid
-graph TB
-    subgraph Client["Client Layer"]
-        UI[Next.js Frontend]
-        CoFHESDK[@cofhe/sdk v0.5.0]
-        Wagmi[Wagmi + Viem]
-        PrivaraSDK[Reineira SDK]
-    end
-    
-    subgraph Blockchain["Arbitrum Sepolia"]
-        WalnutV2[WalnutV2 Contract]
-        FHERC20[WalnutFHERC20 wUSDC]
-        Oracle[WalnutPriceOracle]
-        MockUSDC[MockUSDC Token]
-        Chainlink[Chainlink Aggregators]
-    end
-    
-    subgraph CoFHE["CoFHE Network"]
-        TaskManager[Task Manager]
-        Decrypt[Async Decryption]
-    end
-    
-    subgraph Privara["Privara Network"]
-        Escrow[EscrowModule]
-        Settlement[Private Settlement]
-    end
-    
-    UI --> CoFHESDK
-    UI --> Wagmi
-    UI --> PrivaraSDK
-    
-    CoFHESDK --> WalnutV2
-    Wagmi --> WalnutV2
-    Wagmi --> MockUSDC
-    
-    WalnutV2 --> FHERC20
-    WalnutV2 --> Oracle
-    WalnutV2 --> MockUSDC
-    WalnutV2 --> TaskManager
-    
-    Oracle --> Chainlink
-    TaskManager --> Decrypt
-    Decrypt --> WalnutV2
-    
-    PrivaraSDK --> Escrow
-    Escrow --> Settlement
-    
-    style WalnutV2 fill:#f9f,stroke:#333,stroke-width:4px
-    style FHERC20 fill:#bbf,stroke:#333,stroke-width:2px
-    style Oracle fill:#bfb,stroke:#333,stroke-width:2px
+```solidity
+mapping(address => euint128) private _collateral;
+mapping(address => euint128) private _debt;
+mapping(address => euint128) private _repaymentCount;
+mapping(address => euint128) private _defaultCount;
 ```
 
-### Wave 1-3 Architecture
+## System Architecture
 
 ```mermaid
-graph LR
-    A[Next.js UI] --> B[CoFHE SDK]
-    B --> C[Wagmi]
-    C --> D[WalnutV1 Contract]
-    D --> E[Encrypted State]
-    D --> F[CoFHE Network]
-    F --> D
+flowchart TB
+    User[User Wallet] --> App[Next.js Application]
+    App --> Wagmi[wagmi and viem]
+    App --> CofheClient[CoFHE SDK and Permit System]
+    App --> Privara[Reineira Privara SDK]
+
+    CofheClient -->|encrypt inputs| WalnutV2[WalnutV2]
+    Wagmi -->|transactions and reads| WalnutV2
+    Wagmi -->|approve and mint test collateral| MockUSDC[MockUSDC]
+
+    WalnutV2 -->|vault transfer| MockUSDC
+    WalnutV2 -->|mint and burn encrypted token| WUSDC[WalnutFHERC20 wUSDC]
+    WalnutV2 -->|USD valuation| Oracle[WalnutPriceOracle]
+    Oracle --> PriceFeed[MockUSDCPriceFeed]
+
+    WalnutV2 -->|encrypted operations| CoFHE[Fhenix CoFHE Network]
+    CoFHE -->|authorized callback| WalnutV2
+
+    Privara -->|private settlement request| Settlement[Privara Settlement Service]
 ```
 
-**Data Flow**
+## Protocol Flow
 
 ```mermaid
 sequenceDiagram
-    User->>Browser: Input amount
-    Browser->>Browser: Encrypt locally
-    Browser->>Contract: Submit encrypted tx
-    Contract->>Contract: Compute on ciphertext
-    Contract->>CoFHE: Request decrypt
-    CoFHE->>Contract: Callback with result
-    Contract->>Browser: Emit event
+    participant U as User
+    participant UI as Walnut Frontend
+    participant SDK as CoFHE SDK
+    participant V2 as WalnutV2
+    participant T as MockUSDC
+    participant W as WalnutFHERC20
+    participant O as WalnutPriceOracle
+
+    U->>UI: Enter deposit amount
+    UI->>T: Approve WalnutV2
+    UI->>V2: deposit(token, amount)
+    V2->>T: transferFrom(user, protocol, amount)
+    V2->>O: getUSDValue(token, amount)
+    V2->>V2: Add encrypted collateral
+
+    U->>UI: Enter borrow amount
+    UI->>SDK: Encrypt amount as euint128
+    UI->>V2: borrow(encryptedAmount)
+    V2->>V2: Check encrypted debt <= encrypted collateral * LTV
+    V2->>W: mintInternal(user, encryptedAmount)
+
+    U->>UI: Enter repay amount
+    UI->>SDK: Encrypt amount as euint128
+    UI->>V2: repay(encryptedAmount)
+    V2->>W: burnInternal(user, encryptedAmount)
+    V2->>V2: Update encrypted debt and repayment count
 ```
 
----
+## Encrypted State and Permissions
 
-## Tech Stack
+Walnut relies on FHE permissions to keep state usable without making it public.
 
-- **Contracts**: Solidity 0.8.25, CoFHE, Hardhat
-- **Frontend**: Next.js 16.2.1, TypeScript, CoFHE SDK v0.5.1
-- **Wallet**: Wagmi, Viem, RainbowKit
-- **Network**: Arbitrum Sepolia (421614)
-
----
-
-## Quick Start
-
-```bash
-# Install
-npm install
-
-# Configure
-cp .env.example .env.local
-# Add your NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
-
-# Run
-npm run dev
+```mermaid
+flowchart LR
+    Input[Plain user amount in browser] --> Encrypt[Client-side encryption]
+    Encrypt --> Tx[Transaction with InEuint128]
+    Tx --> Contract[WalnutV2]
+    Contract --> Compute[Compute on ciphertext]
+    Compute --> Store[Store encrypted handle]
+    Store --> AllowThis[FHE.allowThis]
+    Store --> AllowUser[FHE.allow user]
+    AllowUser --> Permit[Wallet-signed permit]
+    Permit --> Decrypt[Frontend decrypt for user view]
 ```
 
-**Environment Variables**
-```bash
-# Network Configuration
-NEXT_PUBLIC_CHAIN_ID=421614
-NEXT_PUBLIC_RPC_URL_PRIMARY=https://sepolia-rollup.arbitrum.io/rpc
+After writes, WalnutV2 grants:
 
-# WalnutV1 (Waves 1-3)
-NEXT_PUBLIC_CONTRACT_ADDRESS=0x04c998DD105E444570ba1eCACB3F5524D5695aA0
+| Permission | Purpose |
+| --- | --- |
+| `FHE.allowThis(value)` | Allows WalnutV2 to continue computing over its encrypted state. |
+| `FHE.allow(value, user)` | Allows the owner of a position to decrypt their own values in the frontend. |
+| CoFHE callback authorization | Restricts decrypted callback updates to the Fhenix task manager address. |
 
-# WalnutV2 (Wave 4 - Token Economics)
-NEXT_PUBLIC_V2_CONTRACT_ADDRESS=0xaEBF0CD234779DA76cD2F938Fdd029F80b6F98da
-NEXT_PUBLIC_FHERC20_ADDRESS=0xC5C8188ECb061dFAaA0bab0865dBd5dDA0218740
-NEXT_PUBLIC_ORACLE_ADDRESS=0xA8621c45bfe3A4f163b17Ba509735118fbC7610e
-NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x8B7Af5BB6afc6A087fd94A97f53Bf13dFD63E1E2
+## Credit Tier Model
 
-# Privara Settlement (Wave 4)
-LENDER_POOL_ADDRESS=0x65c3768E98eE211a7589fe94c753e11cB8895069
-PRIVARA_SETTLEMENT_PRIVATE_KEY=your_private_key
+Repayment history is stored encrypted. The user-facing tier is public because the lending rule needs a simple, observable LTV class.
 
-# WalletConnect
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
-```
+| Tier | Repayment threshold | Max LTV |
+| --- | ---: | ---: |
+| 0 | 0 repayments | 70 percent |
+| 1 | 3 repayments | 75 percent |
+| 2 | 10 repayments | 80 percent |
+| 3 | 25 repayments | 85 percent |
+| 4 | 50 repayments | 90 percent |
 
----
+The frontend also includes a local fallback tier derivation from decrypted repayment count when direct callback polling is unavailable.
 
-## Smart Contract
+## Contract Responsibilities
 
-### WalnutV2 (Wave 4 - Token Economics)
+### WalnutV2
 
-**Deployed**: `0xaEBF0CD234779DA76cD2F938Fdd029F80b6F98da`
+Main protocol contract for the active lending flow.
 
-**Key Functions**
 ```solidity
-// Token Deposits & Withdrawals
 deposit(address token, uint256 amount)
-withdraw(address token, uint256 amount)
-
-// Encrypted Borrowing & Repayment
 borrow(InEuint128 encryptedAmount)
 repay(InEuint128 encryptedAmount)
-
-// Interest Calculation
-calculateInterest(address user) returns (uint256 totalInterest, uint256 protocolFee, uint256 lenderPayment)
-
-// Credit Scoring (inherited from V1)
+withdraw(address token, uint256 amount)
+calculateInterest(address user, uint256 principal)
 requestCreditTierUpdate(address user)
-onCreditCountDecrypted(uint256 requestId, uint128 result) // onlyCoFHE
-
-// View Functions
-vaults(address user) returns (VaultHolding[])
-creditTier(address user) returns (uint8)
-borrowTimestamp(address user) returns (uint256)
+grantReadPermissions()
+getEncryptedCollateral(address user)
+getEncryptedDebt(address user)
 ```
 
-**Supporting Contracts**
+Important behavior:
 
-**WalnutFHERC20** (wUSDC): `0xC5C8188ECb061dFAaA0bab0865dBd5dDA0218740`
+| Function | Behavior |
+| --- | --- |
+| `deposit` | Transfers ERC20 collateral, values it in USD, and increases encrypted collateral. |
+| `borrow` | Computes the LTV rule over encrypted values and mints encrypted wUSDC only when valid. |
+| `repay` | Burns encrypted wUSDC and updates encrypted debt and repayment count. |
+| `withdraw` | Allows debt-free collateral withdrawal and updates vault plus encrypted collateral state. |
+| `calculateInterest` | Calculates 8 percent APR interest and a 25 percent protocol fee share of interest. |
+
+### WalnutFHERC20
+
+Encrypted stablecoin used as the borrow asset. WalnutV2 is the only minter and burner.
+
 ```solidity
-// Encrypted stablecoin operations
-mint(address to, InEuint128 encryptedAmount) // onlyMinter
-burn(address from, InEuint128 encryptedAmount) // onlyMinter
+mintInternal(address to, euint128 amount)
+burnInternal(address from, euint128 amount)
 transfer(address to, InEuint128 encryptedAmount)
 approve(address spender, InEuint128 encryptedAmount)
+balanceOf(address account)
 ```
 
-**WalnutPriceOracle**: `0xA8621c45bfe3A4f163b17Ba509735118fbC7610e`
-```solidity
-// Chainlink price integration
-getUSDValue(address token, uint256 amount) returns (uint256)
-setPriceFeed(address token, address feed) // onlyOwner
+### WalnutPriceOracle
 
-// Supported feeds (Arbitrum Sepolia)
-// ETH/USD: 0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165
-// USDC/USD: 0x0153002d20B96532C639313c291Fbd1E7b65F3a8
-```
+Oracle adapter that maps collateral tokens to Chainlink-compatible feeds and returns USD values with 6 decimals.
 
-**MockUSDC**: `0x8B7Af5BB6afc6A087fd94A97f53Bf13dFD63E1E2`
-```solidity
-// Testnet token with open minting
-mint(address to, uint256 amount)
-// Standard ERC20 functions (6 decimals)
-```
+### MockUSDC
 
-### WalnutV1 (Waves 1-3)
+Mintable ERC20 testnet collateral with 6 decimals. It is intentionally open-mint for demo and judging workflows.
 
-**Deployed**: `0x04c998DD105E444570ba1eCACB3F5524D5695aA0`  
-**Archived**: Previous versions in `_archive/contracts/`
+## Frontend
 
-**Key Functions**
-```solidity
-// Lending
-deposit(InEuint128 encryptedAmount)
-borrow(InEuint128 encryptedAmount)
-repay(InEuint128 encryptedAmount)
-withdraw(InEuint128 encryptedAmount)
+The frontend is a Next.js application using wagmi, viem, TanStack Query, and CoFHE React hooks.
 
-// Credit Scoring
-requestCreditTierUpdate(address user)
-onCreditCountDecrypted(uint256 requestId, uint128 result) // onlyCoFHE
+Implemented pages:
 
-// Liquidation
-requestLiquidationCheck(address user)
-openAuction(address borrower)
-submitBid(address borrower, InEuint128 encryptedPenalty)
-selectWinningBid(address borrower)
-
-// P2P
-postOffer(InEuint128 encAPR, InEuint128 encSize, InEuint128 encTenor)
-matchOffer(uint256 offerId)
-
-// Aggregation
-registerENSWallet(string ensName, address wallet)
-getAggregatedCollateral(address owner)
-```
-
----
-
-## Testing
-
-```bash
-npx hardhat test
-```
-
-**WalnutV2 (Wave 4)**: All tests passing
-- Real token deposits (USDC, WETH)
-- Encrypted stablecoin borrowing (wUSDC)
-- Interest calculation with 8% APR
-- Protocol fee split (25% protocol, 75% lenders)
-- Credit tier LTV enforcement (70%-90%)
-- Chainlink price oracle integration
-- Privara settlement integration
-- Access control and pause mechanism
-
-**WalnutV1 (Waves 1-3)**: 8/8 core tests passing
-- Complete lending loop
-- Credit tier updates
-- Liquidation with async callbacks
-- Sealed-bid auctions
-- P2P lending
-- ENS aggregation
-- Pause mechanism
-- Access control
-
----
-
-## Deployment
-
-```bash
-# Deploy
-npx hardhat run scripts/deploy-v1-arbitrum-sepolia.js --network arbitrumSepolia
-
-# Verify
-npx hardhat verify --network arbitrumSepolia <CONTRACT_ADDRESS>
-```
-
----
+| Page | Purpose |
+| --- | --- |
+| Dashboard | Decrypted collateral, debt, available amount, utilization, wallet balances, and vault holdings. |
+| Deposit | MockUSDC minting, ERC20 approval, and collateral deposit. |
+| Borrow | Client-side encrypted borrow amount submission. |
+| Repay | Client-side encrypted repayment plus private settlement handling. |
+| Withdraw | Collateral withdrawal for debt-free positions. |
+| History and Settings | Supporting views for protocol state and user configuration. |
+| P2P and Liquidation | Preserved as non-active Wave 4 views while the current deployment focuses on tokenized collateral and wUSDC. |
 
 ## Privacy Model
 
-**Private (Encrypted)**
-- Collateral and debt amounts
-- Repayment history
-- Liquidation bids
-- P2P loan terms (until matched)
-- Wallet relationships
-- Health factors
+| Data | Visibility |
+| --- | --- |
+| Collateral value | Encrypted on-chain, decryptable by the user through permit flow. |
+| Debt value | Encrypted on-chain, decryptable by the user through permit flow. |
+| Repayment count | Encrypted on-chain, used to derive public tier. |
+| Borrow and repay amounts | Submitted encrypted for wUSDC flows. |
+| Vault token address and token amount | Public plaintext accounting for real ERC20 custody. |
+| Credit tier | Public derived value. |
+| Transaction sender and timestamps | Public blockchain metadata. |
 
-**Public (On-Chain Metadata)**
-- Wallet addresses
-- Transaction timestamps
-- Credit tiers (derived)
-- Liquidation flags (derived)
+Walnut does not claim to hide the existence of an interaction. It hides the sensitive lending values that normally reveal a user's financial position.
 
----
+## Repository Structure
 
-## Security
+```text
+app/                         Next.js application routes
+components/                  UI and wallet/provider components
+contracts/                   Solidity contracts
+contracts/wave4/             WalnutV2, WalnutFHERC20, oracle, and test tokens
+hooks/                       Frontend protocol, balance, permit, and settlement hooks
+lib/                         Contract addresses, ABIs, and shared utilities
+scripts/                     Deployment, verification, minting, and diagnostics
+test/                        Hardhat contract tests and helpers
+```
 
-**Async Decrypt Pattern**
-1. Contract requests decryption from CoFHE
-2. CoFHE decrypts off-chain
-3. CoFHE calls contract callback
-4. Contract verifies caller (onlyCoFHE modifier)
-5. Contract updates state
+## Setup
 
-**Properties**
-- Only CoFHE can execute callbacks
-- Request IDs prevent replay attacks
-- No plaintext storage
-- Events never emit sensitive data
+Install dependencies:
 
----
+```bash
+npm install
+```
 
-## Future Enhancements
+Create local environment configuration:
 
-- Multi-asset collateral support
-- Cross-chain encrypted state sync
-- Privacy-preserving oracles
-- Enhanced P2P matching algorithms
-- Governance mechanisms
+```bash
+cp .env.example .env.local
+```
 
----
+At minimum, set:
 
-## Changelog
+```bash
+NEXT_PUBLIC_CHAIN_ID=421614
+NEXT_PUBLIC_RPC_URL_PRIMARY=https://sepolia-rollup.arbitrum.io/rpc
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
+```
 
-### Wave 4: Token Economics (Current)
-**Released**: January 2025
+For deployment and Privara settlement scripts, also configure:
 
-**New Contracts**
-- WalnutV2: Main protocol with real token integration
-- WalnutFHERC20: Encrypted stablecoin (wUSDC)
-- WalnutPriceOracle: Chainlink price feed integration
-- MockUSDC: Testnet ERC20 token
+```bash
+PRIVATE_KEY=your_deployer_private_key
+PRIVARA_SETTLEMENT_PRIVATE_KEY=your_settlement_private_key
+LENDER_POOL_ADDRESS=your_lender_or_treasury_address
+```
 
-**Features Added**
-- Real ERC20 token deposits (USDC, WETH)
-- Encrypted stablecoin borrowing (wUSDC)
-- Time-based interest accrual (8% APR)
-- Protocol fee mechanism (2% APR)
-- Credit tier LTV system (70%-90%)
-- Chainlink price oracle integration
-- Privara settlement for interest payments
-- Vault accounting for token holdings
-- Dual transaction display (repayment + settlement)
+Run the frontend:
 
-**Technical Improvements**
-- USD-denominated encrypted accounting
-- Precise interest calculation (1e6 precision)
-- Multi-token collateral support
-- Enhanced frontend with token balance display
-- Comprehensive test coverage for all Wave 4 features
+```bash
+npm run dev
+```
 
-### Wave 3: ENS Aggregation & P2P Lending
-**Released**: December 2024
+Build the frontend:
 
-**Features Added**
-- ENS wallet aggregation
-- P2P lending with encrypted terms
-- Selective disclosure for loan matching
+```bash
+npm run build
+```
 
-### Wave 2: Liquidation System
-**Released**: November 2024
+## Testing and Verification
 
-**Features Added**
-- Sealed-bid liquidation auctions
-- Encrypted bid submission
-- CoFHE callback-based settlement
-- Health factor monitoring
+Compile contracts:
 
-### Wave 1: Core FHE Lending
-**Released**: October 2024
+```bash
+npx hardhat compile
+```
 
-**Initial Release**
-- WalnutV1 contract deployment
-- Encrypted deposit, borrow, repay, withdraw
-- Credit tier system with encrypted scoring
-- CoFHE integration for async decryption
-- Next.js frontend with CoFHE SDK
+Run the WalnutV2 contract suite:
 
----
+```bash
+npx hardhat test test/unit/contracts/wave4/WalnutV2.test.js
+```
 
-## Resources
+Verify the active Arbitrum Sepolia deployment:
 
-- [CoFHE SDK Docs](https://docs.fhenix.zone)
-- [Arbitrum Docs](https://docs.arbitrum.io)
-- [Arbitrum Sepolia Faucet](https://faucet.quicknode.com/arbitrum/sepolia)
-- [Arbitrum Sepolia Explorer](https://sepolia.arbiscan.io)
+```bash
+npx hardhat run scripts/verify-wave4-deployment.js --network arbitrumSepolia
+```
 
----
+Recent local verification:
+
+| Check | Result |
+| --- | --- |
+| `npx hardhat compile` | Passing |
+| `npx hardhat test test/unit/contracts/wave4/WalnutV2.test.js` | 61 passing |
+| `npx tsc --noEmit` | Passing |
+| `npm run build` | Passing |
+| Deployment verification script | Passing on Arbitrum Sepolia |
+
+## Deployment
+
+Deploy the full Wave 4 stack:
+
+```bash
+npx hardhat run scripts/deploy-wave4-arbitrum-sepolia.js --network arbitrumSepolia
+```
+
+Redeploy only WalnutV2 while reusing the current wUSDC, oracle, and MockUSDC:
+
+```bash
+npx hardhat run scripts/redeploy-walnut-v2-only.js --network arbitrumSepolia
+```
+
+Mint MockUSDC for testing:
+
+```bash
+npx hardhat run scripts/mint-mock-usdc.js --network arbitrumSepolia
+```
+
+## Current Scope and Notes
+
+WalnutV2 is the active submission contract. It focuses on real collateral deposits, encrypted wUSDC borrowing, encrypted repayment state, permit-based user decryption, oracle valuation, and private settlement integration.
+
+The earlier WalnutV1 contract contains the experimental Waves 1-3 feature set: encrypted lending primitives, sealed-bid liquidation, P2P lending, and ENS aggregation. Those concepts are preserved in the repository, but the active Wave 4 UI and deployment prioritize the production-style tokenized collateral flow.
+
+Debt-free withdrawals are supported directly in WalnutV2. Withdrawals after borrowing are intentionally blocked in the current contract path because the unsafe async withdrawal decrypt task was removed after live Arbitrum Sepolia testing showed it could revert before wallet fee estimation. This preserves collateral safety for the active deployment.
 
 ## License
 
-MIT License
-
----
-
-**Walnut Protocol** - Privacy-first lending, finally.
+MIT
