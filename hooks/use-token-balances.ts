@@ -283,11 +283,10 @@ export function useTokenBalances() {
     let active = true;
 
     const fetchVaultHoldings = async () => {
-      const holdings: VaultHolding[] = [];
+      const amountsByToken = new Map<string, bigint>();
+      const tokenAddressByKey = new Map<string, Address>();
 
-      // Try to read vault holdings (index 0, 1, 2, etc.)
-      // We'll try up to 10 holdings and stop when we hit an error
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 50; i++) {
         try {
           const [token, amount] = await publicClient.readContract({
             address: WALNUT_V2_ADDRESS,
@@ -301,37 +300,45 @@ export function useTokenBalances() {
             break;
           }
 
-          // Find token info
-          const tokenInfo = SUPPORTED_TOKENS.find((t) => t.address.toLowerCase() === token.toLowerCase());
-
-          // Get USD value
-          let usdValue: bigint | undefined;
-          try {
-            usdValue = await publicClient.readContract({
-              address: ORACLE_ADDRESS,
-              abi: ORACLE_ABI,
-              functionName: "getUSDValue",
-              args: [token, amount],
-            });
-          } catch (error) {
-            console.error(`Failed to fetch USD value for vault holding:`, error);
-          }
-
-          holdings.push({
-            token,
-            amount,
-            symbol: tokenInfo?.symbol ?? "UNKNOWN",
-            decimals: tokenInfo?.decimals ?? 18,
-            usdValue,
-          });
+          const tokenKey = token.toLowerCase();
+          amountsByToken.set(tokenKey, (amountsByToken.get(tokenKey) ?? 0n) + amount);
+          tokenAddressByKey.set(tokenKey, token);
         } catch (error) {
           // No more vault holdings
           break;
         }
       }
 
+      const holdings = await Promise.all(
+        SUPPORTED_TOKENS.map(async (tokenInfo) => {
+          const tokenKey = tokenInfo.address.toLowerCase();
+          const amount = amountsByToken.get(tokenKey) ?? 0n;
+          if (amount <= 0n) return null;
+
+          let usdValue: bigint | undefined;
+          try {
+            usdValue = await publicClient.readContract({
+              address: ORACLE_ADDRESS,
+              abi: ORACLE_ABI,
+              functionName: "getUSDValue",
+              args: [tokenInfo.address, amount],
+            });
+          } catch (error) {
+            console.error(`Failed to fetch USD value for vault holding:`, error);
+          }
+
+          return {
+            token: tokenAddressByKey.get(tokenKey) ?? tokenInfo.address,
+            amount,
+            symbol: tokenInfo.symbol,
+            decimals: tokenInfo.decimals,
+            usdValue,
+          } satisfies VaultHolding;
+        })
+      );
+
       if (active) {
-        setVaultHoldings(holdings);
+        setVaultHoldings(holdings.filter((holding): holding is VaultHolding => holding !== null));
       }
     };
 

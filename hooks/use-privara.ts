@@ -23,6 +23,8 @@ export type PrivaraSettlementResult = {
 type SettlementContext = {
   user: Address;
   amount: bigint;
+  interestAmount?: bigint;
+  protocolFee?: bigint;
   counterparty?: Address;
 };
 
@@ -65,7 +67,10 @@ export function usePrivara() {
         return { ok: false, message };
       }
 
-      if (context.amount <= 0n) {
+      const interestAmount = context.interestAmount ?? context.amount;
+      const protocolFee = context.protocolFee ?? 0n;
+
+      if (interestAmount <= 0n) {
         const message = "Settlement amount must be greater than zero.";
         setState("settlement_failed");
         setLastError(message);
@@ -89,6 +94,8 @@ export function usePrivara() {
             user: context.user,
             counterparty: context.counterparty,
             amount: context.amount.toString(),
+            interestAmount: interestAmount.toString(),
+            protocolFee: protocolFee.toString(),
             network: getNetworkName(walletClient.chain?.id),
             chainId: walletClient.chain?.id ?? walnutChainId,
           }),
