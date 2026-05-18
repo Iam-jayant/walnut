@@ -122,6 +122,12 @@ const ORACLE_ABI = [
 
 type DepositStep = "idle" | "approve_pending" | "approve_confirmed" | "deposit_pending" | "deposit_confirmed" | "error";
 
+function assertSuccessReceipt(receipt: { status?: "success" | "reverted" }) {
+  if (receipt.status && receipt.status !== "success") {
+    throw new Error("Transaction reverted on-chain.");
+  }
+}
+
 export default function DepositPage() {
   const account = useAccount();
   const publicClient = usePublicClient();
@@ -248,7 +254,8 @@ export default function DepositPage() {
 
       // Wait for confirmation
       if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        assertSuccessReceipt(receipt);
       }
 
       setDepositStep("approve_confirmed");
@@ -301,7 +308,8 @@ export default function DepositPage() {
 
         // Wait for approval confirmation
         if (publicClient) {
-          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          assertSuccessReceipt(approveReceipt);
         }
 
         setDepositStep("approve_confirmed");
@@ -329,7 +337,6 @@ export default function DepositPage() {
         args: [selectedToken, parsedAmount],
         chain: arbitrumSepolia,
         account: account.address,
-        gas: 500000n, // Explicit gas limit for deposit
         maxFeePerGas: depositBufferedMaxFeePerGas,
         maxPriorityFeePerGas,
       });
@@ -339,7 +346,8 @@ export default function DepositPage() {
 
       // Wait for confirmation
       if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        assertSuccessReceipt(receipt);
       }
 
       setDepositStep("deposit_confirmed");
