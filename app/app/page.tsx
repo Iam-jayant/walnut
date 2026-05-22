@@ -9,6 +9,12 @@ import {
   HandCoins,
   RefreshCcw,
   ShieldCheck,
+  Bell,
+  HelpCircle,
+  Activity,
+  ArrowRight,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +32,14 @@ import {
 } from "@/lib/protocol-constants";
 
 const USDC_DECIMALS = 1_000_000;
+const ENCRYPTION_MASK = "······"; // Consistent encryption mask style
+
+// Token image mappings from CoinGecko CDN
+const TOKEN_IMAGES: Record<string, string> = {
+  USDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
+  wUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
+  WETH: "https://assets.coingecko.com/coins/images/2518/standard/weth.png",
+};
 
 const formatUSDC = (rawValue: bigint | number | string): string => {
   const num = typeof rawValue === "bigint" ? Number(rawValue) : Number(rawValue);
@@ -64,8 +78,8 @@ export default function WalnutDashboardPage() {
   ] as const;
 
   const collateralLabel = useMemo(() => {
-    if (!showDecrypted) return "******";
-    if (!protocol.canRead) return "******";
+    if (!showDecrypted) return ENCRYPTION_MASK;
+    if (!protocol.canRead) return ENCRYPTION_MASK;
     if (protocol.collateralDecrypting || protocol.permit.isPermitInitializing) return "Loading...";
     if (typeof protocol.collateral.decrypted.data === "bigint") {
       return formatUSDC(protocol.collateral.decrypted.data);
@@ -74,8 +88,8 @@ export default function WalnutDashboardPage() {
   }, [protocol.canRead, protocol.collateral.decrypted.data, protocol.collateralDecrypting, protocol.permit.isPermitInitializing, showDecrypted]);
 
   const debtLabel = useMemo(() => {
-    if (!showDecrypted) return "******";
-    if (!protocol.canRead) return "******";
+    if (!showDecrypted) return ENCRYPTION_MASK;
+    if (!protocol.canRead) return ENCRYPTION_MASK;
     if (protocol.debtDecrypting || protocol.permit.isPermitInitializing) return "Loading...";
     if (typeof protocol.debt.decrypted.data === "bigint") {
       return formatUSDC(protocol.debt.decrypted.data);
@@ -84,7 +98,7 @@ export default function WalnutDashboardPage() {
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, protocol.permit.isPermitInitializing, showDecrypted]);
 
   const totalPoolCollateralLabel = useMemo(() => {
-    if (!protocol.canRead || !showDecrypted) return "******";
+    if (!protocol.canRead || !showDecrypted) return ENCRYPTION_MASK;
     if (protocol.totalPoolCollateralDecrypting) return "Loading...";
     if (typeof protocol.totalPoolCollateral.decrypted.data === "bigint") {
       return formatUSDC(protocol.totalPoolCollateral.decrypted.data);
@@ -93,7 +107,7 @@ export default function WalnutDashboardPage() {
   }, [protocol.canRead, protocol.totalPoolCollateral.decrypted.data, protocol.totalPoolCollateralDecrypting, showDecrypted]);
 
   const totalPoolDebtLabel = useMemo(() => {
-    if (!protocol.canRead || !showDecrypted) return "******";
+    if (!protocol.canRead || !showDecrypted) return ENCRYPTION_MASK;
     if (protocol.totalPoolDebtDecrypting) return "Loading...";
     if (typeof protocol.totalPoolDebt.decrypted.data === "bigint") {
       return formatUSDC(protocol.totalPoolDebt.decrypted.data);
@@ -108,7 +122,7 @@ export default function WalnutDashboardPage() {
   );
 
   const healthFactorDisplay = useMemo(() => {
-    if (!showDecrypted) return "******";
+    if (!showDecrypted) return ENCRYPTION_MASK;
     if (healthFactorLoading) return "Loading...";
     
     const col = typeof collateralDecrypted === "bigint" ? toUSDCNumber(collateralDecrypted) : NaN;
@@ -130,7 +144,7 @@ export default function WalnutDashboardPage() {
 
   const healthStatusLabel = useMemo(() => {
     if (!showDecrypted || healthFactorLoading || healthFactorValue === undefined) {
-      return "Unknown";
+      return "--";
     }
 
     if (healthFactorValue >= HEALTH_FACTOR_SAFE_THRESHOLD) return "Safe";
@@ -187,14 +201,14 @@ export default function WalnutDashboardPage() {
       : "walnut-chip-pending";
 
   const showKpiValues = showDecrypted && protocol.canRead;
-  const utilizationLabel = showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "******";
+  const utilizationLabel = showKpiValues ? `${utilizationPercent.toFixed(2)}%` : ENCRYPTION_MASK;
   const utilizationBarWidth = showKpiValues ? Math.max(8, utilizationPercent) : 12;
-  const collateralMetric = showDecrypted ? collateralLabel : "******";
-  const debtMetric = showDecrypted ? debtLabel : "******";
-  const availableMetric = showDecrypted ? availableCollateralLabel : "******";
+  const collateralMetric = showDecrypted ? collateralLabel : ENCRYPTION_MASK;
+  const debtMetric = showDecrypted ? debtLabel : ENCRYPTION_MASK;
+  const availableMetric = showDecrypted ? availableCollateralLabel : ENCRYPTION_MASK;
 
   const creditTierLabel = useMemo(() => {
-    if (!protocol.canRead || !showDecrypted) return "******";
+    if (!protocol.canRead || !showDecrypted) return ENCRYPTION_MASK;
     if (protocol.creditTierLoading) return "Loading...";
     if (typeof protocol.creditTier === "bigint") {
       return `Tier ${protocol.creditTier.toString()}`;
@@ -203,7 +217,7 @@ export default function WalnutDashboardPage() {
   }, [protocol.canRead, protocol.creditTier, protocol.creditTierLoading, showDecrypted]);
 
   const tierLtvLabel = useMemo(() => {
-    if (!protocol.canRead || !showDecrypted) return "******";
+    if (!protocol.canRead || !showDecrypted) return ENCRYPTION_MASK;
     if (protocol.tierLTVLoading) return "Loading...";
     if (typeof protocol.tierLTV === "bigint") {
       const percent = Number(protocol.tierLTV) / 100;
@@ -252,8 +266,8 @@ export default function WalnutDashboardPage() {
     const integerPart = amount / divisor;
     const fractionalPart = amount % divisor;
     const fractionalStr = fractionalPart.toString().padStart(decimals, "0");
-    // Show up to 6 decimal places
-    const displayDecimals = Math.min(6, decimals);
+    // Show up to 2 decimal places
+    const displayDecimals = Math.min(2, decimals);
     const truncatedFractional = fractionalStr.slice(0, displayDecimals);
     return `${integerPart}.${truncatedFractional}`;
   }
@@ -265,372 +279,300 @@ export default function WalnutDashboardPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <GlassPanel className="walnut-hero walnut-card-strong overflow-hidden p-5 sm:p-6">
-        <div className="grid gap-4 lg:grid-cols-[1.4fr_auto] lg:items-start">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Dashboard</p>
-            <h1 className="mt-2 font-display text-[clamp(1.9rem,1.7vw+1.2rem,2.7rem)] text-foreground">
-              Private Lending Command Center
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-              One place for collateral, debt, health, and quick protocol actions.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className={`walnut-status-chip ${readinessTone}`}>{readinessLabel}</span>
-              <span className="walnut-status-chip walnut-status-chip-ghost">
-                Utilization {showKpiValues ? `${utilizationPercent.toFixed(2)}%` : "--"}
-              </span>
-              <span className="walnut-status-chip walnut-status-chip-ghost">
-                Health {showDecrypted ? healthFactorDisplay : "--"}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 lg:justify-end">
-            <Button
-              size="sm"
-              variant="outline"
-              className="glass-button"
-              onClick={handleToggleValues}
-              isLoading={isRevealingValues}
-              loadingText="Loading..."
-            >
-              {showDecrypted ? "Hide Values" : "Show Values"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="glass-button"
-              onClick={() => {
-                void protocol.refreshBalances();
-                if (showDecrypted) {
-                  void protocol.fetchHealthFactor();
-                }
-              }}
-            >
-              Refresh
-            </Button>
-          </div>
+    <div className="space-y-6 animate-in fade-in duration-500 pb-12 w-full max-w-full">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-sans text-[clamp(1.75rem,2vw+1rem,2.25rem)] font-semibold tracking-tight text-foreground">Private Lending Command Center</h1>
+          <p className="text-[0.95rem] text-muted-foreground mt-2">One place for collateral, debt, health, and quick protocol actions.</p>
         </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="walnut-kpi-shell">
-            <p className="walnut-label">Available</p>
-            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{availableMetric}</p>
-            <p className="walnut-meta">Ready to withdraw</p>
-          </div>
-          <div className="walnut-kpi-shell">
-            <p className="walnut-label">Collateral</p>
-            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{collateralMetric}</p>
-            <p className="walnut-meta">Total supplied</p>
-          </div>
-          <div className="walnut-kpi-shell">
-            <p className="walnut-label">Debt</p>
-            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{debtMetric}</p>
-            <p className="walnut-meta">Total borrowed</p>
-          </div>
-          <div className="walnut-kpi-shell">
-            <p className="walnut-label">Borrow Utilization</p>
-            <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{utilizationLabel}</p>
-            <div className="mt-3 walnut-kpi-track">
-              <div className="walnut-kpi-fill" style={{ width: `${utilizationBarWidth}%` }} />
-            </div>
-          </div>
+        <div className="flex items-center gap-4 text-muted-foreground">
+          <Bell className="w-5 h-5 cursor-pointer hover:text-foreground transition-colors" />
+          <HelpCircle className="w-5 h-5 cursor-pointer hover:text-foreground transition-colors" />
         </div>
-      </GlassPanel>
-
-      {/* Token Balances Section */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Wallet Token Balances */}
-        <GlassPanel className="walnut-card walnut-card-strong">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="walnut-label">Wallet Balances</p>
-              <p className="mt-1 text-sm text-muted-foreground">ERC20 tokens in your wallet</p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="glass-button"
-              onClick={() => void tokenBalances.refreshBalances()}
-              disabled={tokenBalances.isLoading}
-            >
-              <RefreshCcw className="h-3 w-3" />
-            </Button>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {tokenBalances.tokenBalances.length === 0 && !tokenBalances.isLoading && (
-              <p className="text-sm text-muted-foreground">No token balances found</p>
-            )}
-            {tokenBalances.tokenBalances.map((token) => (
-              <div
-                key={token.token}
-                className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-4 py-3"
-              >
-                <div>
-                  <p className="font-medium text-foreground">{token.symbol}</p>
-                  <p className="mt-1 font-mono text-sm text-muted-foreground">
-                    {formatTokenAmount(token.balance, token.decimals)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">USD Value</p>
-                  <p className="mt-1 font-mono text-sm text-foreground">
-                    {token.usdValueLoading
-                      ? "Loading..."
-                      : token.usdValueError
-                      ? "N/A"
-                      : formatUSDValue(token.usdValue)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </GlassPanel>
-
-        {/* Vault Holdings & wUSDC Balance */}
-        <GlassPanel className="walnut-card walnut-card-strong">
-          <div>
-            <p className="walnut-label">Vault Holdings</p>
-            <p className="mt-1 text-sm text-muted-foreground">Deposited collateral tokens</p>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {tokenBalances.vaultHoldings.length === 0 && !tokenBalances.isLoading && (
-              <p className="text-sm text-muted-foreground">No vault holdings</p>
-            )}
-            {tokenBalances.vaultHoldings
-              .filter((holding) => holding.amount > 0n) // Only show non-zero holdings
-              .map((holding) => (
-              <div
-                key={holding.token}
-                className="flex items-center justify-between rounded-xl border border-black/10 bg-white/90 px-4 py-3"
-              >
-                <div>
-                  <p className="font-medium text-foreground">{holding.symbol}</p>
-                  <p className="mt-1 font-mono text-sm text-muted-foreground">
-                    {formatTokenAmount(holding.amount, holding.decimals)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">USD Value</p>
-                  <p className="mt-1 font-mono text-sm text-foreground">
-                    {formatUSDValue(holding.usdValue)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* wUSDC Balance */}
-          <div className="mt-4 border-t border-black/10 pt-4">
-            <p className="walnut-label">wUSDC Balance (Encrypted)</p>
-            <div className="mt-3 rounded-xl border border-black/10 bg-white/90 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-foreground">wUSDC</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Encrypted stablecoin</p>
-                </div>
-                <div className="text-right">
-                  {!tokenBalances.canRead ? (
-                    <p className="font-mono text-sm text-muted-foreground">******</p>
-                  ) : tokenBalances.wUSDCBalance.decrypting ? (
-                    <p className="text-sm text-muted-foreground">Decrypting...</p>
-                  ) : tokenBalances.wUSDCBalance.error ? (
-                    <p className="text-sm text-red-600">Error</p>
-                  ) : tokenBalances.wUSDCBalance.decrypted !== undefined ? (
-                    <p className="font-mono text-sm text-foreground">
-                      {formatTokenAmount(tokenBalances.wUSDCBalance.decrypted, 6)}
-                    </p>
-                  ) : (
-                    <p className="font-mono text-sm text-muted-foreground">0.000000</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </GlassPanel>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-        <GlassPanel className="walnut-card walnut-card-strong">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="walnut-label">Credit Tier</p>
-              <h2 className="mt-2 font-display text-2xl text-foreground">{creditTierLabel}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">Current max LTV: {tierLtvLabel}</p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="glass-button"
-              onClick={() => {
-                void protocol.requestCreditTierUpdate();
-              }}
-              isLoading={protocol.creditTierPollingActive || protocol.isWriting}
-              loadingText="Checking..."
-              disabled={!protocol.canWrite}
-            >
-              Request Update
-            </Button>
+      {/* Systems Operational Banner */}
+      <div className="flex flex-col sm:flex-row items-center justify-between border border-black/10 rounded-xl bg-white/90 p-4 shadow-[0_4px_12px_rgba(0,0,0,0.06)] backdrop-blur-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+          <div>
+            <div className="text-sm font-semibold text-foreground">All systems operational</div>
+            <div className="text-xs text-muted-foreground">All protocols are functioning normally</div>
           </div>
-        </GlassPanel>
-
-        <GlassPanel className="walnut-card walnut-card-strong">
-          <p className="walnut-label">Pool Stats</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="walnut-kpi-shell">
-              <p className="walnut-label">Total Collateral</p>
-              <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{totalPoolCollateralLabel}</p>
-              <p className="walnut-meta">Encrypted pool supply</p>
-            </div>
-            <div className="walnut-kpi-shell">
-              <p className="walnut-label">Total Debt</p>
-              <p className="walnut-value mt-2 text-2xl tracking-[0.12em]">{totalPoolDebtLabel}</p>
-              <p className="walnut-meta">Encrypted pool utilization</p>
-            </div>
-          </div>
-        </GlassPanel>
+        </div>
+        <div className="flex items-center gap-2 mt-4 sm:mt-0">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs h-9 px-4 rounded-full border-black/15 bg-white hover:bg-black/5 hover:border-black/25 transition-all font-medium"
+            onClick={handleToggleValues}
+            isLoading={isRevealingValues}
+          >
+            {showDecrypted ? "Hide Values" : "Show Values"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs h-9 px-4 rounded-full border-black/15 bg-white hover:bg-black/5 hover:border-black/25 transition-all font-medium"
+            onClick={() => {
+              void protocol.refreshBalances();
+              if (showDecrypted) void protocol.fetchHealthFactor();
+            }}
+          >
+            Refresh
+          </Button>
+        </div>
       </div>
-
-      {!protocol.permit.hasPermit && (
-        <GlassPanel className="walnut-card walnut-alert-warning border-amber-300/40 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="walnut-label">Setup Required</p>
-              <p className="mt-2 text-sm text-foreground">
-                Enable private access once to decrypt balances and use confidential actions.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
-              onClick={protocol.permit.requestPermitCreation}
-            >
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              Enable Private Access
-            </Button>
-          </div>
-        </GlassPanel>
-      )}
-
-      {protocol.permit.hasPermit && showDecrypted && (collateralLabel === "—" || debtLabel === "—") && (
-        <GlassPanel className="walnut-card walnut-alert-warning border-amber-300/40 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="walnut-label">Grant Read Permissions</p>
-              <p className="mt-2 text-sm text-foreground">
-                Call grantReadPermissions() on the contract to allow decryption of your encrypted values.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
-              onClick={() => void grantReadPermissions()}
-              isLoading={isGrantingPermissions}
-              loadingText="Granting..."
-              disabled={!protocol.canWrite}
-            >
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              Grant Permissions
-            </Button>
-          </div>
-        </GlassPanel>
-      )}
 
       <ProtocolAlerts protocol={protocol} />
       <LiquidationBadge liquidatable={protocol.liquidatable} />
 
-      <div className="grid gap-4 xl:grid-cols-[1.25fr_0.85fr]">
-        <GlassPanel className="walnut-card walnut-card-strong p-4 sm:p-5">
-          <h2 className="font-display text-[clamp(1.35rem,1vw+1rem,2rem)] text-foreground">Actions</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Organized flows for each position change.</p>
-
-          <Link
-            href={primaryAction.href}
-            className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-black/12 bg-white/88 px-4 py-3 transition-colors hover:border-black/20"
-          >
-            <div className="flex items-start gap-3">
-              <div className="walnut-action-icon mt-0.5">
-                <primaryAction.icon className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-[1.55rem] leading-none text-foreground">{primaryAction.label}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{primaryAction.hint}</p>
-              </div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </Link>
-
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {secondaryActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <Link key={action.href} href={action.href} className="walnut-action-tile interactive-tilt">
-                  <div className="flex items-start gap-3">
-                    <div className="walnut-action-icon">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">{action.label}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{action.hint}</p>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
+      {/* KPI Cards Layer */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="border border-black/10 rounded-xl bg-linear-to-br from-white to-gray-50/50 p-5 shadow-[0_4px_16px_rgba(0,0,0,0.06),inset_0_1px_0_rgba(255,255,255,0.9)] flex flex-col justify-between hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] transition-all">
+          <div className="flex items-start justify-between mb-2">
+             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Total Supplied</div>
           </div>
-        </GlassPanel>
+          <div>
+            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{showDecrypted ? `$${typeof protocol.totalPoolCollateral.decrypted.data === 'bigint' ? formatTokenAmount(protocol.totalPoolCollateral.decrypted.data, 6) : '0.00'}` : ENCRYPTION_MASK}</div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
+          <div className="flex items-start justify-between mb-2">
+             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Total Borrowed</div>
+          </div>
+          <div>
+            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{showDecrypted ? `$${typeof protocol.totalPoolDebt.decrypted.data === 'bigint' ? formatTokenAmount(protocol.totalPoolDebt.decrypted.data, 6) : '0.00'}` : ENCRYPTION_MASK}</div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
+          <div className="flex items-start justify-between mb-2">
+             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Available</div>
+          </div>
+          <div>
+            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{showDecrypted ? `$${availableMetric}` : availableMetric}</div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
+          <div className="flex items-start justify-between mb-2">
+             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Borrow Utilization</div>
+          </div>
+          <div>
+            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight mb-2">{utilizationLabel}</div>
+            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-1.5 flex">
+               <div className="bg-emerald-500 h-full rounded-l-full transition-all duration-1000" style={{ width: `${utilizationBarWidth}%` }} />
+            </div>
+            <div className="flex items-center gap-1.5 mt-1">
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                utilizationBarWidth > 80 ? 'bg-red-400' :
+                utilizationBarWidth > 50 ? 'bg-amber-400' :
+                'bg-emerald-400'
+              }`} />
+              <span className="text-[11px] text-slate-500">
+                {utilizationBarWidth > 80 ? 'High' :
+                 utilizationBarWidth > 50 ? 'Moderate' :
+                 'Low'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <GlassPanel className="walnut-card walnut-card-strong walnut-health-card p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="walnut-health-gauge-wrap justify-start">
-              <div
-                className="walnut-health-gauge"
-                style={{
-                  background: `conic-gradient(rgba(17, 17, 17, 0.82) ${healthGaugePercent}%, rgba(17, 17, 17, 0.12) ${healthGaugePercent}% 100%)`,
-                }}
-              >
-                <div className="walnut-health-gauge-core">
-                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Risk</span>
-                  <span className="walnut-health-score mt-1 text-foreground">
-                    {showDecrypted && healthFactorValue !== undefined
-                      ? `${Math.max(
-                          0,
-                          Math.min(
-                            HEALTH_FACTOR_SCORE_MAX,
-                            Number(healthFactorValue) / Number(HEALTH_FACTOR_SCALE)
-                          )
-                        ).toFixed(1)}/${HEALTH_FACTOR_SCORE_MAX}`
-                      : "--"}
-                  </span>
+      {/* Row 2: Balances, Vault Holdings, Loan Health */}
+      <div className="grid lg:grid-cols-3 gap-4">
+        
+        {/* Wallet Balances */}
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-bold tracking-tight text-slate-900">Wallet Balances</h3>
+          </div>
+          
+          <div className="space-y-4">
+            {tokenBalances.tokenBalances.map((token) => (
+              <div key={token.symbol} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-sm hover:scale-105 transition-transform cursor-pointer overflow-hidden bg-slate-100 border border-slate-200">
+                    {TOKEN_IMAGES[token.symbol] ? (
+                      <img 
+                        src={TOKEN_IMAGES[token.symbol]} 
+                        alt={token.symbol}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-xs font-bold text-slate-500">{token.symbol.slice(0, 2)}</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{token.symbol}</div>
+                    <div className="text-[11px] text-slate-500">{token.decimals} decimals</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-900">
+                    {showDecrypted ? formatTokenAmount(token.balance, token.decimals) : ENCRYPTION_MASK}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {showDecrypted ? (
+                      token.usdValueLoading ? 'Loading...' : 
+                      token.usdValueError ? 'N/A' :
+                      token.usdValue ? `$${formatTokenAmount(token.usdValue, 6)}` : '$0.00'
+                    ) : ENCRYPTION_MASK}
+                  </div>
                 </div>
               </div>
-            </div>
+            ))}
+          </div>
+        </div>
 
-            <div className="min-w-0 flex-1">
-              <p className="walnut-label">Health Factor</p>
-              <p className="mt-2 text-sm text-muted-foreground">Target range above 1.50</p>
-              <p className="mt-2 text-xs text-muted-foreground">Show values to view status</p>
-            </div>
+        {/* Vault Holdings */}
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-bold tracking-tight text-slate-900">Vault Holdings</h3>
+          </div>
+          
+          <div className="space-y-4">
+            {tokenBalances.vaultHoldings.map((holding) => (
+              <div key={holding.symbol} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-inner hover:scale-105 transition-transform cursor-pointer overflow-hidden bg-slate-100 border border-slate-200">
+                    {TOKEN_IMAGES[holding.symbol] ? (
+                      <img 
+                        src={TOKEN_IMAGES[holding.symbol]} 
+                        alt={holding.symbol}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-xs font-bold text-slate-500">{holding.symbol.slice(0, 2)}</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{holding.symbol}</div>
+                    <div className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded-sm w-fit">
+                      <ShieldCheck className="w-3 h-3" /> Encrypted
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-900">
+                    {showDecrypted ? formatTokenAmount(holding.amount, holding.decimals) : ENCRYPTION_MASK}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {showDecrypted ? (
+                      holding.usdValue ? `$${formatTokenAmount(holding.usdValue, 6)}` : 'Collateral'
+                    ) : ENCRYPTION_MASK}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
-            <span className={`walnut-status-chip ${healthStatusTone}`}>{healthStatusLabel}</span>
+        {/* Loan Health */}
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm relative overflow-hidden flex flex-col">
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="font-bold tracking-tight text-slate-900">Loan Health</h3>
+             <Bell className="w-4 h-4 text-slate-400" />
+          </div>
+          
+          <div className="flex-1 flex flex-col items-center justify-center mb-6 relative pt-4">
+            {/* Round progress gauge */}
+            <div className="relative w-36 h-36">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 128 128">
+                {/* Background Track */}
+                <circle cx="64" cy="64" r="56" fill="none" stroke="#f1f5f9" strokeWidth="8" />
+                {/* Progress Track */}
+                <circle 
+                  cx="64" cy="64" r="56" 
+                  fill="none" 
+                  stroke={healthStatusLabel === '--' ? '#cbd5e1' : healthStatusLabel === 'Safe' ? '#10b981' : healthStatusLabel === 'At Risk' ? '#f59e0b' : '#ef4444'} 
+                  strokeWidth="8" 
+                  strokeDasharray="351.8" 
+                  strokeDashoffset={Math.max(0, 351.8 - (351.8 * (isNaN(healthGaugePercent) ? 0 : healthGaugePercent)) / 100)}
+                  strokeLinecap="round" 
+                  className="transition-all duration-1000"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-3xl font-bold tracking-tight text-slate-900">{(isNaN(healthGaugePercent) ? 0 : healthGaugePercent).toFixed(1)}%</span>
+                <span className={`text-[11px] font-bold uppercase tracking-widest mt-1 ${healthStatusLabel === '--' ? 'text-slate-400' : healthStatusLabel === 'Safe' ? 'text-emerald-600' : healthStatusLabel === 'At Risk' ? 'text-amber-600' : 'text-red-500'}`}>{healthStatusLabel}</span>
+              </div>
+            </div>
+            {/* Indicator dot */}
+            <div className="absolute bottom-0 bg-white shadow-sm border border-slate-100 rounded-full py-1 px-3 text-xs font-semibold text-slate-600 flex items-center gap-1.5 z-10">
+               <div className={`w-2 h-2 rounded-full ${healthStatusLabel === '--' ? 'bg-slate-400' : healthStatusLabel === 'Safe' ? 'bg-emerald-500' : healthStatusLabel === 'At Risk' ? 'bg-amber-500' : 'bg-red-500'}`} />
+               Status
+            </div>
           </div>
 
-          <div className="mt-4 rounded-xl border border-black/10 bg-white/90 px-3 py-2">
-            <p className="walnut-label">Current</p>
-            <p className="mt-1 font-mono text-lg text-foreground">{healthFactorDisplay}</p>
-          </div>
-
-          <div className="mt-4">
-            <p className="mb-2 walnut-label">Risk Meter</p>
-            <div className="walnut-kpi-track">
-              <div className="walnut-kpi-fill" style={{ width: `${healthGaugePercent}%` }} />
+          <div className="space-y-3 mt-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-200/60">
+               <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Health Factor</span>
+               <div className="text-sm font-bold text-slate-900 flex items-center">
+                  {showDecrypted ? (healthFactorValue !== undefined ? (Number(healthFactorValue)/Number(HEALTH_FACTOR_SCALE)).toFixed(2) : '--') : '******'}
+                  {showDecrypted && healthFactorValue !== undefined && Number(healthFactorValue) > 0 && <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 uppercase tracking-wide">Good</span>}
+               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 pt-1">
+               <div>
+                  <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1">Current LTV</div>
+                  <div className="text-sm font-bold text-slate-900">{utilizationLabel}</div>
+               </div>
+               <div>
+                  <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1">Max LTV</div>
+                  <div className="text-sm font-bold text-slate-900">75.0%</div>
+               </div>
             </div>
           </div>
-        </GlassPanel>
+
+        </div>
+      </div>
+
+      {/* Row 3: Quick Actions */}
+      <div className="grid lg:grid-cols-1 gap-4">
+        
+        {/* Quick Actions */}
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm">
+          <h3 className="font-bold tracking-tight text-slate-900 mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Link href="/app/deposit" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                <ArrowDownToLine className="w-5 h-5 text-emerald-600" />
+              </div>
+              <span className="text-sm font-bold text-slate-900">Deposit</span>
+            </Link>
+            <Link href="/app/borrow" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-indigo-50/50 hover:border-indigo-200 transition-all group">
+              <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                <HandCoins className="w-5 h-5 text-indigo-600" />
+              </div>
+              <span className="text-sm font-bold text-slate-900">Borrow</span>
+            </Link>
+            <Link href="/app/withdraw" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-orange-50/50 hover:border-orange-200 transition-all group">
+              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                <ArrowUpFromLine className="w-5 h-5 text-orange-600" />
+              </div>
+              <span className="text-sm font-bold text-slate-900">Withdraw</span>
+            </Link>
+            <Link href="/app/repay" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-cyan-50/50 hover:border-cyan-200 transition-all group">
+              <div className="w-12 h-12 rounded-full bg-cyan-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                <RefreshCcw className="w-5 h-5 text-cyan-600" />
+              </div>
+              <span className="text-sm font-bold text-slate-900">Repay</span>
+            </Link>
+          </div>
+        </div>
       </div>
 
       <SystemStatusPanel protocol={protocol} />
