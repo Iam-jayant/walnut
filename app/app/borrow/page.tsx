@@ -54,12 +54,10 @@ export default function BorrowPage() {
   const amountNumber = Number(typedAmount);
   const newDebt = currentDebt + amountNumber;
   
-  // Wave 4: Credit tier and LTV calculation (Task 19.1)
   const creditTier = typeof protocol.creditTier === "bigint" ? Number(protocol.creditTier) : 0;
   const tierLtvBps = typeof protocol.tierLTV === "bigint" ? Number(protocol.tierLTV) : 7000; // Default to 70%
   const tierLtvPercent = tierLtvBps / 100; // Convert basis points to percentage
   
-  // Wave 4: Maximum borrow amount based on collateral and LTV (Task 19.1)
   const maxBorrowAmount = useMemo(() => {
     if (collateral <= 0) return 0;
     return Math.floor((collateral * tierLtvBps) / 10000);
@@ -80,7 +78,6 @@ export default function BorrowPage() {
   
   const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvPercent : false;
   
-  // Wave 4: Validate borrow amount against maximum (Task 19.1)
   const exceedsMaxBorrow = amountNumber > maxBorrowAmount;
 
   const debtLabel = useMemo(() => {
@@ -103,7 +100,7 @@ export default function BorrowPage() {
       const success = await protocol.submitEncryptedAmount("borrow", amount);
       if (success) {
         setAmount("");
-        // Wave 4: Refresh wUSDC balance after borrow (Task 19.1)
+        // Release 4: Refresh wUSDC balance after borrow (Task 19.1)
         await refreshBalances();
       }
     } finally {
