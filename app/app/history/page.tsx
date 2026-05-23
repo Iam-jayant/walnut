@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
 import { decodeEventLog } from "viem";
 
-import { walnutContractAddress, walnutV2Abi } from "@/lib/walnut-contract";
+import { walnutContractAddress, walnutLendingAbi } from "@/lib/walnut-contract";
 
 const HISTORY_BLOCK_WINDOW = 120_000n;
 
@@ -66,7 +66,7 @@ export default function HistoryPage() {
           .map((log) => {
             try {
               const decoded = decodeEventLog({
-                abi: walnutV2Abi,
+                abi: walnutLendingAbi,
                 data: log.data,
                 topics: log.topics,
               });

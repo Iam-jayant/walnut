@@ -37,7 +37,7 @@ const ENCRYPTION_MASK = "······"; // Consistent encryption mask style
 // Token image mappings from CoinGecko CDN
 const TOKEN_IMAGES: Record<string, string> = {
   USDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
-  wUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
+  cUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
   WETH: "https://assets.coingecko.com/coins/images/2518/standard/weth.png",
 };
 
@@ -54,7 +54,6 @@ const toUSDCNumber = (rawValue: bigint | number | string): number => {
 export default function WalnutDashboardPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [isRevealingValues, setIsRevealingValues] = useState(false);
-  const [isGrantingPermissions, setIsGrantingPermissions] = useState(false);
   const protocol = useWalnutProtocol();
   const tokenBalances = useTokenBalances();
   const collateralDecrypted =
@@ -188,6 +187,10 @@ export default function WalnutDashboardPage() {
     const scaled = (debtValue * BASIS_POINTS_SCALE) / collateralValue;
     return Math.min(100, Number(scaled) / 100);
   }, [protocol.collateral.decrypted.data, protocol.debt.decrypted.data]);
+  const poolUtilizationPercent = useMemo(() => {
+    if (typeof protocol.utilizationRate !== "bigint") return 0;
+    return Number(protocol.utilizationRate) / 100;
+  }, [protocol.utilizationRate]);
 
   const readinessLabel = protocol.permit.isPermitInitializing 
     ? "Loading..." 
@@ -201,8 +204,8 @@ export default function WalnutDashboardPage() {
       : "walnut-chip-pending";
 
   const showKpiValues = showDecrypted && protocol.canRead;
-  const utilizationLabel = showKpiValues ? `${utilizationPercent.toFixed(2)}%` : ENCRYPTION_MASK;
-  const utilizationBarWidth = showKpiValues ? Math.max(8, utilizationPercent) : 12;
+  const utilizationLabel = showKpiValues ? `${poolUtilizationPercent.toFixed(2)}%` : ENCRYPTION_MASK;
+  const utilizationBarWidth = showKpiValues ? Math.max(8, poolUtilizationPercent) : 12;
   const collateralMetric = showDecrypted ? collateralLabel : ENCRYPTION_MASK;
   const debtMetric = showDecrypted ? debtLabel : ENCRYPTION_MASK;
   const availableMetric = showDecrypted ? availableCollateralLabel : ENCRYPTION_MASK;
@@ -235,19 +238,6 @@ export default function WalnutDashboardPage() {
       await protocol.fetchHealthFactor();
     } finally {
       setIsRevealingValues(false);
-    }
-  }
-
-  async function grantReadPermissions() {
-    if (isGrantingPermissions || !protocol.canWrite) return;
-
-    setIsGrantingPermissions(true);
-    try {
-      await protocol.grantReadPermissions();
-    } catch (error) {
-      console.error("Failed to grant read permissions:", error);
-    } finally {
-      setIsGrantingPermissions(false);
     }
   }
 
@@ -532,7 +522,7 @@ export default function WalnutDashboardPage() {
                </div>
                <div>
                   <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1">Max LTV</div>
-                  <div className="text-sm font-bold text-slate-900">75.0%</div>
+                  <div className="text-sm font-bold text-slate-900">{showDecrypted ? tierLtvLabel : ENCRYPTION_MASK}</div>
                </div>
             </div>
           </div>

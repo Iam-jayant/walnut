@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { ProtocolAlerts } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useTokenBalances } from "@/hooks/use-token-balances";
-import { BORROW_APR_PERCENT, LTV_LIMIT_PERCENT } from "@/lib/protocol-constants";
 
 function toNumber(value: unknown) {
   if (typeof value === "bigint") return Number(value);
@@ -34,7 +33,7 @@ export default function BorrowPage() {
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [borrowInFlight, setBorrowInFlight] = useState(false);
   const protocol = useWalnutProtocol();
-  const { wUSDCBalance, refreshBalances } = useTokenBalances();
+  const { refreshBalances } = useTokenBalances();
 
   const pendingBorrow = borrowInFlight || protocol.isEncrypting;
   const pendingDecrypt = showDecrypted && protocol.debtDecrypting;
@@ -68,7 +67,7 @@ export default function BorrowPage() {
   const previewLtv = canRenderRiskPreview ? `${ltvRatio.toFixed(2)}%` : HIDDEN_PREVIEW;
   
   // Industry standard health factor: (collateral × 10000) / debt
-  // This matches the dashboard calculation and WalnutV2 contract logic
+  // This matches the dashboard calculation and WalnutLending contract logic.
   const previewHealthFactor = useMemo(() => {
     if (!canRenderRiskPreview || newDebt <= 0) return HIDDEN_PREVIEW;
     const healthFactorRaw = (collateral * 10000) / newDebt;
@@ -79,6 +78,9 @@ export default function BorrowPage() {
   const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvPercent : false;
   
   const exceedsMaxBorrow = amountNumber > maxBorrowAmount;
+  const borrowAprPercent = typeof protocol.currentBorrowRate === "bigint"
+    ? Number(protocol.currentBorrowRate) / 100
+    : 6;
 
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return HIDDEN_VALUE;
@@ -100,7 +102,7 @@ export default function BorrowPage() {
       const success = await protocol.submitEncryptedAmount("borrow", amount);
       if (success) {
         setAmount("");
-        // Release 4: Refresh wUSDC balance after borrow (Task 19.1)
+        // Refresh cUSDC balance after a confirmed borrow.
         await refreshBalances();
       }
     } finally {
@@ -120,7 +122,7 @@ export default function BorrowPage() {
   return (
     <div className="p-6 space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">Borrow wUSDC</h1>
+        <h1 className="text-2xl font-semibold">Borrow cUSDC</h1>
         <p className="text-sm text-muted-foreground">Request a private loan with encrypted settlement.</p>
       </header>
 
@@ -137,7 +139,7 @@ export default function BorrowPage() {
 
             <div>
               <label htmlFor="borrow-amount" className="block text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Borrow Amount (wUSDC)
+                Borrow Amount (cUSDC)
               </label>
               <Input
                 id="borrow-amount"
@@ -148,7 +150,7 @@ export default function BorrowPage() {
                 className="mt-2 w-full max-w-[60%] rounded-xl border border-slate-300 bg-slate-50 px-4 py-4 text-xl font-semibold text-foreground placeholder:text-slate-500 placeholder:text-sm placeholder:opacity-100 focus:border-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
               <div className="text-xs text-muted-foreground mt-1">
-                Max: {canRenderRiskPreview ? formatUSDC(maxBorrowAmount) : HIDDEN_VALUE} wUSDC
+                Max: {canRenderRiskPreview ? formatUSDC(maxBorrowAmount) : HIDDEN_VALUE} cUSDC
               </div>
             </div>
 
@@ -174,7 +176,7 @@ export default function BorrowPage() {
               <div className="rounded-2xl border border-red-200 bg-red-50 p-3">
                 <p className="text-sm text-red-700">
                   {exceedsMaxBorrow
-                    ? `This amount exceeds your maximum borrow limit of ${formatUSDC(maxBorrowAmount)} wUSDC. Please enter a lower amount.`
+                    ? `This amount exceeds your maximum borrow limit of ${formatUSDC(maxBorrowAmount)} cUSDC. Please enter a lower amount.`
                     : `This amount is above the ${tierLtvPercent.toFixed(2)}% LTV limit. Please enter a lower amount.`}
                 </p>
               </div>
@@ -182,7 +184,7 @@ export default function BorrowPage() {
 
             <div className="max-w-[60%] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-xs text-muted-foreground">
-                {`Your credit tier ${creditTier} allows up to ${tierLtvPercent.toFixed(2)}% LTV at ${BORROW_APR_PERCENT}% APR.`}
+                {`Your credit tier ${creditTier} allows up to ${tierLtvPercent.toFixed(2)}% LTV at ${borrowAprPercent.toFixed(2)}% APR.`}
               </p>
             </div>
 
@@ -205,7 +207,7 @@ export default function BorrowPage() {
                 loadingText={protocol.isEncrypting ? "Encrypting..." : "Borrowing..."}
                 disabled={!amount || pendingBorrow || exceedsLTV || exceedsMaxBorrow}
               >
-                Borrow wUSDC
+                Borrow cUSDC
               </Button>
               <Button
                 variant="outline"
@@ -237,7 +239,7 @@ export default function BorrowPage() {
                     <span>Status</span>
                   </div>
                   <div className="min-w-0 truncate text-slate-600">
-                    {pendingBorrow ? "Borrowing..." : !amount ? "Enter amount to continue" : exceedsMaxBorrow ? `Amount exceeds max borrow of ${formatUSDC(maxBorrowAmount)} wUSDC` : exceedsLTV ? `Above ${tierLtvPercent.toFixed(2)}% LTV` : "Ready to borrow"} — {`${tierLtvPercent.toFixed(2)}% LTV Cap`}
+                    {pendingBorrow ? "Borrowing..." : !amount ? "Enter amount to continue" : exceedsMaxBorrow ? `Amount exceeds max borrow of ${formatUSDC(maxBorrowAmount)} cUSDC` : exceedsLTV ? `Above ${tierLtvPercent.toFixed(2)}% LTV` : "Ready to borrow"} — {`${tierLtvPercent.toFixed(2)}% LTV Cap`}
                   </div>
                 </div>
               </div>
@@ -259,12 +261,12 @@ export default function BorrowPage() {
                 </div>
                 <div className="flex justify-between items-center text-sm min-w-0">
                   <span className="text-muted-foreground">Borrow APR:</span>
-                  <span className="font-mono text-foreground min-w-0 text-right truncate">{BORROW_APR_PERCENT}%</span>
+                  <span className="font-mono text-foreground min-w-0 text-right truncate">{borrowAprPercent.toFixed(2)}%</span>
                 </div>
                 <div className="flex justify-between items-center text-sm min-w-0">
                   <span className="text-muted-foreground">Max Borrow:</span>
                   <span className="font-mono text-foreground min-w-0 text-right truncate">
-                    {canRenderRiskPreview ? `${formatUSDC(maxBorrowAmount)} wUSDC` : HIDDEN_VALUE}
+                    {canRenderRiskPreview ? `${formatUSDC(maxBorrowAmount)} cUSDC` : HIDDEN_VALUE}
                   </span>
                 </div>
               </div>
@@ -274,12 +276,12 @@ export default function BorrowPage() {
 
         <div className="grid gap-4 md:grid-cols-3 mt-4">
           <div className="p-3 border rounded-2xl">
-            <div className="text-xs font-mono uppercase text-muted-foreground">Current Debt (wUSDC)</div>
+            <div className="text-xs font-mono uppercase text-muted-foreground">Current Debt (cUSDC)</div>
             <div className="font-mono text-lg font-semibold mt-2">{debtLabel}</div>
             <div className="text-sm text-muted-foreground mt-1">Your current borrowed balance</div>
           </div>
           <div className="p-3 border rounded-2xl">
-            <div className="text-xs font-mono uppercase text-muted-foreground">Projected Debt (wUSDC)</div>
+            <div className="text-xs font-mono uppercase text-muted-foreground">Projected Debt (cUSDC)</div>
             <div className="font-mono text-lg font-semibold mt-2">{projectedDebtLabel}</div>
             <div className="text-sm text-muted-foreground mt-1">Estimated debt after this transaction confirms</div>
           </div>
