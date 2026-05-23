@@ -25,7 +25,7 @@ export function EncryptedFlow() {
     {
       icon: Lock,
       title: "Client Encryption",
-      description: "User encrypts borrow amount using fhenixjs before transaction submission",
+      description: "User encrypts borrow amount using fhenixjs before transaction request",
       code: `const encrypted = await fhenixClient.encrypt_uint128(
   borrowAmount
 );

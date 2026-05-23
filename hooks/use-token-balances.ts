@@ -8,7 +8,7 @@ import { FheTypes } from "@cofhe/sdk";
 import { useWalnutPermit } from "@/components/walnut/permit-provider";
 
 // Contract addresses from environment
-const WALNUT_V2_ADDRESS = process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS as Address;
+const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as Address;
 const FHERC20_ADDRESS = process.env.NEXT_PUBLIC_FHERC20_ADDRESS as Address;
 const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
@@ -65,8 +65,8 @@ const FHERC20_ABI = [
   },
 ] as const;
 
-// WalnutV2 ABI (minimal)
-const WALNUT_V2_ABI = [
+// WalnutLending ABI (minimal)
+const WALNUT_LENDING_ABI = [
   {
     inputs: [
       { name: "", type: "address" },
@@ -108,7 +108,7 @@ export type VaultHolding = {
   usdValue: bigint | undefined;
 };
 
-export type WUSDCBalance = {
+export type CUSDCBalance = {
   encrypted: unknown;
   decrypted: bigint | undefined;
   decrypting: boolean;
@@ -123,7 +123,7 @@ export function useTokenBalances() {
 
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [vaultHoldings, setVaultHoldings] = useState<VaultHolding[]>([]);
-  const [wUSDCBalance, setWUSDCBalance] = useState<WUSDCBalance>({
+  const [cUSDCBalance, setCUSDCBalance] = useState<CUSDCBalance>({
     encrypted: undefined,
     decrypted: undefined,
     decrypting: false,
@@ -134,8 +134,8 @@ export function useTokenBalances() {
   const isWalletReady = Boolean(account.isConnected && account.address);
   const canRead = Boolean(isWalletReady && permit.hasPermit);
 
-  // Read wUSDC encrypted balance
-  const { data: wUSDCEncrypted, refetch: refetchWUSDC } = useReadContract({
+  // Read cUSDC encrypted balance
+  const { data: cUSDCEncrypted, refetch: refetchCUSDC } = useReadContract({
     address: FHERC20_ADDRESS,
     abi: FHERC20_ABI,
     functionName: "balanceOf",
@@ -145,16 +145,16 @@ export function useTokenBalances() {
     },
   });
 
-  // Decrypt wUSDC balance
+  // Decrypt cUSDC balance
   useEffect(() => {
-    if (!wUSDCEncrypted || !account.address || !cofheClient || !permit.hasPermit) {
+    if (!cUSDCEncrypted || !account.address || !cofheClient || !permit.hasPermit) {
       return;
     }
 
-    const ctHash = typeof wUSDCEncrypted === "bigint" ? wUSDCEncrypted : undefined;
+    const ctHash = typeof cUSDCEncrypted === "bigint" ? cUSDCEncrypted : undefined;
     if (!ctHash || ctHash === 0n) {
-      setWUSDCBalance({
-        encrypted: wUSDCEncrypted,
+      setCUSDCBalance({
+        encrypted: cUSDCEncrypted,
         decrypted: 0n,
         decrypting: false,
         error: undefined,
@@ -163,7 +163,7 @@ export function useTokenBalances() {
     }
 
     let active = true;
-    setWUSDCBalance((prev) => ({ ...prev, decrypting: true, error: undefined }));
+    setCUSDCBalance((prev) => ({ ...prev, decrypting: true, error: undefined }));
 
     const decrypt = async () => {
       try {
@@ -179,8 +179,8 @@ export function useTokenBalances() {
         const decrypted = await withPermitBuilder.execute();
 
         if (active) {
-          setWUSDCBalance({
-            encrypted: wUSDCEncrypted,
+          setCUSDCBalance({
+            encrypted: cUSDCEncrypted,
             decrypted: typeof decrypted === "bigint" ? decrypted : undefined,
             decrypting: false,
             error: undefined,
@@ -188,8 +188,8 @@ export function useTokenBalances() {
         }
       } catch (error) {
         if (active) {
-          setWUSDCBalance({
-            encrypted: wUSDCEncrypted,
+          setCUSDCBalance({
+            encrypted: cUSDCEncrypted,
             decrypted: undefined,
             decrypting: false,
             error: error instanceof Error ? error : new Error("Decryption failed"),
@@ -203,7 +203,7 @@ export function useTokenBalances() {
     return () => {
       active = false;
     };
-  }, [wUSDCEncrypted, account.address, cofheClient, permit.hasPermit, permit.permitHash]);
+  }, [cUSDCEncrypted, account.address, cofheClient, permit.hasPermit, permit.permitHash]);
 
   // Fetch token balances and USD values
   useEffect(() => {
@@ -289,8 +289,8 @@ export function useTokenBalances() {
       for (let i = 0; i < 50; i++) {
         try {
           const [token, amount] = await publicClient.readContract({
-            address: WALNUT_V2_ADDRESS,
-            abi: WALNUT_V2_ABI,
+            address: WALNUT_LENDING_ADDRESS,
+            abi: WALNUT_LENDING_ABI,
             functionName: "vaults",
             args: [account.address!, BigInt(i)],
           });
@@ -363,13 +363,13 @@ export function useTokenBalances() {
   // Manual refresh function
   const refreshBalances = useCallback(async () => {
     setRefreshTrigger((prev) => prev + 1);
-    await refetchWUSDC();
-  }, [refetchWUSDC]);
+    await refetchCUSDC();
+  }, [refetchCUSDC]);
 
   return {
     tokenBalances,
     vaultHoldings,
-    wUSDCBalance,
+    cUSDCBalance,
     refreshBalances,
     isLoading: !isWalletReady,
     canRead,

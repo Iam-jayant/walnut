@@ -86,7 +86,7 @@ const flows: Flow[] = [
       { 
         icon: FileText,
         title: "Enter Repayment Amount", 
-        description: "Specify amount to repay. Value is encrypted client-side before submission.",
+        description: "Specify amount to repay. Value is encrypted client-side before request.",
         phase: "PHASE 01"
       },
       { 

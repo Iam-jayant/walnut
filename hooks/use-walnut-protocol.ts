@@ -39,7 +39,7 @@ import {
   useCofheWriteContract,
 } from "@cofhe/react";
 import { Encryptable, FheTypes } from "@cofhe/sdk";
-import { walnutChainId, walnutContractAddress, walnutV2Abi } from "@/lib/walnut-contract";
+import { walnutChainId, walnutContractAddress, walnutLendingAbi } from "@/lib/walnut-contract";
 import { usePrivara } from "@/hooks/use-privara";
 
 const BALANCE_REFRESH_INTERVAL_MS = 30_000;
@@ -154,7 +154,7 @@ function normalizeInterestTuple(value: unknown): RepaySettlementAmounts {
 export function useCreditTier(borrower?: Address) {
   const { data, isLoading, refetch } = useReadContract({
     address: walnutContractAddress,
-    abi: walnutV2Abi,
+    abi: walnutLendingAbi,
     functionName: "creditTier",
     args: [borrower ?? "0x0000000000000000000000000000000000000000"],
     query: {
@@ -172,7 +172,7 @@ export function useCreditTier(borrower?: Address) {
 export function useTierLTV(tier?: bigint) {
   const { data, isLoading, refetch } = useReadContract({
     address: walnutContractAddress,
-    abi: walnutV2Abi,
+    abi: walnutLendingAbi,
     functionName: "tierLTVs",
     args: [tier ?? 0n],
     query: {
@@ -221,7 +221,7 @@ export function useWalnutProtocol() {
   const isWalletReady = Boolean(account.isConnected && account.address);
   const isConnectionTransient = account.status === "reconnecting" || (account.isConnected && !account.address);
   const isOnTargetChain = account.chainId === walnutChainId;
-  const canUseContract = Boolean(walnutContractAddress && walnutV2Abi && publicClient);
+  const canUseContract = Boolean(walnutContractAddress && walnutLendingAbi && publicClient);
   const isPermitReady = Boolean(
     permit.hasPermit &&
     permit.isPermitValid &&
@@ -241,7 +241,7 @@ export function useWalnutProtocol() {
   // Read encrypted values as structs (contract returns EncryptedValue{ctHash, utype})
   const { data: collateralStruct, isLoading: collateralStructLoading, refetch: refetchCollateralStruct, error: collateralStructError } = useReadContract({
     address: walnutContractAddress,
-    abi: walnutV2Abi,
+    abi: walnutLendingAbi,
     functionName: "getEncryptedCollateral",
     args: [account.address ?? "0x0000000000000000000000000000000000000000"],
     query: {
@@ -251,12 +251,52 @@ export function useWalnutProtocol() {
 
   const { data: debtStruct, isLoading: debtStructLoading, refetch: refetchDebtStruct, error: debtStructError } = useReadContract({
     address: walnutContractAddress,
-    abi: walnutV2Abi,
+    abi: walnutLendingAbi,
     functionName: "getEncryptedDebt",
     args: [account.address ?? "0x0000000000000000000000000000000000000000"],
     query: {
       enabled: canRead && Boolean(account.address),
     },
+  });
+
+  const {
+    data: totalDepositedValue,
+    isLoading: totalDepositedLoading,
+    refetch: refetchTotalDeposited,
+  } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutLendingAbi,
+    functionName: "totalDeposited",
+  });
+
+  const {
+    data: totalBorrowedValue,
+    isLoading: totalBorrowedLoading,
+    refetch: refetchTotalBorrowed,
+  } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutLendingAbi,
+    functionName: "totalBorrowed",
+  });
+
+  const {
+    data: utilizationRateValue,
+    isLoading: utilizationRateLoading,
+    refetch: refetchUtilizationRate,
+  } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutLendingAbi,
+    functionName: "utilizationRate",
+  });
+
+  const {
+    data: borrowRateValue,
+    isLoading: borrowRateLoading,
+    refetch: refetchBorrowRate,
+  } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutLendingAbi,
+    functionName: "currentBorrowRate",
   });
 
   // Log contract read errors
@@ -268,10 +308,6 @@ export function useWalnutProtocol() {
       console.error("[Walnut] getEncryptedDebt error:", debtStructError);
     }
   }, [collateralStructError, debtStructError]);
-
-  // Note: totalPoolCollateral and totalPoolDebt cannot be decrypted by regular users
-  // because the contract doesn't call FHE.allow(totalPool*, user) - only FHE.allowThis()
-  // These values are only accessible to the contract itself, not to external viewers
 
   // Manually decrypt the ctHash from each struct
   const [collateralValue, setCollateralValue] = useState<bigint | undefined>(undefined);
@@ -368,7 +404,7 @@ export function useWalnutProtocol() {
     
     if (ctHash === undefined) {
       console.log("[Walnut] ctHash is undefined, setting collateral to undefined");
-      console.log("[Walnut] This usually means: 1) No deposit yet, 2) Contract read failed, or 3) Need to call grantReadPermissions()");
+      console.log("[Walnut] This usually means: 1) No deposit yet or 2) the contract read failed.");
       setCollateralValue(undefined);
       return;
     }
@@ -476,27 +512,25 @@ export function useWalnutProtocol() {
     },
   };
 
-  // Total pool values are not decryptable by regular users (contract doesn't grant FHE.allow access)
-  // Return stub objects that indicate these values are private
   const totalPoolCollateral: CofheDecryptResult<bigint> = {
-    encrypted: undefined,
+    encrypted: totalDepositedValue,
     decrypted: {
-      data: undefined,
-      error: new Error("Total pool collateral is private (no FHE.allow access granted)"),
+      data: typeof totalDepositedValue === "bigint" ? totalDepositedValue : undefined,
+      error: undefined,
       isFetching: false,
-      isLoading: false,
-      refetch: async () => {},
+      isLoading: totalDepositedLoading,
+      refetch: refetchTotalDeposited,
     },
   };
 
   const totalPoolDebt: CofheDecryptResult<bigint> = {
-    encrypted: undefined,
+    encrypted: totalBorrowedValue,
     decrypted: {
-      data: undefined,
-      error: new Error("Total pool debt is private (no FHE.allow access granted)"),
+      data: typeof totalBorrowedValue === "bigint" ? totalBorrowedValue : undefined,
+      error: undefined,
       isFetching: false,
-      isLoading: false,
-      refetch: async () => {},
+      isLoading: totalBorrowedLoading,
+      refetch: refetchTotalBorrowed,
     },
   };
 
@@ -522,7 +556,7 @@ export function useWalnutProtocol() {
     try {
       const repaymentStruct = await publicClient.readContract({
         address: walnutContractAddress,
-        abi: walnutV2Abi,
+    abi: walnutLendingAbi,
         functionName: "getEncryptedRepaymentCount",
         args: [account.address],
       });
@@ -550,13 +584,24 @@ export function useWalnutProtocol() {
         debt.decrypted.refetch(),
         totalPoolCollateral.decrypted.refetch(),
         totalPoolDebt.decrypted.refetch(),
+        refetchUtilizationRate(),
+        refetchBorrowRate(),
         refreshLocalCreditTier(),
       ]);
     } catch (error) {
       console.error("Failed to refresh balances:", error);
       // Silently fail - balances will retry on next interval
     }
-  }, [canRead, collateral.decrypted, debt.decrypted, refreshLocalCreditTier, totalPoolCollateral.decrypted, totalPoolDebt.decrypted]);
+  }, [
+    canRead,
+    collateral.decrypted,
+    debt.decrypted,
+    refetchBorrowRate,
+    refetchUtilizationRate,
+    refreshLocalCreditTier,
+    totalPoolCollateral.decrypted,
+    totalPoolDebt.decrypted,
+  ]);
 
   useEffect(() => {
     if (!canRead) return;
@@ -586,7 +631,7 @@ export function useWalnutProtocol() {
             : await (async () => {
                 const collateralStruct = await publicClient.readContract({
                   address: walnutContractAddress,
-                  abi: walnutV2Abi,
+                  abi: walnutLendingAbi,
                   functionName: "getEncryptedCollateral",
                   args: [targetAddress],
                 });
@@ -599,7 +644,7 @@ export function useWalnutProtocol() {
             : await (async () => {
                 const debtStruct = await publicClient.readContract({
                   address: walnutContractAddress,
-                  abi: walnutV2Abi,
+                  abi: walnutLendingAbi,
                   functionName: "getEncryptedDebt",
                   args: [targetAddress],
                 });
@@ -743,7 +788,7 @@ export function useWalnutProtocol() {
           if (publicClient && account.address && typeof debtValue === "bigint") {
             const interestTuple = await publicClient.readContract({
               address: walnutContractAddress,
-              abi: walnutV2Abi,
+              abi: walnutLendingAbi,
               functionName: "calculateInterest",
               args: [account.address, debtValue],
             });
@@ -766,7 +811,7 @@ export function useWalnutProtocol() {
         setStatus("Submitting transaction...");
         const hash = await writeWithGasDebug({
           address: walnutContractAddress,
-          abi: walnutV2Abi,
+          abi: walnutLendingAbi,
           functionName,
           args: [encrypted],
           chain: arbitrumSepolia,
@@ -870,7 +915,7 @@ export function useWalnutProtocol() {
     try {
       const hash = await writeWithGasDebug({
         address: walnutContractAddress,
-        abi: walnutV2Abi,
+        abi: walnutLendingAbi,
         functionName: "requestCreditTierUpdate",
         args: [account.address],
         chain: arbitrumSepolia,
@@ -920,7 +965,7 @@ export function useWalnutProtocol() {
           // Fallback path: compute tier locally from user's encrypted repayment count.
           const repaymentStruct = await publicClient.readContract({
             address: walnutContractAddress,
-            abi: walnutV2Abi,
+            abi: walnutLendingAbi,
             functionName: "getEncryptedRepaymentCount",
             args: [account.address],
           });
@@ -1007,49 +1052,11 @@ export function useWalnutProtocol() {
     }
   }, [account.address, addToast, lastRepayAmount, lastRepaySettlementAmounts, privara]);
 
-  const grantReadPermissions = useCallback(async () => {
-    if (!canWrite) {
-      addToast({ variant: "error", message: "Connect your wallet to continue." });
-      return false;
-    }
-
-    try {
-      setStatus("Granting read permissions...");
-      const hash = await writeWithGasDebug({
-        address: walnutContractAddress,
-        abi: walnutV2Abi,
-        functionName: "grantReadPermissions",
-        args: [],
-        chain: arbitrumSepolia,
-        account: account.address!,
-      }, { operation: "grantReadPermissions" });
-
-      setLastTxHash(hash);
-      if (publicClient) {
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        assertSuccessReceipt(receipt);
-      }
-
-      addToast({ variant: "success", message: "Read permissions granted. You can now decrypt values." });
-      setStatus(null);
-      
-      // Refresh balances after granting permissions
-      await refreshBalances();
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to grant read permissions.";
-      addToast({ variant: "error", message });
-      setStatus(null);
-      return false;
-    }
-  }, [account.address, addToast, canWrite, publicClient, refreshBalances, writeWithGasDebug]);
-
   const isWriting = writer.isPending;
   const isEncrypting = encryptor.isEncrypting;
 
-  // Derived variables for backward compatibility
-  const totalPoolCollateralDecrypting = false; // Not decryptable by users
-  const totalPoolDebtDecrypting = false; // Not decryptable by users
+  const totalPoolCollateralDecrypting = totalDepositedLoading;
+  const totalPoolDebtDecrypting = totalBorrowedLoading;
 
   return {
     account,
@@ -1085,12 +1092,14 @@ export function useWalnutProtocol() {
     aggregatedCollateralDecrypting,
     aggregatedCollateralError,
     fetchAggregatedCollateral,
-    grantReadPermissions,
-    // Wave 3 features removed - not available in WalnutV2
-    liquidatable: false, // Liquidation system removed in Wave 4
+    utilizationRate: typeof utilizationRateValue === "bigint" ? utilizationRateValue : 0n,
+    utilizationRateLoading,
+    currentBorrowRate: typeof borrowRateValue === "bigint" ? borrowRateValue : 0n,
+    currentBorrowRateLoading: borrowRateLoading,
+    liquidatable: false, // Liquidation system removed in the current release
     refreshLiquidatable: async () => {}, // No-op
-    linkedWallets: [] as Address[], // ENS linking removed in Wave 4
-    linkedWalletCount: 0, // ENS linking removed in Wave 4
+    linkedWallets: [] as Address[], // ENS linking removed in the current release
+    linkedWalletCount: 0, // ENS linking removed in the current release
     linkedWalletsLoading: false,
     creditTier: effectiveCreditTier,
     creditTierLoading,
@@ -1098,7 +1107,7 @@ export function useWalnutProtocol() {
     tierLTVLoading,
     requestCreditTierUpdate,
     creditTierPollingActive,
-    // Wave 3 liquidation/P2P/ENS functions removed
+    // Advanced feature helpers for liquidation/P2P/ENS are removed
     liquidationPollingActive: false,
     liquidationPollingMessage: null,
     submitEncryptedAmount,

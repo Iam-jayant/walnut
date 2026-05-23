@@ -33,7 +33,7 @@ export function WaveUpdateModal() {
         <div className="border-b border-black/10 bg-gradient-to-br from-white to-gray-50 px-6 py-5">
           <div className="mb-2 flex items-center gap-2">
             <span className="rounded-full bg-accent px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent-foreground">
-              Wave 3
+              Advanced Features
             </span>
             <span className="text-xs text-muted-foreground">April 2026</span>
             <span className="text-xs text-muted-foreground">•</span>
@@ -56,7 +56,7 @@ export function WaveUpdateModal() {
                 </svg>
               </div>
               <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                What's New in Wave 3
+                What's New in Advanced Features
               </h3>
             </div>
 
@@ -127,7 +127,7 @@ export function WaveUpdateModal() {
             </div>
           </div>
 
-          {/* Transition from Wave 2 */}
+          {/* Evolution from core lending */}
           <div className="rounded-lg border border-black/10 bg-gradient-to-br from-gray-50 to-white p-5">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/10">
@@ -137,12 +137,12 @@ export function WaveUpdateModal() {
                 </svg>
               </div>
               <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Evolution from Wave 2
+                Evolution from Core Lending
               </h3>
             </div>
             <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
-              Wave 2 established the complete private lending lifecycle with on-chain constraints, 
-              sealed-bid auctions, and ENS multi-wallet support. Wave 3 builds on this foundation by adding:
+              Core lending established the complete private lending lifecycle with on-chain constraints, 
+              sealed-bid auctions, and ENS multi-wallet support. Advanced features built on that foundation by adding:
             </p>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
