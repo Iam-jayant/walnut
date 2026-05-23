@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
 import { decodeEventLog } from "viem";
 
-import { GlassPanel } from "@/components/walnut/glass-panel";
 import { walnutContractAddress, walnutV2Abi } from "@/lib/walnut-contract";
 
 const HISTORY_BLOCK_WINDOW = 120_000n;
@@ -134,55 +133,58 @@ export default function HistoryPage() {
   }, [address, publicClient]);
 
   return (
-    <div className="space-y-6">
-      <GlassPanel className="walnut-hero">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">History</p>
-        <h1 className="mt-2 font-display text-3xl text-foreground">Activity Timeline</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
+    <div className="p-6 space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Activity Timeline</h1>
+        <p className="text-sm text-muted-foreground">
           Recent protocol activity pulled from Walnut on-chain events.
         </p>
-      </GlassPanel>
+      </header>
 
-      <GlassPanel className="walnut-card">
-        {isLoading && historyRows.length === 0 ? (
-          <>
-            <p className="walnut-label">Loading Activity</p>
-            <p className="mt-2 text-sm text-muted-foreground">Fetching on-chain events...</p>
-          </>
-        ) : error ? (
-          <>
-            <p className="walnut-label">History Unavailable</p>
-            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-          </>
-        ) : historyRows.length === 0 ? (
-          <>
-            <p className="walnut-label">No Activity Yet</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              No recent Walnut events were found for the connected wallet.
-            </p>
-          </>
-        ) : (
-          <div className="space-y-2">
-            <p className="walnut-label">Recent Activity</p>
-            {historyRows.map((item) => (
-              <div key={item.key} className="walnut-progress">
-                <p className="text-sm font-medium text-foreground">{item.eventName}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {formatTimestamp(item.timestamp)} · Block {item.blockNumber.toString()}
-                </p>
-                <a
-                  className="mt-1 inline-block text-xs text-accent underline"
-                  href={`https://sepolia.arbiscan.io/tx/${item.txHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {shortHash(item.txHash)}
-                </a>
+      <div className="border rounded-lg p-4">
+        <div className="rounded-2xl border border-slate-200 p-4">
+          {isLoading && historyRows.length === 0 ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Loading Activity</p>
+              <p className="mt-2 text-sm text-muted-foreground">Fetching on-chain events...</p>
+            </>
+          ) : error ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">History Unavailable</p>
+              <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+            </>
+          ) : historyRows.length === 0 ? (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">No Activity Yet</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                No recent Walnut events were found for the connected wallet.
+              </p>
+            </>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Recent Activity</p>
+              <div className="space-y-3">
+                {historyRows.map((item) => (
+                  <div key={item.key} className="rounded-2xl border border-slate-200 p-4">
+                    <p className="text-sm font-semibold text-foreground">{item.eventName}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {formatTimestamp(item.timestamp)} · Block {item.blockNumber.toString()}
+                    </p>
+                    <a
+                      className="mt-2 inline-block text-xs text-accent underline"
+                      href={`https://sepolia.arbiscan.io/tx/${item.txHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {shortHash(item.txHash)}
+                    </a>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </GlassPanel>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
