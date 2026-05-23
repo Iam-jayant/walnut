@@ -12,14 +12,14 @@ export default function P2PPage() {
     <div className="space-y-6">
       <GlassPanel className="walnut-hero">
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">P2P Lending</p>
-        <h1 className="mt-2 font-display text-3xl text-foreground">Coming in Wave 5</h1>
+        <h1 className="mt-2 font-display text-3xl text-foreground">Planned for Production</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Peer-to-peer lending with encrypted loan terms has been temporarily disabled in Wave 4 to focus on core token economics.
+          Peer-to-peer lending with encrypted loan terms is currently disabled while the protocol focuses on core token economics.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="walnut-status-chip walnut-chip-pending">
             <Lock className="mr-1 h-3 w-3" />
-            Wave 5 Feature
+            Production Feature
           </span>
         </div>
       </GlassPanel>
@@ -33,7 +33,7 @@ export default function P2PPage() {
             <div className="flex-1">
               <h3 className="font-display text-xl text-foreground">P2P Loan Marketplace</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Wave 5 will introduce a decentralized peer-to-peer lending marketplace where lenders can post encrypted loan offers and borrowers can match them.
+                The production release will introduce a decentralized peer-to-peer lending marketplace where lenders can post encrypted loan offers and borrowers can match them.
               </p>
               <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
@@ -58,9 +58,9 @@ export default function P2PPage() {
         </GlassPanel>
 
         <GlassPanel className="walnut-card walnut-card-strong p-6">
-          <h3 className="font-display text-xl text-foreground">Current Wave 4 Focus</h3>
+          <h3 className="font-display text-xl text-foreground">Current Protocol Focus</h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            Wave 4 focuses on establishing robust token economics with real ERC20 collateral, encrypted stablecoin borrowing, and time-based interest accrual.
+            The current release focuses on robust token economics with real ERC20 collateral, encrypted stablecoin borrowing, and time-based interest accrual.
           </p>
           <div className="mt-4 space-y-3">
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
@@ -83,7 +83,7 @@ export default function P2PPage() {
       </div>
 
       <GlassPanel className="walnut-card p-6">
-        <h3 className="font-display text-xl text-foreground">Why Wave 5?</h3>
+        <h3 className="font-display text-xl text-foreground">Why Later?</h3>
         <p className="mt-2 text-sm text-muted-foreground">
           The P2P lending system requires additional infrastructure including:
         </p>
@@ -106,7 +106,7 @@ export default function P2PPage() {
           </li>
         </ul>
         <p className="mt-4 text-sm text-muted-foreground">
-          Wave 4 establishes the foundation with working token economics, allowing Wave 5 to build the P2P layer on top of a proven system.
+          The current release establishes the foundation with working token economics, allowing the P2P layer to build on top of a proven system.
         </p>
       </GlassPanel>
 
