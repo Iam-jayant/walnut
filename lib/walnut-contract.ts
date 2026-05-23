@@ -1,6 +1,6 @@
 import type { Abi, Address } from "viem";
 
-import walnutV2Artifact from "@/lib/abi/WalnutV2.json";
+import walnutLendingArtifact from "@/artifacts/contracts/WalnutLending.sol/WalnutLending.json";
 
 function requirePublicEnv(key: string, value: string | undefined) {
   if (!value) {
@@ -27,9 +27,8 @@ export const walnutRpcUrl = requirePublicEnv(
 );
 
 export const walnutContractAddress = requirePublicEnv(
-  "NEXT_PUBLIC_V2_CONTRACT_ADDRESS",
-  process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS
+  "NEXT_PUBLIC_WALNUT_LENDING_ADDRESS",
+  process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS
 ) as Address;
 
-// Wave 4 uses WalnutV2 ABI
-export const walnutV2Abi = walnutV2Artifact.abi as Abi;
+export const walnutLendingAbi = walnutLendingArtifact.abi as Abi;
