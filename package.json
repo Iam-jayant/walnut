@@ -1,5 +1,6 @@
 {
-  "name": "walnut-wave1-frontend",
+  "name": "walnut",
+  "description": "Confidential lending protocol on Fhenix — encrypted positions, private settlement",
   "version": "0.1.0",
   "private": true,
   "scripts": {

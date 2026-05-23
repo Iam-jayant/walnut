@@ -4,8 +4,8 @@ require("dotenv").config({ override: true });
 const hre = require("hardhat");
 
 /**
- * @title Wave 4 Deployment Script
- * @notice Deploys all Wave 4 contracts to Arbitrum Sepolia
+ * @title Real Token Integration Deployment Script
+ * @notice Deploys the current protocol contracts to Arbitrum Sepolia
  * @dev Deployment order:
  *   1. MockUSDC (testnet token)
  *   2. WalnutPriceOracle (Chainlink wrapper)
@@ -105,7 +105,7 @@ async function main() {
   ensureRequiredEnv();
 
   console.log("========================================");
-  console.log("Wave 4 Deployment: Token Economics");
+  console.log("Walnut Deployment: Real Token Integration");
   console.log("Network: Arbitrum Sepolia");
   console.log("========================================\n");
 
@@ -330,10 +330,11 @@ async function main() {
   console.log("   - Withdraw both tokens");
   console.log("========================================\n");
 
-  console.log("✅ Wave 4 deployment completed successfully!");
+  console.log("✅ Deployment completed successfully!");
 }
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

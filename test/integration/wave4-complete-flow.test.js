@@ -3,7 +3,7 @@ const { ethers } = require("hardhat");
 const { encrypt, decrypt, decryptCollateral, resetMockState } = require("../helpers/fhe-helpers");
 
 /**
- * Wave 4 Complete Integration Test Suite
+ * Real Token Integration Complete Test Suite
  * 
  * This test suite validates the complete deposit → borrow → repay → withdraw flow
  * with real token integration, interest accrual, and credit tier management.
@@ -16,7 +16,7 @@ const { encrypt, decrypt, decryptCollateral, resetMockState } = require("../help
  * - Pause mechanism
  * - Access control
  */
-describe("Wave 4 - Complete Integration Flow", function () {
+describe("Real Token Integration - Complete Flow", function () {
   let walnutV2;
   let wUSDC;
   let oracle;
@@ -819,6 +819,7 @@ describe("Wave 4 - Complete Integration Flow", function () {
   });
 
   after(function () {
-    console.log("\n  ✅ Wave 4 Complete Integration Tests: ALL PASSED\n");
+    console.log("\n  ✅ Real token integration tests: ALL PASSED\n");
   });
 });
+

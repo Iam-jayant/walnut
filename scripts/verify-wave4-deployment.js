@@ -2,7 +2,7 @@ const hre = require("hardhat");
 require("dotenv").config({ override: true });
 
 async function main() {
-  console.log("Verifying Wave 4 Deployment...\n");
+  console.log("Verifying current Walnut deployment...\n");
 
   const fherc20Address = process.env.NEXT_PUBLIC_FHERC20_ADDRESS;
   const walnutV2Address = process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS;
@@ -10,7 +10,7 @@ async function main() {
   const mockUSDCAddress = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS;
 
   if (!fherc20Address || !walnutV2Address || !oracleAddress || !mockUSDCAddress) {
-    throw new Error("Missing Wave 4 deployment address in environment");
+    throw new Error("Missing current deployment address in environment");
   }
 
   // Check WalnutFHERC20
@@ -69,10 +69,11 @@ async function main() {
   console.log("  Decimals:", decimals);
   console.log();
 
-  console.log("✅ All Wave 4 contracts deployed and configured correctly!");
+  console.log("✅ All current protocol contracts are deployed and configured correctly!");
 }
 
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

@@ -43,11 +43,11 @@ describe("WalnutFHERC20", function () {
 
   describe("Deployment", function () {
     it("Should have correct name", async function () {
-      expect(await fherc20.name()).to.equal("Walnut USD Coin");
+      expect(await fherc20.name()).to.equal("Walnut Confidential USDC");
     });
 
     it("Should have correct symbol", async function () {
-      expect(await fherc20.symbol()).to.equal("wUSDC");
+      expect(await fherc20.symbol()).to.equal("cUSDC");
     });
 
     it("Should have 6 decimals", async function () {

@@ -2,9 +2,9 @@ const hre = require("hardhat");
 require("dotenv").config({ override: true });
 
 /**
- * Verification Script for Wave 4 Contracts on Arbiscan
+ * Verification script for current Walnut contracts on Arbiscan
  * 
- * This script verifies all four Wave 4 contracts on Arbiscan:
+ * This script verifies the current Walnut contracts on Arbiscan:
  * 1. MockUSDC - Testnet ERC20 token
  * 2. WalnutPriceOracle - Chainlink price feed wrapper
  * 3. WalnutFHERC20 - Encrypted stablecoin (wUSDC)
@@ -14,7 +14,7 @@ require("dotenv").config({ override: true });
  */
 
 async function main() {
-  console.log("Starting Wave 4 Contract Verification on Arbiscan...\n");
+  console.log("Starting Walnut contract verification on Arbiscan...\n");
   console.log("Network: Arbitrum Sepolia (Chain ID: 421614)\n");
 
   // Contract addresses from WAVE4_DEPLOYMENT.md
@@ -112,7 +112,7 @@ async function main() {
     console.error("⚠️  Some contracts failed to verify. Please check the errors above.");
     process.exitCode = 1;
   } else {
-    console.log("🎉 All Wave 4 contracts are verified on Arbiscan!");
+    console.log("🎉 All current Walnut contracts are verified on Arbiscan.");
   }
 }
 
@@ -121,3 +121,4 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

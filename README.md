@@ -18,13 +18,13 @@ Chain ID: `421614`
 | WalnutPriceOracle | Token to USD oracle adapter | `0x5d598F3C9b45191d9f131cCbF957E969Eb173b98` |
 | MockUSDC | Testnet collateral token, 6 decimals | `0xaf80C080857956021C0200dFdFC48349eB02F3ff` |
 | MockUSDCPriceFeed | Testnet USDC/USD price feed | `0xb93D1D4A01E5ed25a96519154F976117d333740b` |
-| WalnutV1 | Earlier Waves 1-3 feature contract | `0x04c998DD105E444570ba1eCACB3F5524D5695aA0` |
+| WalnutV1 | Earlier initial release to advanced features contract | `0x04c998DD105E444570ba1eCACB3F5524D5695aA0` |
 
 The active application is configured to use WalnutV2. WalnutV1 remains deployed as a reference implementation for earlier encrypted lending, liquidation, P2P, and aggregation experiments.
 
 ## What Is Implemented
 
-WalnutV2 implements the current submission flow:
+WalnutV2 implements the current release flow:
 
 | Area | Implementation |
 | --- | --- |
@@ -187,7 +187,7 @@ Oracle adapter that maps collateral tokens to Chainlink-compatible feeds and ret
 
 ### MockUSDC
 
-Mintable ERC20 testnet collateral with 6 decimals. It is intentionally open-mint for demo and judging workflows.
+Mintable ERC20 testnet collateral with 6 decimals. It is intentionally open-mint for demo and reviewer workflows.
 
 ## Frontend
 
@@ -199,11 +199,11 @@ Implemented pages:
 | --- | --- |
 | Dashboard | Decrypted collateral, debt, available amount, utilization, wallet balances, and vault holdings. |
 | Deposit | MockUSDC minting, ERC20 approval, and collateral deposit. |
-| Borrow | Client-side encrypted borrow amount submission. |
+| Borrow | Client-side encrypted borrow amount request. |
 | Repay | Client-side encrypted repayment plus private settlement handling. |
 | Withdraw | Collateral withdrawal for debt-free positions. |
 | History and Settings | Supporting views for protocol state and user configuration. |
-| P2P and Liquidation | Preserved as non-active Wave 4 views while the current deployment focuses on tokenized collateral and wUSDC. |
+| P2P and Liquidation | Preserved as non-active views while the current deployment focuses on tokenized collateral and wUSDC. |
 
 ## Privacy Model
 
@@ -306,7 +306,7 @@ Recent local verification:
 
 ## Deployment
 
-Deploy the full Wave 4 stack:
+Deploy the full real token integration stack:
 
 ```bash
 npx hardhat run scripts/deploy-wave4-arbitrum-sepolia.js --network arbitrumSepolia
@@ -326,9 +326,9 @@ npx hardhat run scripts/mint-mock-usdc.js --network arbitrumSepolia
 
 ## Current Scope and Notes
 
-WalnutV2 is the active submission contract. It focuses on real collateral deposits, encrypted wUSDC borrowing, encrypted repayment state, permit-based user decryption, oracle valuation, and private settlement integration.
+WalnutV2 is the active release contract. It focuses on real collateral deposits, encrypted wUSDC borrowing, encrypted repayment state, permit-based user decryption, oracle valuation, and private settlement integration.
 
-The earlier WalnutV1 contract contains the experimental Waves 1-3 feature set: encrypted lending primitives, sealed-bid liquidation, P2P lending, and ENS aggregation. Those concepts are preserved in the repository, but the active Wave 4 UI and deployment prioritize the production-style tokenized collateral flow.
+The earlier WalnutV1 contract contains the experimental initial release to advanced features set: encrypted lending primitives, sealed-bid liquidation, P2P lending, and ENS aggregation. Those concepts are preserved in the repository, but the active UI and deployment prioritize the production-style tokenized collateral flow.
 
 Debt-free withdrawals are supported directly in WalnutV2. Withdrawals after borrowing are intentionally blocked in the current contract path because the unsafe async withdrawal decrypt task was removed after live Arbitrum Sepolia testing showed it could revert before wallet fee estimation. This preserves collateral safety for the active deployment.
 
