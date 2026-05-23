@@ -5,7 +5,6 @@ import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { GlassPanel } from "@/components/walnut/glass-panel";
 import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
@@ -79,46 +78,44 @@ export default function RepayPage() {
   }, [postRepayDebt, protocol.canRead, protocol.debtDecrypting, showDecrypted]);
 
   return (
-    <div className="space-y-6">
-      <GlassPanel className="walnut-hero">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Repay Debt</p>
-        <h1 className="mt-2 font-display text-3xl text-foreground">Repay Your Balance</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
+    <div className="p-6 space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Repay Your Balance</h1>
+        <p className="text-sm text-muted-foreground">
           Submit encrypted principal repayment and monitor status in one place.
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="walnut-status-chip walnut-status-chip-ghost">Principal Live</span>
-          <span className="walnut-status-chip walnut-status-chip-ghost">Private Settlement Live</span>
-        </div>
-      </GlassPanel>
+      </header>
 
       <ProtocolAlerts protocol={protocol} />
 
-      <div className="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
-        <GlassPanel className="walnut-card walnut-card-strong space-y-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="walnut-label">Repay Studio</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Complete principal repayment and private interest settlement in one flow.
-              </p>
+      <div className="border rounded-lg p-4">
+        <div className="grid gap-4 xl:grid-cols-[1.45fr_1fr]">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Repay Studio</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Complete principal repayment and private interest settlement in one flow.
+                </p>
+              </div>
+              <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-700">
+                Encrypted
+              </div>
             </div>
-            <span className="walnut-status-chip walnut-status-chip-ghost">Encrypted</span>
-          </div>
 
-          <div>
-            <label htmlFor="repay-amount" className="mb-2 block text-sm text-foreground">
-              Repay Amount
-            </label>
-            <Input
-              id="repay-amount"
-              inputMode="decimal"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))}
-              placeholder="0.00"
-              className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
-            />
-          </div>
+            <div>
+              <label htmlFor="repay-amount" className="mb-2 block text-sm text-foreground">
+                Repay Amount
+              </label>
+              <Input
+                id="repay-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))}
+                placeholder="0.00"
+                className="h-12 border-black/10 bg-white text-lg text-foreground placeholder:text-muted-foreground/80"
+              />
+            </div>
 
           <div className="flex flex-wrap gap-2">
             {[
@@ -131,7 +128,7 @@ export default function RepayPage() {
                 key={option.value}
                 size="sm"
                 variant="outline"
-                className="glass-chip"
+                className="px-3 py-2 rounded-xl border border-slate-200 text-sm text-foreground"
                 onClick={() => setAmount(option.value)}
               >
                 {option.label}
@@ -139,10 +136,10 @@ export default function RepayPage() {
             ))}
           </div>
 
-          <div className="walnut-card border-accent/40">
-            <p className="walnut-label">Repayment Progress</p>
-            <div className="mt-3 space-y-2">
-              <div className="walnut-progress flex items-center gap-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Repayment Progress</p>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center gap-2">
                 <div
                   className={`h-2 w-2 rounded-full ${
                     protocol.repaySettlementState === "repay_pending"
@@ -158,7 +155,7 @@ export default function RepayPage() {
                   Step 1: Repay principal on-chain
                 </p>
               </div>
-              <div className="walnut-progress flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <div
                   className={`h-2 w-2 rounded-full ${
                     protocol.repaySettlementState === "settlement_pending"
@@ -176,9 +173,9 @@ export default function RepayPage() {
           </div>
 
           {(protocol.repayTxHash || protocol.settlementTxHash) && (
-            <div className="walnut-card border-accent/30">
-              <p className="walnut-label">Transaction Hashes</p>
-              <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Transaction Hashes</p>
+              <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                 {protocol.repayTxHash && (
                   <p>
                     Repay:{" "}
@@ -213,7 +210,7 @@ export default function RepayPage() {
             {!protocol.permit.hasPermit && (
               <Button
                 variant="outline"
-                className="glass-button"
+                className="px-4 py-2 rounded-xl border border-slate-200"
                 onClick={protocol.permit.requestPermitCreation}
                 isLoading={protocol.permit.isPermitInitializing}
                 loadingText="Enabling..."
@@ -222,7 +219,7 @@ export default function RepayPage() {
               </Button>
             )}
             <Button
-              className="glass-button bg-accent text-accent-foreground hover:bg-accent/85"
+              className="rounded-xl bg-black px-4 py-2 text-white hover:bg-slate-900"
               onClick={handleRepay}
               isLoading={pendingRepay}
               loadingText={
@@ -239,7 +236,7 @@ export default function RepayPage() {
             {protocol.repaySettlementState === "settlement_failed" && (
               <Button
                 variant="outline"
-                className="glass-button"
+                className="px-4 py-2 rounded-xl border border-slate-200"
                 onClick={() => void protocol.retryRepaySettlement()}
               >
                 Retry Private Settlement
@@ -247,7 +244,7 @@ export default function RepayPage() {
             )}
             <Button
               variant="outline"
-              className="glass-button min-w-39 justify-center"
+              className="px-4 py-2 rounded-xl"
               onClick={() => setShowDecrypted((value) => !value)}
               isLoading={pendingDecrypt}
               loadingText="Decrypting..."
@@ -264,23 +261,23 @@ export default function RepayPage() {
               </span>
             </Button>
           </div>
-        </GlassPanel>
+        </section>
 
         <div className="grid gap-4">
-          <GlassPanel className="walnut-card walnut-card-strong walnut-kpi-card">
-            <p className="walnut-label">Outstanding Debt</p>
-            <p className="walnut-value">{debtLabel}</p>
-            <p className="walnut-meta">Current principal balance</p>
-          </GlassPanel>
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Outstanding Debt</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{debtLabel}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Current principal balance</p>
+          </div>
 
-          <GlassPanel className="walnut-card walnut-card-strong walnut-kpi-card">
-            <p className="walnut-label">Projected Debt</p>
-            <p className="walnut-value">{projectedDebtLabel}</p>
-            <p className="walnut-meta">Estimated debt after this repayment confirms</p>
-          </GlassPanel>
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Projected Debt</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{projectedDebtLabel}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Estimated debt after this repayment confirms</p>
+          </div>
 
-          <GlassPanel className="walnut-card">
-            <p className="walnut-label">Status</p>
+          <div className="rounded-2xl border border-slate-200 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Status</p>
             <p className="mt-2 text-sm text-foreground">
               {isOverRepay
                 ? "Repay amount cannot be greater than current debt."
@@ -294,8 +291,9 @@ export default function RepayPage() {
                 ? "Repayment transaction in progress..."
                 : "Ready to submit principal repayment."}
             </p>
-          </GlassPanel>
+          </div>
         </div>
+      </div>
       </div>
 
       <SystemStatusPanel protocol={protocol} />
