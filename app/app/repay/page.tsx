@@ -5,7 +5,7 @@ import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
+import { ProtocolAlerts } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
 const formatUSDC = (rawValue: bigint | number | string): string => {
@@ -175,10 +175,10 @@ export default function RepayPage() {
           {(protocol.repayTxHash || protocol.settlementTxHash) && (
             <div className="rounded-2xl border border-slate-200 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Transaction Hashes</p>
-              <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <div className="mt-3 space-y-3 text-sm">
                 {protocol.repayTxHash && (
-                  <p>
-                    Repay:{" "}
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Repay transaction</p>
                     <a
                       className="text-accent underline"
                       href={`https://sepolia.arbiscan.io/tx/${protocol.repayTxHash}`}
@@ -187,11 +187,11 @@ export default function RepayPage() {
                     >
                       {protocol.repayTxHash.slice(0, 10)}...{protocol.repayTxHash.slice(-8)}
                     </a>
-                  </p>
+                  </div>
                 )}
-                {protocol.settlementTxHash && (
-                  <p>
-                    Settlement:{" "}
+                {protocol.settlementTxHash ? (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Interest settlement via Privara</p>
                     <a
                       className="text-accent underline"
                       href={`https://sepolia.arbiscan.io/tx/${protocol.settlementTxHash}`}
@@ -200,7 +200,12 @@ export default function RepayPage() {
                     >
                       {protocol.settlementTxHash.slice(0, 10)}...{protocol.settlementTxHash.slice(-8)}
                     </a>
-                  </p>
+                    <p className="text-xs text-muted-foreground mt-1">Interest settled privately. Amount encrypted.</p>
+                  </div>
+                ) : protocol.repayTxHash && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">No interest settlement (loan duration &lt; 60 seconds)</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -295,8 +300,6 @@ export default function RepayPage() {
         </div>
       </div>
       </div>
-
-      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }

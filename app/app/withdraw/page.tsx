@@ -2,12 +2,10 @@
 
 import { useMemo, useState, useRef, useEffect } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { arbitrumSepolia } from "wagmi/chains";
 import type { Address } from "viem";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
-import { SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useTokenBalances } from "@/hooks/use-token-balances";
 import { useToast } from "@/components/walnut/toast-provider";
@@ -19,7 +17,7 @@ const targetChainName =
   `Chain ${walnutChainId}`;
 
 // Contract addresses from environment
-const WALNUT_V2_ADDRESS = process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS as Address;
+const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as Address;
 const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
 const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 
@@ -135,6 +133,13 @@ const WALNUT_V2_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  {
+    inputs: [{ name: "user", type: "address" }],
+    name: "borrowTimestamp",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ] as const;
 
 // Oracle ABI (minimal)
@@ -171,6 +176,21 @@ export default function WithdrawPage() {
   const [withdrawStep, setWithdrawStep] = useState<WithdrawStep>("idle");
   const [withdrawTxHash, setWithdrawTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Check for active loan
+  const { data: borrowTimestamp } = useReadContract({
+    address: WALNUT_LENDING_ADDRESS,
+    abi: WALNUT_V2_ABI,
+    functionName: "borrowTimestamp",
+    args: account.address ? [account.address] : undefined,
+    query: {
+      enabled: !!account.address,
+    },
+  });
+
+  const hasActiveLoan = useMemo(() => {
+    return borrowTimestamp !== undefined && borrowTimestamp > 0n;
+  }, [borrowTimestamp]);
 
   // Get vault holding for selected token
   const vaultHolding = useMemo(() => {
@@ -243,20 +263,18 @@ export default function WithdrawPage() {
       setWithdrawStep("withdraw_pending");
       setErrorMessage(null);
 
-      // Fetch current gas price with buffer
+      // Get current gas price from network
       const gasPrice = await publicClient?.getGasPrice();
-      const bufferedMaxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined; // +50% buffer
-      const maxPriorityFeePerGas = 1000000n; // 0.001 gwei tip
+      const maxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined; // 50% buffer
+      const maxPriorityFeePerGas = gasPrice ? (gasPrice * 10n) / 100n : undefined; // 10% of base as tip
 
       const hash = await withdrawAsync({
-        address: WALNUT_V2_ADDRESS,
+        address: WALNUT_LENDING_ADDRESS,
         abi: WALNUT_V2_ABI,
         functionName: "withdraw",
         args: [selectedToken, parsedAmount],
-        chain: arbitrumSepolia,
-        account: account.address,
-        maxFeePerGas: bufferedMaxFeePerGas,
-        maxPriorityFeePerGas,
+        maxFeePerGas,
+        maxPriorityFeePerGas
       });
 
       setWithdrawTxHash(hash);
@@ -300,7 +318,7 @@ export default function WithdrawPage() {
 
   // Determine button state
   const isProcessing = withdrawStep === "withdraw_pending" || isWithdrawConfirming;
-  const canSubmit = parsedAmount > 0n && !isProcessing && withdrawStep !== "withdraw_confirmed" && !exceedsVaultBalance;
+  const canSubmit = parsedAmount > 0n && !isProcessing && withdrawStep !== "withdraw_confirmed" && !exceedsVaultBalance && !hasActiveLoan;
 
   return (
     <div className="p-6 space-y-6">
@@ -320,6 +338,24 @@ export default function WithdrawPage() {
               <label className="block text-xs font-mono uppercase text-muted-foreground">Select Token</label>
               <TokenDropdown className="mt-2 w-full" value={selectedToken} onChange={(addr: Address) => setSelectedToken(addr)} />
             </div>
+
+            {hasActiveLoan && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-900">Active Loan Detected</p>
+                    <p className="text-sm text-amber-700 mt-1">Repay your loan before withdrawing collateral.</p>
+                    <a
+                      href="/app/repay"
+                      className="inline-flex items-center gap-1 mt-3 px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition-colors"
+                    >
+                      Go to Repay →
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-mono uppercase text-muted-foreground">Amount</label>
@@ -406,7 +442,7 @@ export default function WithdrawPage() {
                 disabled={!canSubmit}
                 className="px-4 py-2 bg-black text-white rounded disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Withdraw
+                {hasActiveLoan ? "Repay Loan First" : "Withdraw"}
               </button>
               {withdrawStep === "error" && (
                 <button
@@ -447,8 +483,6 @@ export default function WithdrawPage() {
           </aside>
         </div>
       </div>
-
-      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }
