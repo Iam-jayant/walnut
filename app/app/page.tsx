@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAccount } from "wagmi";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -20,7 +21,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { GlassPanel } from "@/components/walnut/glass-panel";
 import { LiquidationBadge } from "@/components/walnut/liquidation-badge";
-import { ProtocolAlerts, SystemStatusPanel } from "@/components/walnut/protocol-health";
+import { ProtocolAlerts } from "@/components/walnut/protocol-health";
+import { LoanHealthChart } from "@/components/dashboard/loan-health";
+import { DisconnectedState } from "@/components/onboarding/disconnected-state";
+import { PermitModal } from "@/components/onboarding/permit-modal";
 import { useWalnutProtocol } from "../../hooks/use-walnut-protocol";
 import { useTokenBalances } from "../../hooks/use-token-balances";
 import {
@@ -32,7 +36,7 @@ import {
 } from "@/lib/protocol-constants";
 
 const USDC_DECIMALS = 1_000_000;
-const ENCRYPTION_MASK = "······"; // Consistent encryption mask style
+const ENCRYPTION_MASK = "••••"; // Smaller dots for encrypted values
 
 // Token image mappings from CoinGecko CDN
 const TOKEN_IMAGES: Record<string, string> = {
@@ -52,10 +56,19 @@ const toUSDCNumber = (rawValue: bigint | number | string): number => {
 };
 
 export default function WalnutDashboardPage() {
+  const account = useAccount();
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [isRevealingValues, setIsRevealingValues] = useState(false);
+  const [skipPermit, setSkipPermit] = useState(false);
+  const [isCreatingPermit, setIsCreatingPermit] = useState(false);
   const protocol = useWalnutProtocol();
   const tokenBalances = useTokenBalances();
+  
+  // Determine which state to render
+  const showDisconnected = !account.isConnected;
+  const showPermitModal = account.isConnected && !protocol.permit.hasPermit && !skipPermit;
+  const showDashboard = account.isConnected; // Always show dashboard when connected
+  
   const collateralDecrypted =
     typeof protocol.collateral.decrypted.data === "bigint"
       ? protocol.collateral.decrypted.data
@@ -168,15 +181,27 @@ export default function WalnutDashboardPage() {
   }, [healthStatusLabel]);
 
   const availableCollateralLabel = useMemo(() => {
-    if (!protocol.canRead || !showDecrypted) return "******";
+    // Available = collateral - debt (both must be decrypted first)
+    if (!showDecrypted) return ENCRYPTION_MASK;
+    if (!protocol.canRead) return ENCRYPTION_MASK;
+    if (protocol.collateralDecrypting || protocol.debtDecrypting || protocol.permit.isPermitInitializing) return "Loading...";
+    
     const collateralValue = protocol.collateral.decrypted.data;
     const debtValue = protocol.debt.decrypted.data;
+    
+    // Both values must exist to compute available
     if (typeof collateralValue !== "bigint" || typeof debtValue !== "bigint") return "—";
-    return formatUSDC(collateralValue > debtValue ? collateralValue - debtValue : 0n);
+    
+    // Compute available in JavaScript after both are decrypted
+    const available = collateralValue > debtValue ? collateralValue - debtValue : 0n;
+    return formatUSDC(available);
   }, [
     protocol.canRead,
     protocol.collateral.decrypted.data,
     protocol.debt.decrypted.data,
+    protocol.collateralDecrypting,
+    protocol.debtDecrypting,
+    protocol.permit.isPermitInitializing,
     showDecrypted,
   ]);
 
@@ -204,11 +229,12 @@ export default function WalnutDashboardPage() {
       : "walnut-chip-pending";
 
   const showKpiValues = showDecrypted && protocol.canRead;
-  const utilizationLabel = showKpiValues ? `${poolUtilizationPercent.toFixed(2)}%` : ENCRYPTION_MASK;
-  const utilizationBarWidth = showKpiValues ? Math.max(8, poolUtilizationPercent) : 12;
+  // Utilization rate is NOT encrypted - always show it
+  const utilizationLabel = `${poolUtilizationPercent.toFixed(2)}%`;
+  const utilizationBarWidth = Math.max(8, poolUtilizationPercent);
   const collateralMetric = showDecrypted ? collateralLabel : ENCRYPTION_MASK;
   const debtMetric = showDecrypted ? debtLabel : ENCRYPTION_MASK;
-  const availableMetric = showDecrypted ? availableCollateralLabel : ENCRYPTION_MASK;
+  const availableMetric = availableCollateralLabel; // Already handles showDecrypted internally
 
   const creditTierLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return ENCRYPTION_MASK;
@@ -268,8 +294,43 @@ export default function WalnutDashboardPage() {
     return `$${formatTokenAmount(usdValue, 6)}`;
   }
 
+  // Handle permit creation
+  const handleCreatePermit = async () => {
+    setIsCreatingPermit(true);
+    try {
+      await protocol.permit.requestPermitCreation();
+    } finally {
+      // Keep showing "Creating..." until permit is actually created
+      // The modal will disappear when hasPermit becomes true
+    }
+  };
+
+  // Reset creating state when permit is created
+  // IMPORTANT: This useEffect must be BEFORE any conditional returns to follow Rules of Hooks
+  useEffect(() => {
+    if (protocol.permit.hasPermit && isCreatingPermit) {
+      setIsCreatingPermit(false);
+    }
+  }, [protocol.permit.hasPermit, isCreatingPermit]);
+
+  // STATE ROUTING
+  if (showDisconnected) {
+    return <DisconnectedState />;
+  }
+
+  // STATE 2 & Dashboard: Show dashboard with permit modal overlay if needed
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-12 w-full max-w-full">
+    <>
+      {/* Permit Modal Overlay - appears over dashboard when needed */}
+      {showPermitModal && (
+        <PermitModal
+          onCreatePermit={handleCreatePermit}
+          onSkip={() => setSkipPermit(true)}
+          isCreating={isCreatingPermit}
+        />
+      )}
+      
+      <div className="space-y-6 animate-in fade-in duration-500 pb-12 w-full max-w-full">{/* Removed tour-metrics class */}
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -325,7 +386,13 @@ export default function WalnutDashboardPage() {
              <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Total Supplied</div>
           </div>
           <div>
-            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{showDecrypted ? `$${typeof protocol.totalPoolCollateral.decrypted.data === 'bigint' ? formatTokenAmount(protocol.totalPoolCollateral.decrypted.data, 6) : '0.00'}` : ENCRYPTION_MASK}</div>
+            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">
+              {showDecrypted ? (
+                typeof protocol.totalPoolCollateral.decrypted.data === 'bigint' 
+                  ? `$${formatTokenAmount(protocol.totalPoolCollateral.decrypted.data, 6)}` 
+                  : '$0.00'
+              ) : ENCRYPTION_MASK}
+            </div>
             <div className="flex items-center gap-2 mt-2">
               <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
             </div>
@@ -337,7 +404,13 @@ export default function WalnutDashboardPage() {
              <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Total Borrowed</div>
           </div>
           <div>
-            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{showDecrypted ? `$${typeof protocol.totalPoolDebt.decrypted.data === 'bigint' ? formatTokenAmount(protocol.totalPoolDebt.decrypted.data, 6) : '0.00'}` : ENCRYPTION_MASK}</div>
+            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">
+              {showDecrypted ? (
+                typeof protocol.totalPoolDebt.decrypted.data === 'bigint' 
+                  ? `$${formatTokenAmount(protocol.totalPoolDebt.decrypted.data, 6)}` 
+                  : '$0.00'
+              ) : ENCRYPTION_MASK}
+            </div>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
             </div>
@@ -349,7 +422,7 @@ export default function WalnutDashboardPage() {
              <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Available</div>
           </div>
           <div>
-            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{showDecrypted ? `$${availableMetric}` : availableMetric}</div>
+            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{availableMetric === ENCRYPTION_MASK || availableMetric === "Loading..." || availableMetric === "—" ? availableMetric : `$${availableMetric}`}</div>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
             </div>
@@ -385,7 +458,7 @@ export default function WalnutDashboardPage() {
       <div className="grid lg:grid-cols-3 gap-4">
         
         {/* Wallet Balances */}
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm overflow-hidden flex flex-col">
+        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm overflow-hidden flex flex-col">{/* Removed tour-credit class */}
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold tracking-tight text-slate-900">Wallet Balances</h3>
           </div>
@@ -434,104 +507,64 @@ export default function WalnutDashboardPage() {
           </div>
           
           <div className="space-y-4">
-            {tokenBalances.vaultHoldings.map((holding) => (
-              <div key={holding.symbol} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-inner hover:scale-105 transition-transform cursor-pointer overflow-hidden bg-slate-100 border border-slate-200">
-                    {TOKEN_IMAGES[holding.symbol] ? (
-                      <img 
-                        src={TOKEN_IMAGES[holding.symbol]} 
-                        alt={holding.symbol}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="text-xs font-bold text-slate-500">{holding.symbol.slice(0, 2)}</div>
-                    )}
+            {tokenBalances.vaultHoldings.length === 0 ? (
+              <div className="text-center py-8 text-slate-500">
+                <p className="text-sm">No vault holdings yet</p>
+                <p className="text-xs mt-2">Deposit collateral to get started</p>
+              </div>
+            ) : (
+              tokenBalances.vaultHoldings.map((holding) => (
+                <div key={holding.symbol} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-inner hover:scale-105 transition-transform cursor-pointer overflow-hidden bg-slate-100 border border-slate-200">
+                      {TOKEN_IMAGES[holding.symbol] ? (
+                        <img 
+                          src={TOKEN_IMAGES[holding.symbol]} 
+                          alt={holding.symbol}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-xs font-bold text-slate-500">{holding.symbol.slice(0, 2)}</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">{holding.symbol}</div>
+                      <div className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded-sm w-fit">
+                        <ShieldCheck className="w-3 h-3" /> Encrypted
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{holding.symbol}</div>
-                    <div className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded-sm w-fit">
-                      <ShieldCheck className="w-3 h-3" /> Encrypted
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-slate-900">
+                      {showDecrypted ? formatTokenAmount(holding.amount, holding.decimals) : ENCRYPTION_MASK}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      {showDecrypted ? (
+                        holding.usdValue ? `$${formatTokenAmount(holding.usdValue, 6)}` : 'Collateral'
+                      ) : ENCRYPTION_MASK}
                     </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-slate-900">
-                    {showDecrypted ? formatTokenAmount(holding.amount, holding.decimals) : ENCRYPTION_MASK}
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    {showDecrypted ? (
-                      holding.usdValue ? `$${formatTokenAmount(holding.usdValue, 6)}` : 'Collateral'
-                    ) : ENCRYPTION_MASK}
-                  </div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
         {/* Loan Health */}
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm relative overflow-hidden flex flex-col">
-          <div className="flex justify-between items-center mb-6">
-             <h3 className="font-bold tracking-tight text-slate-900">Loan Health</h3>
-             <Bell className="w-4 h-4 text-slate-400" />
-          </div>
-          
-          <div className="flex-1 flex flex-col items-center justify-center mb-6 relative pt-4">
-            {/* Round progress gauge */}
-            <div className="relative w-36 h-36">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 128 128">
-                {/* Background Track */}
-                <circle cx="64" cy="64" r="56" fill="none" stroke="#f1f5f9" strokeWidth="8" />
-                {/* Progress Track */}
-                <circle 
-                  cx="64" cy="64" r="56" 
-                  fill="none" 
-                  stroke={healthStatusLabel === '--' ? '#cbd5e1' : healthStatusLabel === 'Safe' ? '#10b981' : healthStatusLabel === 'At Risk' ? '#f59e0b' : '#ef4444'} 
-                  strokeWidth="8" 
-                  strokeDasharray="351.8" 
-                  strokeDashoffset={Math.max(0, 351.8 - (351.8 * (isNaN(healthGaugePercent) ? 0 : healthGaugePercent)) / 100)}
-                  strokeLinecap="round" 
-                  className="transition-all duration-1000"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold tracking-tight text-slate-900">{(isNaN(healthGaugePercent) ? 0 : healthGaugePercent).toFixed(1)}%</span>
-                <span className={`text-[11px] font-bold uppercase tracking-widest mt-1 ${healthStatusLabel === '--' ? 'text-slate-400' : healthStatusLabel === 'Safe' ? 'text-emerald-600' : healthStatusLabel === 'At Risk' ? 'text-amber-600' : 'text-red-500'}`}>{healthStatusLabel}</span>
-              </div>
-            </div>
-            {/* Indicator dot */}
-            <div className="absolute bottom-0 bg-white shadow-sm border border-slate-100 rounded-full py-1 px-3 text-xs font-semibold text-slate-600 flex items-center gap-1.5 z-10">
-               <div className={`w-2 h-2 rounded-full ${healthStatusLabel === '--' ? 'bg-slate-400' : healthStatusLabel === 'Safe' ? 'bg-emerald-500' : healthStatusLabel === 'At Risk' ? 'bg-amber-500' : 'bg-red-500'}`} />
-               Status
-            </div>
-          </div>
-
-          <div className="space-y-3 mt-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-200/60">
-               <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Health Factor</span>
-               <div className="text-sm font-bold text-slate-900 flex items-center">
-                  {showDecrypted ? (healthFactorValue !== undefined ? (Number(healthFactorValue)/Number(HEALTH_FACTOR_SCALE)).toFixed(2) : '--') : '******'}
-                  {showDecrypted && healthFactorValue !== undefined && Number(healthFactorValue) > 0 && <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-2 uppercase tracking-wide">Good</span>}
-               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4 pt-1">
-               <div>
-                  <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1">Current LTV</div>
-                  <div className="text-sm font-bold text-slate-900">{utilizationLabel}</div>
-               </div>
-               <div>
-                  <div className="text-[11px] text-slate-400 font-medium uppercase tracking-wider mb-1">Max LTV</div>
-                  <div className="text-sm font-bold text-slate-900">{showDecrypted ? tierLtvLabel : ENCRYPTION_MASK}</div>
-               </div>
-            </div>
-          </div>
-
+        <div>{/* Removed tour-health wrapper */}
+          <LoanHealthChart
+            collateralUSD={typeof collateralDecrypted === "bigint" ? toUSDCNumber(collateralDecrypted) : 0}
+            debtUSD={typeof debtDecrypted === "bigint" ? toUSDCNumber(debtDecrypted) : 0}
+            maxLTV={typeof protocol.tierLTV === "bigint" ? Number(protocol.tierLTV) / 100 : 70}
+            liquidationThreshold={85}
+            showDecrypted={showDecrypted}
+            isLoading={protocol.collateralDecrypting || protocol.debtDecrypting || protocol.tierLTVLoading}
+          />
         </div>
       </div>
 
       {/* Row 3: Quick Actions */}
-      <div className="grid lg:grid-cols-1 gap-4">
+      <div className="grid lg:grid-cols-1 gap-4">{/* Removed tour-actions class */}
         
         {/* Quick Actions */}
         <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm">
@@ -564,8 +597,7 @@ export default function WalnutDashboardPage() {
           </div>
         </div>
       </div>
-
-      <SystemStatusPanel protocol={protocol} />
     </div>
+    </>
   );
 }
