@@ -2,13 +2,11 @@
 
 import { useMemo, useState, useRef, useEffect } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { arbitrumSepolia } from "wagmi/chains";
 import type { Address } from "viem";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SystemStatusPanel } from "@/components/walnut/protocol-health";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useTokenBalances } from "@/hooks/use-token-balances";
 import { useToast } from "@/components/walnut/toast-provider";
@@ -19,7 +17,7 @@ const targetChainName =
   wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
   `Chain ${walnutChainId}`;
 
-const WALNUT_V2_ADDRESS = process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS as Address;
+const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as Address;
 const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
 const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 
@@ -159,7 +157,7 @@ export default function DepositPage() {
     } catch { return 0n; }
   }, [amount, tokenInfo]);
 
-  const { data: currentAllowance, refetch: refetchAllowance } = useReadContract({ address: selectedToken, abi: ERC20_ABI, functionName: 'allowance', args: [account.address ?? '0x0000000000000000000000000000000000000000', WALNUT_V2_ADDRESS], query: { enabled: Boolean(account.address) } });
+  const { data: currentAllowance, refetch: refetchAllowance } = useReadContract({ address: selectedToken, abi: ERC20_ABI, functionName: 'allowance', args: [account.address ?? '0x0000000000000000000000000000000000000000', WALNUT_LENDING_ADDRESS], query: { enabled: Boolean(account.address) } });
 
   const { data: usdValue } = useReadContract({ address: ORACLE_ADDRESS, abi: ORACLE_ABI, functionName: 'getUSDValue', args: [selectedToken, parsedAmount], query: { enabled: parsedAmount > 0n } });
 
@@ -183,12 +181,22 @@ export default function DepositPage() {
   const handleDeposit = async () => {
     if (!account.address || parsedAmount === 0n) return;
     try {
+      // Get current gas price from network
+      const gasPrice = await publicClient?.getGasPrice();
+      const maxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined; // 50% buffer
+      const maxPriorityFeePerGas = gasPrice ? (gasPrice * 10n) / 100n : undefined; // 10% of base as tip
+      
       if (needsApproval) {
         setDepositStep('approve_pending');
         setErrorMessage(null);
-        const gasPrice = await publicClient?.getGasPrice();
-        const buffered = gasPrice ? (gasPrice * 150n) / 100n : undefined;
-        const approveHash = await approveAsync({ address: selectedToken, abi: ERC20_ABI, functionName: 'approve', args: [WALNUT_V2_ADDRESS, parsedAmount], chain: arbitrumSepolia, account: account.address, gas: 100000n, maxFeePerGas: buffered, maxPriorityFeePerGas: 1000000n });
+        const approveHash = await approveAsync({ 
+          address: selectedToken, 
+          abi: ERC20_ABI, 
+          functionName: 'approve', 
+          args: [WALNUT_LENDING_ADDRESS, parsedAmount],
+          maxFeePerGas,
+          maxPriorityFeePerGas
+        });
         setApproveTxHash(approveHash);
         addToast({ variant: 'pending', message: 'Approving tokens...' });
         if (publicClient) {
@@ -200,9 +208,14 @@ export default function DepositPage() {
       }
 
       setDepositStep('deposit_pending');
-      const depositGasPrice = await publicClient?.getGasPrice();
-      const depositBuffered = depositGasPrice ? (depositGasPrice * 150n) / 100n : undefined;
-      const hash = await depositAsync({ address: WALNUT_V2_ADDRESS, abi: WALNUT_V2_ABI, functionName: 'deposit', args: [selectedToken, parsedAmount], chain: arbitrumSepolia, account: account.address, maxFeePerGas: depositBuffered, maxPriorityFeePerGas: 1000000n });
+      const hash = await depositAsync({ 
+        address: WALNUT_LENDING_ADDRESS, 
+        abi: WALNUT_V2_ABI, 
+        functionName: 'deposit', 
+        args: [selectedToken, parsedAmount],
+        maxFeePerGas,
+        maxPriorityFeePerGas
+      });
       setDepositTxHash(hash);
       addToast({ variant: 'pending', message: 'Deposit submitted...' });
       if (publicClient) {
@@ -297,8 +310,6 @@ export default function DepositPage() {
           </aside>
         </div>
       </div>
-
-      <SystemStatusPanel protocol={protocol} />
     </div>
   );
 }
