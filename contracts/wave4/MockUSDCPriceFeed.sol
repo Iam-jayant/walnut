@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+/// @notice MockUSDCPriceFeed: Testnet Chainlink Price Feed Mock Contract
+
 /**
  * @title MockUSDCPriceFeed
  * @notice Mock Chainlink price feed for USDC on testnet

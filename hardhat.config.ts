@@ -24,6 +24,7 @@ const config: HardhatUserConfig = {
   solidity: {
     version: "0.8.25",
     settings: {
+      viaIR: true,
       evmVersion: "cancun",
       optimizer: {
         enabled: true,
@@ -35,6 +36,12 @@ const config: HardhatUserConfig = {
     sources: "./contracts",
   },
   networks: {
+    hardhat: {
+      chainId: 421614,
+      forking: {
+        url: normalizedRpcUrl,
+      },
+    },
     arbitrumSepolia: {
       url: normalizedRpcUrl,
       accounts: normalizedPrivateKey ? [normalizedPrivateKey] : [],
