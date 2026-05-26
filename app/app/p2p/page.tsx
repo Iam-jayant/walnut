@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useToast } from "@/components/walnut/toast-provider";
+import { useCofheEncrypt } from "@cofhe/react";
+import { Encryptable } from "@cofhe/sdk";
+import { walnutChainId } from "@/lib/walnut-contract";
 
 const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as `0x${string}`;
 
@@ -37,6 +40,7 @@ export default function P2PPage() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const encryptor = useCofheEncrypt();
   const { addToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<"browse" | "my-offers">("browse");
@@ -189,15 +193,35 @@ export default function P2PPage() {
   }, [publicClient, address, totalOfferCount]);
 
   const handlePostOffer = async () => {
-    if (!walletClient || !postApr || !postSize || !postTenor) return;
+    if (!walletClient || !address || !postApr || !postSize || !postTenor) return;
 
     setIsPostingOffer(true);
     try {
       addToast({ variant: "pending", message: "Encrypting terms & preparing transaction..." });
-      // In production, encrypt these values using FHE
-      const encryptedApr = { data: BigInt(Math.floor(parseFloat(postApr) * 100)) };
-      const encryptedSize = { data: BigInt(Math.floor(parseFloat(postSize) * 1_000_000)) };
-      const encryptedTenor = { data: BigInt(parseInt(postTenor)) };
+      
+      // Perform dynamic, fully homomorphic encryption of APR, Size, and Tenor in FHE on the Sepolia network.
+      // Encrypt each term separately to ensure full compatibility with the FHE SDK's single-item array output behavior.
+      const [encryptedApr] = await encryptor.encryptInputsAsync({
+        items: [Encryptable.uint128(BigInt(Math.floor(parseFloat(postApr) * 100)))],
+        account: address,
+        chainId: walnutChainId,
+      });
+
+      const [encryptedSize] = await encryptor.encryptInputsAsync({
+        items: [Encryptable.uint128(BigInt(Math.floor(parseFloat(postSize) * 1_000_000)))],
+        account: address,
+        chainId: walnutChainId,
+      });
+
+      const [encryptedTenor] = await encryptor.encryptInputsAsync({
+        items: [Encryptable.uint128(BigInt(parseInt(postTenor)))],
+        account: address,
+        chainId: walnutChainId,
+      });
+
+      if (!encryptedApr || !encryptedSize || !encryptedTenor) {
+        throw new Error("FHE encryption failed. Please try again.");
+      }
 
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
