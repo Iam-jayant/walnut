@@ -17,7 +17,7 @@ const targetChainName =
   `Chain ${walnutChainId}`;
 
 // Contract addresses from environment
-const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as Address;
+const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as Address;
 const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
 const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 
@@ -46,7 +46,7 @@ const SUPPORTED_TOKENS = [
 function TokenBadge({ symbol, name }: { symbol: string; name?: string }) {
   const TOKEN_IMAGES: Record<string, string> = {
     USDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
-    wUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
+    cUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
     WETH: "https://assets.coingecko.com/coins/images/2518/standard/weth.png",
     LINK: "https://assets.coingecko.com/coins/images/877/large/chainlink.png",
   };
