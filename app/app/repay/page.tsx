@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Clock, DollarSign, Eye, EyeOff, Loader2, Landmark, Receipt, Hourglass, ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -315,10 +315,37 @@ export default function RepayPage() {
   const [repayingIndex, setRepayingIndex] = useState<number | null>(null);
   const [recoveringIndex, setRecoveringIndex] = useState<number | null>(null);
   const [showEncryptedDebt, setShowEncryptedDebt] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const protocol = useWalnutProtocol();
 
   const settlementPending = protocol.repaySettlementState === "settlement_pending";
   const pendingDecrypt = showEncryptedDebt && protocol.debtDecrypting;
+
+  useEffect(() => {
+    if (protocol.repaySettlementState === "settlement_processing") {
+      setCountdown(70);
+    } else {
+      setCountdown(null);
+    }
+  }, [protocol.repaySettlementState]);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      // Auto-sync loan structures once FHE settles
+      void protocol.refetchActiveLoans();
+      void protocol.refetchLoans();
+      void protocol.refetchHasActiveLoan();
+      setCountdown(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [countdown, protocol]);
 
   const loans = useMemo<LoanWithIndex[]>(() => {
     return protocol.allLoans.map((loan, loanIndex) => ({
@@ -603,11 +630,15 @@ export default function RepayPage() {
                 {/* Settlement state banners */}
                 {protocol.repaySettlementState === "settlement_processing" && (
                   <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <Hourglass className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 animate-spin" />
                     <div>
-                      <p className="text-xs font-semibold text-foreground">Settlement processing</p>
+                      <p className="text-xs font-semibold text-foreground">
+                        {countdown !== null && countdown > 0 
+                          ? `Settling interest on-chain... (will be paid in ${countdown}s)`
+                          : "Interest settlement processing..."}
+                      </p>
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Your repayment succeeded. The interest settlement confirms in the background within 1–2 minutes. You can safely leave this page.
+                        Your repayment succeeded. The interest settlement is confirming in the background. The dashboard will automatically update once finalized.
                       </p>
                     </div>
                   </div>

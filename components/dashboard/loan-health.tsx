@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { Info } from "lucide-react";
 
 interface LoanHealthProps {
   collateralUSD: number;
@@ -20,6 +21,7 @@ export function LoanHealthChart({
   showDecrypted,
   isLoading,
 }: LoanHealthProps) {
+  const [showInfo, setShowInfo] = useState(false);
   // Calculate metrics
   const currentLTV = useMemo(() => {
     if (collateralUSD === 0) return 0;
@@ -100,10 +102,60 @@ export function LoanHealthChart({
   }
 
   return (
-    <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-4">
-        Loan Health
-      </h3>
+    <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm relative">
+      {/* Explanation Overlay */}
+      {showInfo && (
+        <div className="absolute inset-0 z-10 bg-white/98 p-5 rounded-xl flex flex-col justify-between animate-in fade-in duration-200">
+          <div>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-indigo-500" />
+                Loan Health Math
+              </h4>
+              <button 
+                onClick={() => setShowInfo(false)}
+                className="text-xs font-bold text-slate-400 hover:text-slate-600 px-1.5"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2 text-[11px] text-slate-600 leading-relaxed">
+              <p>
+                <strong>Health Factor:</strong> Measures collateral safety. If it falls below <strong>1.05</strong>, you receive a warning. Below <strong>1.00</strong>, your collateral becomes liquidatable!
+              </p>
+              <div className="bg-slate-50 p-2 rounded font-mono text-center text-slate-700 text-[9px] my-1 leading-normal">
+                Health Factor = (Collateral USD * Liquidation Threshold %) / Debt USD
+              </div>
+              <p>
+                <strong>LTV (Loan-To-Value):</strong> The percentage of your collateral value that has been borrowed.
+              </p>
+              <p>
+                <strong>Max LTV:</strong> The maximum allowed borrow limit (e.g. {maxLTV}%). Enforced homomorphically during borrowing.
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowInfo(false)}
+            className="mt-3 w-full py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors"
+          >
+            Close Details
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Loan Health
+        </h3>
+        <button
+          type="button"
+          onClick={() => setShowInfo(true)}
+          className="text-slate-400 hover:text-slate-600 transition-colors p-0.5"
+          aria-label="View Loan Health Info"
+        >
+          <Info className="h-4 w-4" />
+        </button>
+      </div>
 
       <div className="grid md:grid-cols-[180px_1fr] gap-6 items-center">
         {/* Donut Chart */}
