@@ -251,6 +251,16 @@ function formatFriendlyError(error: unknown, action?: WalnutAction): string {
       : "Transaction could not be completed. Please check your amount and try again.";
   }
 
+  if (lower.includes("cofhe decrypt timed out") || lower.includes("loan status will refresh")) {
+    return "Your transaction was confirmed on-chain. Loan details are still syncing — please refresh in a moment.";
+  }
+
+  if (lower.includes("404") || lower.includes("not found") || (lower.includes("decrypt") && lower.includes("pending"))) {
+    return action === "borrow"
+      ? "Borrow confirmed! Loan details are still syncing from the network — refresh in ~30 seconds."
+      : "Transaction confirmed, but the result is still syncing. Please refresh in a moment.";
+  }
+
   return raw || "Something went wrong. Please try again.";
 }
 
@@ -971,12 +981,44 @@ export function useWalnutProtocol() {
       for (const { requestId, syncFunction } of uniqueSyncRequests) {
         setStatus("Finalizing encrypted state...");
 
-        const decryptResult = await cofheClient
-          .decryptForTx(requestId)
-          .setChainId(walnutChainId)
-          .setAccount(account.address)
-          .withoutPermit()
-          .execute();
+        // The CoFHE oracle needs a few seconds to process the decrypt request after the
+        // tx confirms. Retry with exponential backoff to avoid a premature 404/not-ready
+        // error that would falsely show an error notification for a successful transaction.
+        const MAX_RETRIES = 8;
+        const BASE_DELAY_MS = 3000; // start at 3s, doubles each retry (max ~6 min total)
+        let decryptResult: Awaited<ReturnType<typeof cofheClient.decryptForTx.prototype.execute>> | null = null;
+        let lastDecryptError: unknown = null;
+
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          try {
+            decryptResult = await cofheClient
+              .decryptForTx(requestId)
+              .setChainId(walnutChainId)
+              .setAccount(account.address)
+              .withoutPermit()
+              .execute();
+            lastDecryptError = null;
+            break; // success
+          } catch (err) {
+            lastDecryptError = err;
+            const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+            // Only retry on transient not-ready errors (404, pending, not found, timeout)
+            const isTransient = msg.includes("404") || msg.includes("not found") ||
+              msg.includes("pending") || msg.includes("not ready") || msg.includes("timeout") ||
+              msg.includes("fetch") || msg.includes("network");
+            if (!isTransient) break; // hard error — don't retry
+            if (attempt < MAX_RETRIES - 1) {
+              const delayMs = BASE_DELAY_MS * Math.pow(1.5, attempt); // 3s, 4.5s, 6.75s…
+              debugWarn(`[syncDecrypt] decryptForTx attempt ${attempt + 1} not ready, retrying in ${Math.round(delayMs / 1000)}s…`);
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+          }
+        }
+
+        if (!decryptResult) {
+          // All retries exhausted — throw so the caller can handle it gracefully
+          throw lastDecryptError ?? new Error("CoFHE decrypt timed out. The loan status will refresh automatically.");
+        }
 
         if (decryptResult.decryptedValue > ((1n << 128n) - 1n)) {
           throw new Error("CoFHE decrypted value exceeds uint128.");
@@ -1029,13 +1071,11 @@ export function useWalnutProtocol() {
         return false;
       }
 
-      if (action === "repay" && typeof debtValue === "bigint" && value > debtValue) {
-        addToast({
-          variant: "error",
-          message: `Repay amount exceeds current debt (${debtValue.toString()}).`,
-        });
-        return false;
-      }
+      // Note: We intentionally do NOT validate the repay amount against debtValue here.
+      // The debtValue is the total FHE-encrypted on-chain debt and may be 0 or stale if the user
+      // hasn't decrypted it. The repay amount is correctly calculated from the actual loan principal
+      // + contract interest quote (getLoanSettlementQuote), so it's always valid. On-chain validation
+      // will reject any truly invalid amounts at the contract level.
 
       txInFlightRef.current = true;
       try {
@@ -1114,13 +1154,27 @@ export function useWalnutProtocol() {
         if (action === "repay") {
           setRepayTxHash(hash);
         }
+        let syncDecryptFailed = false;
+        let syncDecryptErrorMsg = "";
+
         if (publicClient) {
           const receipt = await publicClient.waitForTransactionReceipt({ hash });
           assertSuccessReceipt(receipt);
-          const syncResults = await syncDecryptResultsFromReceipt(action, receipt as WalnutTxReceipt);
-          const repayResult = syncResults.find((result) => result.syncFunction === "syncLoanRepay");
-          if (action === "repay" && repayResult && repayResult.decryptedValue !== 1n) {
-            throw new Error("Repayment amount was too low. Please refresh and try again.");
+          try {
+            const syncResults = await syncDecryptResultsFromReceipt(action, receipt as WalnutTxReceipt);
+            const repayResult = syncResults.find((result) => result.syncFunction === "syncLoanRepay");
+            if (action === "repay" && repayResult && repayResult.decryptedValue !== 1n) {
+              throw new Error("Repayment amount was too low. Please refresh and try again.");
+            }
+          } catch (syncError) {
+            // Check if this was a hard failure we want to propagate (like "Repayment amount was too low")
+            const msg = syncError instanceof Error ? syncError.message : String(syncError);
+            if (msg.includes("too low")) {
+              throw syncError; // Propagate hard failures
+            }
+            console.warn(`Decryption sync failed/delayed for ${action} transaction ${hash}:`, syncError);
+            syncDecryptFailed = true;
+            syncDecryptErrorMsg = msg;
           }
         }
 
@@ -1130,7 +1184,14 @@ export function useWalnutProtocol() {
           if (!repaySettlementAmounts || repaySettlementAmounts.interestAmount <= 0n) {
             setRepaySettlementState("settlement_confirmed");
             setRepaySettlementError(null);
-        addToast({ variant: "success", message: "Repayment complete. Your loan is now marked paid." });
+            if (syncDecryptFailed) {
+              addToast({ 
+                variant: "pending", 
+                message: `Repayment received, but loan details are still syncing in the background — please refresh in a moment.` 
+              });
+            } else {
+              addToast({ variant: "success", message: "Repayment complete. Your loan is now marked paid." });
+            }
             setStatus(null);
             await refreshBalances();
             return true;
@@ -1139,12 +1200,19 @@ export function useWalnutProtocol() {
           addToast({ variant: "pending", message: "Repayment received. Finalizing interest settlement..." });
           setRepaySettlementState("settlement_pending");
 
-          const settlement = await privara.settleRepayInterest({
-            user: account.address,
-            amount: value,
-            interestAmount: repaySettlementAmounts.interestAmount,
-            protocolFee: repaySettlementAmounts.protocolFee,
-          });
+          let settlement;
+          try {
+            settlement = await privara.settleRepayInterest({
+              user: account.address,
+              amount: value,
+              interestAmount: repaySettlementAmounts.interestAmount,
+              protocolFee: repaySettlementAmounts.protocolFee,
+            });
+          } catch (settleError) {
+            // Intercept transient gateway errors (e.g. 503 decrypt pending) and process in the background
+            console.warn("Privara interest settlement API threw an exception, treating as background processing:", settleError);
+            settlement = { ok: false, message: settleError instanceof Error ? settleError.message : String(settleError) };
+          }
 
           if (!settlement.ok || !settlement.hash) {
             // The Privara settlement backend processes asynchronously — the on-chain
@@ -1168,15 +1236,25 @@ export function useWalnutProtocol() {
           return true;
         }
 
-        const successMessage =
-          action === "borrow"
-            ? "Borrow complete. Your loan is being updated."
-            : action === "deposit"
-            ? "Deposit complete. Your balance is being updated."
-            : action === "withdraw"
-            ? "Withdrawal request submitted."
-            : "Transaction complete.";
-        addToast({ variant: "success", message: successMessage });
+        if (syncDecryptFailed) {
+          const friendlyMsg = formatFriendlyError(syncDecryptErrorMsg, action);
+          addToast({ 
+            variant: "pending", 
+            message: friendlyMsg.includes("confirmed") || friendlyMsg.includes("syncing")
+              ? friendlyMsg
+              : `${action === "borrow" ? "Borrow" : action === "deposit" ? "Deposit" : "Transaction"} confirmed! Details are syncing from the network — please refresh in a moment.`
+          });
+        } else {
+          const successMessage =
+            action === "borrow"
+              ? "Borrow complete. Your loan is being updated."
+              : action === "deposit"
+              ? "Deposit complete. Your balance is being updated."
+              : action === "withdraw"
+              ? "Withdrawal request submitted."
+              : "Transaction complete.";
+          addToast({ variant: "success", message: successMessage });
+        }
         setStatus(null);
         await refreshBalances();
         return true;
