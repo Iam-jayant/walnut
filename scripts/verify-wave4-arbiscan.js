@@ -7,7 +7,7 @@ require("dotenv").config({ override: true });
  * This script verifies the current Walnut contracts on Arbiscan:
  * 1. MockUSDC - Testnet ERC20 token
  * 2. WalnutPriceOracle - Chainlink price feed wrapper
- * 3. WalnutFHERC20 - Encrypted stablecoin (wUSDC)
+ * 3. WalnutFHERC20 - Encrypted stablecoin (cUSDC)
  * 4. WalnutV2 - Main protocol contract
  * 
  * Requirements: 15.8 - Verify all contracts on Arbiscan
@@ -69,9 +69,9 @@ async function main() {
   // 3. Verify WalnutFHERC20 (no constructor arguments)
   await verifyContract("WalnutFHERC20", fherc20Address, []);
 
-  // 4. Verify WalnutV2 (constructor arguments: wUSDC, oracle, treasury)
+  // 4. Verify WalnutV2 (constructor arguments: cUSDC, oracle, treasury)
   await verifyContract("WalnutV2", walnutV2Address, [
-    fherc20Address,  // wUSDC address
+    fherc20Address,  // cUSDC address
     oracleAddress,   // oracle address
     treasuryAddress  // treasury address
   ]);

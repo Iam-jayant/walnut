@@ -224,53 +224,53 @@ async function main() {
   // ============================================
   // STEP 3: Deploy WalnutFHERC20
   // ============================================
-  console.log("Step 3/5: Deploying WalnutFHERC20 (wUSDC)...");
+  console.log("Step 3/5: Deploying WalnutFHERC20 (cUSDC)...");
   const WalnutFHERC20 = await hre.ethers.getContractFactory("WalnutFHERC20");
   const fherc20 = await WalnutFHERC20.deploy();
   await fherc20.waitForDeployment();
   const fherc20Address = await fherc20.getAddress();
   console.log("✅ WalnutFHERC20 deployed at:", fherc20Address);
   console.log("   Name: Walnut USD Coin");
-  console.log("   Symbol: wUSDC");
+  console.log("   Symbol: cUSDC");
   console.log("   Decimals: 6");
   console.log("   Initial minter:", deployerAddress);
   console.log("   (Minter will be updated to WalnutV2 in Step 5)\n");
 
   // ============================================
-  // STEP 4: Deploy WalnutV2
+  // STEP 4: Deploy WalnutLending
   // ============================================
-  console.log("Step 4/5: Deploying WalnutV2...");
-  const WalnutV2 = await hre.ethers.getContractFactory("WalnutV2");
-  const walnutV2 = await WalnutV2.deploy(
+  console.log("Step 4/5: Deploying WalnutLending...");
+  const WalnutLending = await hre.ethers.getContractFactory("WalnutLending");
+  const walnutV2 = await WalnutLending.deploy(
     fherc20Address,
     oracleAddress,
     treasuryAddress
   );
   await walnutV2.waitForDeployment();
   const walnutV2Address = await walnutV2.getAddress();
-  console.log("✅ WalnutV2 deployed at:", walnutV2Address);
-  console.log("   wUSDC:", fherc20Address);
+  console.log("✅ WalnutLending deployed at:", walnutV2Address);
+  console.log("   cUSDC:", fherc20Address);
   console.log("   Oracle:", oracleAddress);
   console.log("   Treasury:", treasuryAddress);
   console.log("   Owner:", deployerAddress);
   console.log("   Credit Tier LTVs: [70%, 75%, 80%, 85%, 90%]\n");
 
   // ============================================
-  // STEP 5: Set WalnutV2 as Minter
+  // STEP 5: Set WalnutLending as Minter
   // ============================================
-  console.log("Step 5/5: Setting WalnutV2 as minter on WalnutFHERC20...");
+  console.log("Step 5/5: Setting WalnutLending as minter on WalnutFHERC20...");
   const setMinterTx = await fherc20.setMinter(walnutV2Address);
   await setMinterTx.wait();
   console.log("✅ Minter updated successfully");
   console.log("   Old minter:", deployerAddress);
   console.log("   New minter:", walnutV2Address);
-  console.log("   (Only WalnutV2 can now mint/burn wUSDC)\n");
+  console.log("   (Only WalnutLending can now mint/burn cUSDC)\n");
 
   // ============================================
   // SAVE ADDRESSES TO .env.local
   // ============================================
   console.log("Saving addresses to .env.local...");
-  upsertEnvValue("NEXT_PUBLIC_V2_CONTRACT_ADDRESS", walnutV2Address);
+  upsertEnvValue("NEXT_PUBLIC_WALNUT_LENDING_ADDRESS", walnutV2Address);
   upsertEnvValue("NEXT_PUBLIC_FHERC20_ADDRESS", fherc20Address);
   upsertEnvValue("NEXT_PUBLIC_ORACLE_ADDRESS", oracleAddress);
   upsertEnvValue("NEXT_PUBLIC_MOCK_USDC_ADDRESS", mockUSDCAddress);
@@ -285,7 +285,7 @@ async function main() {
   console.log("MockUSDC:          ", mockUSDCAddress);
   console.log("WalnutPriceOracle: ", oracleAddress);
   console.log("WalnutFHERC20:     ", fherc20Address);
-  console.log("WalnutV2:          ", walnutV2Address);
+  console.log("WalnutLending:     ", walnutV2Address);
   console.log("Treasury:          ", treasuryAddress);
   console.log("========================================\n");
 
@@ -325,7 +325,7 @@ async function main() {
   console.log("");
   console.log("5. Test complete multi-token flow:");
   console.log("   - Deposit USDC + WETH as collateral");
-  console.log("   - Borrow wUSDC against combined collateral");
+  console.log("   - Borrow cUSDC against combined collateral");
   console.log("   - Repay loan");
   console.log("   - Withdraw both tokens");
   console.log("========================================\n");

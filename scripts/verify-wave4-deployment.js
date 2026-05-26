@@ -27,18 +27,18 @@ async function main() {
 
   // Check WalnutV2
   const walnutV2 = await hre.ethers.getContractAt("WalnutV2", walnutV2Address);
-  const wUSDC = await walnutV2.wUSDC();
+  const cUSDC = await walnutV2.cUSDC();
   const oracle = await walnutV2.oracle();
   const treasury = await walnutV2.treasury();
   const v2Owner = await walnutV2.owner();
   
   console.log("WalnutV2:");
   console.log("  Address:", walnutV2Address);
-  console.log("  wUSDC:", wUSDC);
+  console.log("  cUSDC:", cUSDC);
   console.log("  Oracle:", oracle);
   console.log("  Treasury:", treasury);
   console.log("  Owner:", v2Owner);
-  console.log("  ✓ wUSDC matches:", wUSDC === fherc20Address);
+  console.log("  ✓ cUSDC matches:", cUSDC === fherc20Address);
   console.log("  ✓ Oracle matches:", oracle === oracleAddress);
   console.log();
 
