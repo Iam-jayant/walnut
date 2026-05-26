@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { X, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -21,10 +21,26 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-function variantClasses(variant: ToastVariant) {
-  if (variant === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
-  if (variant === "error") return "border-red-200 bg-red-50 text-red-900";
-  return "border-amber-200 bg-amber-50 text-amber-900";
+function getToastStyles(variant: ToastVariant) {
+  if (variant === "success") {
+    return {
+      container: "border-emerald-500/20 bg-slate-900/90 text-slate-100 shadow-[0_8px_32px_rgba(16,185,129,0.12)]",
+      iconColor: "text-emerald-400",
+      Icon: CheckCircle2,
+    };
+  }
+  if (variant === "error") {
+    return {
+      container: "border-red-500/20 bg-slate-900/90 text-slate-100 shadow-[0_8px_32px_rgba(239,68,68,0.12)]",
+      iconColor: "text-red-400",
+      Icon: AlertTriangle,
+    };
+  }
+  return {
+    container: "border-amber-500/20 bg-slate-900/90 text-slate-100 shadow-[0_8px_32px_rgba(245,158,11,0.12)]",
+    iconColor: "text-amber-400",
+    Icon: Loader2,
+  };
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -71,29 +87,37 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => ({ addToast, removeToast }), [addToast, removeToast]);
 
   return (
-      <ToastContext.Provider value={value}>
-        {children}
-      <div className="fixed bottom-5 left-1/2 z-50 flex w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-3">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            role="status"
-            className={cn(
-              "flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur",
-              variantClasses(toast.variant)
-            )}
-          >
-            <p className="leading-snug">{toast.message}</p>
-            <button
-              type="button"
-              onClick={() => removeToast(toast.id)}
-              className="rounded-full p-1 text-current/70 transition hover:text-current"
-              aria-label="Dismiss notification"
+    <ToastContext.Provider value={value}>
+      {children}
+      <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-3">
+        {toasts.map((toast) => {
+          const styles = getToastStyles(toast.variant);
+          const ToastIcon = styles.Icon;
+
+          return (
+            <div
+              key={toast.id}
+              role="status"
+              className={cn(
+                "flex items-start justify-between gap-3 rounded-2xl border px-4 py-3.5 text-xs shadow-xl backdrop-blur-md transition-all duration-300 animate-in slide-in-from-bottom-4 fade-in duration-300",
+                styles.container
+              )}
             >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
+              <div className="flex items-start gap-3 flex-1 min-w-0">
+                <ToastIcon className={cn("h-4 w-4 flex-shrink-0 mt-0.5", styles.iconColor, toast.variant === "pending" && "animate-spin")} />
+                <p className="leading-snug text-slate-200 font-medium break-words">{toast.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeToast(toast.id)}
+                className="rounded-full p-1 text-slate-400 hover:text-slate-200 hover:bg-white/5 transition flex-shrink-0"
+                aria-label="Dismiss notification"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );
