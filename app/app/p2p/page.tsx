@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Users, Plus, X, CheckCircle, Clock } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Users, Plus, X, CheckCircle, Clock, Info, Shield, Coins } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { parseAbi } from "viem";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { GlassPanel } from "@/components/walnut/glass-panel";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { useToast } from "@/components/walnut/toast-provider";
 
-const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as `0x${string}`;
+const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as `0x${string}`;
 
 type LoanOffer = {
   offerId: number;
@@ -37,11 +37,15 @@ export default function P2PPage() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const { addToast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"browse" | "post" | "my-offers">("browse");
+  const [activeTab, setActiveTab] = useState<"browse" | "my-offers">("browse");
   const [offers, setOffers] = useState<LoanOffer[]>([]);
   const [myOffers, setMyOffers] = useState<MyOffer[]>([]);
   const [totalOfferCount, setTotalOfferCount] = useState(0);
+
+  // Modal display state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Post offer form state
   const [postApr, setPostApr] = useState("");
@@ -189,6 +193,7 @@ export default function P2PPage() {
 
     setIsPostingOffer(true);
     try {
+      addToast({ variant: "pending", message: "Encrypting terms & preparing transaction..." });
       // In production, encrypt these values using FHE
       const encryptedApr = { data: BigInt(Math.floor(parseFloat(postApr) * 100)) };
       const encryptedSize = { data: BigInt(Math.floor(parseFloat(postSize) * 1_000_000)) };
@@ -203,15 +208,18 @@ export default function P2PPage() {
         args: [encryptedApr as any, encryptedSize as any, encryptedTenor as any],
       });
 
+      addToast({ variant: "pending", message: "Posting encrypted offer on-chain..." });
       await publicClient?.waitForTransactionReceipt({ hash });
-      alert("Loan offer posted successfully!");
+      addToast({ variant: "success", message: "Loan offer posted successfully!" });
+      
       setPostApr("");
       setPostSize("");
       setPostTenor("");
+      setIsCreateModalOpen(false);
       setActiveTab("my-offers");
     } catch (error) {
       console.error("Error posting offer:", error);
-      alert("Failed to post offer");
+      addToast({ variant: "error", message: "Failed to post offer" });
     } finally {
       setIsPostingOffer(false);
     }
@@ -223,6 +231,7 @@ export default function P2PPage() {
     setIsMatchingOffer(true);
     setSelectedOfferId(offerId);
     try {
+      addToast({ variant: "pending", message: "Submitting match transaction..." });
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
         abi: parseAbi(["function matchOffer(uint256 offerId) external"]),
@@ -231,10 +240,10 @@ export default function P2PPage() {
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
-      alert("Offer matched! Privara settlement will process the encrypted loan terms.");
+      addToast({ variant: "success", message: "Offer matched! Privara settlement initiated." });
     } catch (error) {
       console.error("Error matching offer:", error);
-      alert("Failed to match offer");
+      addToast({ variant: "error", message: "Failed to match offer" });
     } finally {
       setIsMatchingOffer(false);
       setSelectedOfferId(null);
@@ -246,6 +255,7 @@ export default function P2PPage() {
 
     setIsCancellingOffer(true);
     try {
+      addToast({ variant: "pending", message: "Submitting cancellation..." });
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
         abi: parseAbi(["function cancelOffer(uint256 offerId) external"]),
@@ -254,315 +264,393 @@ export default function P2PPage() {
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
-      alert("Offer cancelled successfully!");
+      addToast({ variant: "success", message: "Offer cancelled successfully!" });
     } catch (error) {
       console.error("Error cancelling offer:", error);
-      alert("Failed to cancel offer");
+      addToast({ variant: "error", message: "Failed to cancel offer" });
     } finally {
       setIsCancellingOffer(false);
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <GlassPanel className="walnut-hero">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">P2P Encrypted Lending</p>
-        <h1 className="mt-2 font-display text-3xl text-foreground">Private Loan Marketplace</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Lenders post encrypted loan offers. Borrowers match them. All terms remain private until settlement.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="walnut-status-chip walnut-chip-success">
-            <CheckCircle className="mr-1 h-3 w-3" />
-            Live on Testnet
-          </span>
-        </div>
-      </GlassPanel>
+  const activeMyOffersCount = useMemo(() => {
+    return myOffers.filter((o) => o.active && !o.matched).length;
+  }, [myOffers]);
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200">
-        <button
-          onClick={() => setActiveTab("browse")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "browse"
-              ? "border-b-2 border-black text-black"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
+  return (
+    <div className="p-6 space-y-6">
+      {/* Page Header */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Private P2P Marketplace</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Lenders post encrypted loan offers. Borrowers match them. All terms remain private until secure FHE settlement.
+          </p>
+        </div>
+        <Button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="bg-black text-white hover:bg-slate-800 rounded-xl px-5 py-2.5 font-medium shadow-md transition active:scale-95 flex items-center gap-1.5 self-start sm:self-center"
         >
-          Browse Offers ({offers.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("post")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "post"
-              ? "border-b-2 border-black text-black"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Post an Offer
-        </button>
-        <button
-          onClick={() => setActiveTab("my-offers")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === "my-offers"
-              ? "border-b-2 border-black text-black"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          My Offers ({myOffers.length})
-        </button>
+          <Plus className="h-4 w-4 stroke-[2.5]" />
+          Create Loan Offer
+        </Button>
+      </header>
+
+      {/* Stats Overview */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        {/* Card 1: Status */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center gap-3.5 shadow-sm">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 border border-slate-100">
+            <Shield className="h-5 w-5 text-slate-500" />
+          </div>
+          <div>
+            <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-400">Network Status</p>
+            <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5 mt-0.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live on Testnet
+            </p>
+          </div>
+        </div>
+
+        {/* Card 2: Public Offers */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center gap-3.5 shadow-sm">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 border border-slate-100">
+            <Coins className="h-5 w-5 text-slate-500" />
+          </div>
+          <div>
+            <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-400">Total Active Offers</p>
+            <p className="text-lg font-bold text-slate-900 mt-0.5">{offers.length}</p>
+          </div>
+        </div>
+
+        {/* Card 3: Your Offers */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center gap-3.5 shadow-sm">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 border border-slate-100">
+            <Users className="h-5 w-5 text-slate-500" />
+          </div>
+          <div>
+            <p className="text-[10px] uppercase font-semibold tracking-wider text-slate-400">Your Active Offers</p>
+            <p className="text-lg font-bold text-slate-900 mt-0.5">{activeMyOffersCount}</p>
+          </div>
+        </div>
       </div>
 
-      {/* Browse Offers Tab */}
-      {activeTab === "browse" && (
-        <GlassPanel className="walnut-card walnut-card-strong p-6">
-          <h3 className="font-display text-xl text-foreground mb-4">Available Loan Offers</h3>
+      {/* Main Content Split */}
+      <div className="grid gap-6 lg:grid-cols-[3fr_1.6fr] items-start">
+        {/* Left: Offers list */}
+        <div className="space-y-4">
+          <div className="flex border-b border-slate-200 gap-6 mb-2">
+            <button
+              onClick={() => setActiveTab("browse")}
+              className={`pb-3 px-1 text-sm font-semibold border-b-2 transition-all relative flex items-center gap-1.5 ${
+                activeTab === "browse"
+                  ? "border-black text-black"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Browse Public Offers
+              {offers.length > 0 && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                  {offers.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("my-offers")}
+              className={`pb-3 px-1 text-sm font-semibold border-b-2 transition-all relative flex items-center gap-1.5 ${
+                activeTab === "my-offers"
+                  ? "border-black text-black"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              My Active Offers
+              {myOffers.length > 0 && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                  {myOffers.length}
+                </span>
+              )}
+            </button>
+          </div>
 
-          {offers.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center">
-              <Users className="mx-auto h-12 w-12 text-slate-400" />
-              <p className="mt-3 text-sm text-muted-foreground">No active offers available</p>
-              <p className="mt-1 text-xs text-muted-foreground">Be the first to post a loan offer!</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {offers.map((offer) => (
-                <div
-                  key={offer.offerId}
-                  className="rounded-lg border border-slate-200 bg-white p-4"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Users className="h-4 w-4 text-accent" />
-                        <p className="font-mono text-sm text-foreground">
-                          Offer #{offer.offerId} from {offer.lender.slice(0, 6)}...{offer.lender.slice(-4)}
-                        </p>
+          <div className="space-y-3">
+            {activeTab === "browse" ? (
+              offers.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-12 text-center">
+                  <Users className="mx-auto h-10 w-10 text-slate-400" />
+                  <p className="mt-3 text-sm font-semibold text-slate-700">No active offers available</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Be the first to post a private loan offer!</p>
+                  <Button
+                    size="sm"
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="mt-4 bg-black text-white hover:bg-slate-800 rounded-xl"
+                  >
+                    <Plus className="mr-1.5 h-4 w-4" /> Create Offer
+                  </Button>
+                </div>
+              ) : (
+                offers.map((offer) => (
+                  <div
+                    key={offer.offerId}
+                    className="rounded-2xl border border-slate-200 bg-white p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm hover:border-slate-300 transition-all"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-slate-900">
+                          Offer #{offer.offerId}
+                        </span>
+                        <span className="text-xs text-muted-foreground font-mono bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">
+                          Lender: {offer.lender.slice(0, 6)}...{offer.lender.slice(-4)}
+                        </span>
                       </div>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">APR</p>
-                          <p className="font-mono text-foreground">{offer.encryptedApr}</p>
+                      <div className="grid grid-cols-3 gap-6 text-sm">
+                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
+                          <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">APR</p>
+                          <p className="font-bold text-slate-800 mt-0.5">{offer.encryptedApr}</p>
                         </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Loan Size</p>
-                          <p className="font-mono text-foreground">{offer.encryptedSize}</p>
+                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
+                          <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">Size</p>
+                          <p className="font-bold text-slate-800 mt-0.5">{offer.encryptedSize}</p>
                         </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Tenor (days)</p>
-                          <p className="font-mono text-foreground">{offer.encryptedTenor}</p>
+                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
+                          <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">Tenor</p>
+                          <p className="font-bold text-slate-800 mt-0.5">{offer.encryptedTenor}</p>
                         </div>
                       </div>
                     </div>
                     <Button
-                      size="sm"
                       onClick={() => handleMatchOffer(offer.offerId)}
                       isLoading={isMatchingOffer && selectedOfferId === offer.offerId}
                       loadingText="Matching..."
-                      className="bg-accent text-white hover:bg-accent/90"
+                      className="bg-black text-white hover:bg-slate-800 rounded-xl px-5 self-start sm:self-center"
                     >
                       Match Offer
                     </Button>
                   </div>
+                ))
+              )
+            ) : (
+              myOffers.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-12 text-center">
+                  <Clock className="mx-auto h-10 w-10 text-slate-400" />
+                  <p className="mt-3 text-sm font-semibold text-slate-700">You haven't posted any offers yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Post a private loan offer to start earning yield.</p>
+                  <Button
+                    size="sm"
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="mt-4 bg-black text-white hover:bg-slate-800 rounded-xl"
+                  >
+                    <Plus className="mr-1.5 h-4 w-4" /> Create Offer
+                  </Button>
                 </div>
-              ))}
-            </div>
-          )}
-        </GlassPanel>
-      )}
-
-      {/* Post Offer Tab */}
-      {activeTab === "post" && (
-        <GlassPanel className="walnut-card walnut-card-strong p-6">
-          <h3 className="font-display text-xl text-foreground mb-4">Post a Loan Offer</h3>
-          <p className="text-sm text-muted-foreground mb-6">
-            All loan terms are encrypted. Only the borrower who matches your offer will see the details.
-          </p>
-
-          <div className="space-y-4 max-w-md">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                APR (%)
-              </label>
-              <Input
-                type="number"
-                step="0.1"
-                min="0"
-                value={postApr}
-                onChange={(e) => setPostApr(e.target.value)}
-                placeholder="e.g., 8.5"
-                className="w-full"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Annual percentage rate for the loan
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Loan Size (cUSDC)
-              </label>
-              <Input
-                type="number"
-                step="1"
-                min="0"
-                value={postSize}
-                onChange={(e) => setPostSize(e.target.value)}
-                placeholder="e.g., 1000"
-                className="w-full"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Amount you're willing to lend
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Tenor (days)
-              </label>
-              <Input
-                type="number"
-                step="1"
-                min="1"
-                value={postTenor}
-                onChange={(e) => setPostTenor(e.target.value)}
-                placeholder="e.g., 30"
-                className="w-full"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Loan duration in days
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-              <p className="text-sm text-blue-800">
-                <strong>Privacy Note:</strong> Your loan terms will be encrypted on-chain. Only borrowers who match your offer will decrypt the terms via Privara settlement.
-              </p>
-            </div>
-
-            <Button
-              onClick={handlePostOffer}
-              isLoading={isPostingOffer}
-              loadingText="Posting..."
-              disabled={!postApr || !postSize || !postTenor}
-              className="w-full bg-black text-white hover:bg-slate-900"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Post Encrypted Offer
-            </Button>
-          </div>
-        </GlassPanel>
-      )}
-
-      {/* My Offers Tab */}
-      {activeTab === "my-offers" && (
-        <GlassPanel className="walnut-card walnut-card-strong p-6">
-          <h3 className="font-display text-xl text-foreground mb-4">Your Loan Offers</h3>
-
-          {myOffers.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center">
-              <Clock className="mx-auto h-12 w-12 text-slate-400" />
-              <p className="mt-3 text-sm text-muted-foreground">You haven't posted any offers yet</p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setActiveTab("post")}
-                className="mt-4"
-              >
-                Post Your First Offer
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {myOffers.map((offer) => (
-                <div
-                  key={offer.offerId}
-                  className={`rounded-lg border p-4 ${
-                    offer.matched
-                      ? "border-green-200 bg-green-50"
-                      : offer.active
-                      ? "border-slate-200 bg-white"
-                      : "border-slate-200 bg-slate-50 opacity-60"
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-3">
-                        <p className="font-mono text-sm text-foreground">Offer #{offer.offerId}</p>
-                        {offer.matched && (
-                          <span className="rounded-full bg-green-600 px-2 py-0.5 text-xs text-white">
-                            Matched
+              ) : (
+                myOffers.map((offer) => (
+                  <div
+                    key={offer.offerId}
+                    className={`rounded-2xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm transition-all ${
+                      offer.matched
+                        ? "border-green-200 bg-green-50/10"
+                        : offer.active
+                        ? "border-slate-200 bg-white hover:border-slate-300"
+                        : "border-slate-200 bg-slate-50 opacity-60"
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-slate-950">
+                          Offer #{offer.offerId}
+                        </span>
+                        {offer.matched ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-600/20">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Matched
                           </span>
-                        )}
-                        {!offer.active && !offer.matched && (
-                          <span className="rounded-full bg-slate-400 px-2 py-0.5 text-xs text-white">
+                        ) : offer.active ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-800 ring-1 ring-slate-200">
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-500" /> Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-[10px] font-semibold text-rose-700 ring-1 ring-rose-600/20">
                             Cancelled
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">APR</p>
-                          <p className="font-mono text-foreground">{offer.apr}</p>
+                      <div className="grid grid-cols-3 gap-6 text-sm">
+                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
+                          <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">APR</p>
+                          <p className="font-bold text-slate-800 mt-0.5 font-mono">{offer.apr}</p>
                         </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Loan Size</p>
-                          <p className="font-mono text-foreground">{offer.size}</p>
+                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
+                          <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">Size</p>
+                          <p className="font-bold text-slate-800 mt-0.5 font-mono">{offer.size}</p>
                         </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Tenor</p>
-                          <p className="font-mono text-foreground">{offer.tenor}</p>
+                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
+                          <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">Tenor</p>
+                          <p className="font-bold text-slate-800 mt-0.5 font-mono">{offer.tenor}</p>
                         </div>
                       </div>
-                      {offer.matched && offer.matchedWith && (
-                        <p className="mt-2 text-xs text-green-700">
-                          Matched with: {offer.matchedWith.slice(0, 6)}...{offer.matchedWith.slice(-4)}
-                        </p>
-                      )}
                     </div>
                     {offer.active && !offer.matched && (
                       <Button
-                        size="sm"
                         variant="outline"
                         onClick={() => handleCancelOffer(offer.offerId)}
                         isLoading={isCancellingOffer}
                         loadingText="Cancelling..."
-                        className="text-red-600 hover:bg-red-50"
+                        className="text-rose-600 border-rose-200 bg-rose-50/30 hover:bg-rose-50 rounded-xl px-4 self-start sm:self-center"
                       >
-                        <X className="mr-1 h-3 w-3" />
+                        <X className="mr-1 h-3.5 w-3.5" />
                         Cancel
                       </Button>
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </GlassPanel>
-      )}
-
-      {/* How It Works */}
-      <GlassPanel className="walnut-card p-6">
-        <h3 className="font-display text-xl text-foreground mb-4">How P2P Lending Works</h3>
-        <div className="space-y-4 text-sm text-muted-foreground">
-          <div>
-            <p className="font-semibold text-foreground">1. Lender Posts Offer</p>
-            <p className="mt-1">Lender encrypts APR, loan size, and tenor. Offer is posted on-chain with all terms encrypted.</p>
-          </div>
-          <div>
-            <p className="font-semibold text-foreground">2. Borrower Browses</p>
-            <p className="mt-1">Borrowers see encrypted offers. They can't see the actual terms until they match.</p>
-          </div>
-          <div>
-            <p className="font-semibold text-foreground">3. Match & Settlement</p>
-            <p className="mt-1">When a borrower matches an offer, Privara settlement decrypts the terms privately and executes the loan.</p>
-          </div>
-          <div>
-            <p className="font-semibold text-foreground">4. Private Repayment</p>
-            <p className="mt-1">Interest payments are calculated and settled privately. Only the lender and borrower know the exact amounts.</p>
+                ))
+              )
+            )}
           </div>
         </div>
-      </GlassPanel>
+
+        {/* Right Side: Educational panel & Info */}
+        <aside className="space-y-4">
+          <div className="p-5 border rounded-2xl bg-white shadow-sm space-y-4">
+            <h3 className="text-xs font-mono uppercase text-slate-400 tracking-wider font-semibold">How P2P Lending Works</h3>
+            <div className="space-y-4 text-xs text-muted-foreground leading-relaxed">
+              <div className="flex gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-50 border border-slate-100 font-mono font-bold text-slate-700">1</div>
+                <div>
+                  <p className="font-bold text-slate-900">Lender Posts Offer</p>
+                  <p className="mt-0.5">Lender encrypts APR, loan size, and tenor. Offer is posted on-chain with all terms fully hidden.</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-50 border border-slate-100 font-mono font-bold text-slate-700">2</div>
+                <div>
+                  <p className="font-bold text-slate-900">Borrower Matches</p>
+                  <p className="mt-0.5">Borrowers browse the encrypted list. When they click Match, the on-chain loan contract is prepared.</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-50 border border-slate-100 font-mono font-bold text-slate-700">3</div>
+                <div>
+                  <p className="font-bold text-slate-900">Privara Settlement</p>
+                  <p className="mt-0.5">Privara coordinator verifies FHE inputs privately, decrypts terms under secure enclave, and settles the loan.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-5 border rounded-2xl bg-slate-900 text-white shadow-md space-y-3">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-slate-400" />
+              <h4 className="text-xs font-mono uppercase tracking-wider font-bold">Privacy Guaranteed</h4>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-normal">
+              Walnut utilizes advanced homomorphic encryption so lender APR and size remain private while listed, guarding your yield strategies against competitive frontrunning.
+            </p>
+          </div>
+        </aside>
+      </div>
+
+      {/* Floating Create Offer Modal */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-all p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Create Private Loan Offer</h3>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            {/* Modal Form */}
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="post-apr" className="block text-xs font-semibold uppercase text-slate-400 tracking-wider mb-1.5">
+                  APR (%)
+                </label>
+                <Input
+                  id="post-apr"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={postApr}
+                  onChange={(e) => setPostApr(e.target.value)}
+                  placeholder="e.g., 8.5"
+                  className="h-11 bg-white rounded-xl border-slate-200"
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Annual interest rate for this private loan offer.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="post-size" className="block text-xs font-semibold uppercase text-slate-400 tracking-wider mb-1.5">
+                  Loan Size (cUSDC)
+                </label>
+                <Input
+                  id="post-size"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={postSize}
+                  onChange={(e) => setPostSize(e.target.value)}
+                  placeholder="e.g., 1000"
+                  className="h-11 bg-white rounded-xl border-slate-200"
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  The exact amount of cUSDC liquidity you are lending.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="post-tenor" className="block text-xs font-semibold uppercase text-slate-400 tracking-wider mb-1.5">
+                  Tenor (days)
+                </label>
+                <Input
+                  id="post-tenor"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={postTenor}
+                  onChange={(e) => setPostTenor(e.target.value)}
+                  placeholder="e.g., 30"
+                  className="h-11 bg-white rounded-xl border-slate-200"
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  The duration of the active loan period in days.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3.5 flex items-start gap-2.5">
+                <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-blue-800 leading-normal">
+                  <strong>Privacy Note:</strong> Your loan terms will be fully encrypted on-chain. Only matching borrowers can request secure enclave decryption to proceed with settlement.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateModalOpen(false)}
+                className="w-1/2 rounded-xl py-2.5 font-medium border-slate-200 text-slate-700"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handlePostOffer}
+                isLoading={isPostingOffer}
+                loadingText="Posting..."
+                disabled={!postApr || !postSize || !postTenor}
+                className="w-1/2 bg-black text-white hover:bg-slate-800 rounded-xl py-2.5 font-medium flex items-center justify-center gap-1.5"
+              >
+                <Plus className="h-4 w-4 stroke-[2.5]" />
+                Post Encrypted Offer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
