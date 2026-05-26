@@ -32,6 +32,7 @@ export default function BorrowPage() {
   const [amount, setAmount] = useState("");
   const [showDecrypted, setShowDecrypted] = useState(false);
   const [borrowInFlight, setBorrowInFlight] = useState(false);
+  const [isRevealingDebt, setIsRevealingDebt] = useState(false);
   const protocol = useWalnutProtocol();
   const { refreshBalances } = useTokenBalances();
 
@@ -52,45 +53,54 @@ export default function BorrowPage() {
   const projectedDebt = useMemo(() => currentDebtBigint + typedAmount, [currentDebtBigint, typedAmount]);
   const amountNumber = Number(typedAmount);
   const newDebt = currentDebt + amountNumber;
-  
+
   const creditTier = typeof protocol.creditTier === "bigint" ? Number(protocol.creditTier) : 0;
-  const tierLtvBps = typeof protocol.tierLTV === "bigint" ? Number(protocol.tierLTV) : 7000; // Default to 70%
-  const tierLtvPercent = tierLtvBps / 100; // Convert basis points to percentage
-  
+  const tierLtvBps = typeof protocol.tierLTV === "bigint" ? Number(protocol.tierLTV) : 7000;
+  const tierLtvPercent = tierLtvBps / 100;
+
   const maxBorrowAmount = useMemo(() => {
     if (collateral <= 0) return 0;
     return Math.floor((collateral * tierLtvBps) / 10000);
   }, [collateral, tierLtvBps]);
-  
+
   const ltvRatio = collateral > 0 ? Math.min(999, (newDebt / collateral) * 100) : 0;
   const canRenderRiskPreview = showDecrypted && protocol.canRead && !protocol.debtDecrypting && collateral > 0;
   const previewLtv = canRenderRiskPreview ? `${ltvRatio.toFixed(2)}%` : HIDDEN_PREVIEW;
-  
-  // Industry standard health factor: (collateral × 10000) / debt
-  // This matches the dashboard calculation and WalnutLending contract logic.
+
   const previewHealthFactor = useMemo(() => {
     if (!canRenderRiskPreview || newDebt <= 0) return HIDDEN_PREVIEW;
     const healthFactorRaw = (collateral * 10000) / newDebt;
-    const healthFactorClamped = Math.min(healthFactorRaw, 100000); // Cap at 10.0
+    const healthFactorClamped = Math.min(healthFactorRaw, 100000);
     return (healthFactorClamped / 10000).toFixed(2);
   }, [canRenderRiskPreview, collateral, newDebt]);
-  
+
   const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvPercent : false;
-  
   const exceedsMaxBorrow = amountNumber > maxBorrowAmount;
   const borrowAprPercent = typeof protocol.currentBorrowRate === "bigint"
     ? Number(protocol.currentBorrowRate) / 100
     : 6;
 
+  // Active loans summary
+  const activeLoanCount = protocol.activeLoans.length;
+  const totalDebtUSDC = formatUSDC(protocol.totalActivePrincipal);
+
+  const interestEstimates = useMemo(() => {
+    if (!typedAmount || typedAmount === 0n) {
+      return { days30: "0.00", days90: "0.00", year1: "0.00" };
+    }
+    const principal = Number(typedAmount) / 1_000_000;
+    const aprDecimal = borrowAprPercent / 100;
+    return {
+      days30: (principal * aprDecimal * (30 / 365)).toFixed(2),
+      days90: (principal * aprDecimal * (90 / 365)).toFixed(2),
+      year1:  (principal * aprDecimal).toFixed(2),
+    };
+  }, [typedAmount, borrowAprPercent]);
+
   const debtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return HIDDEN_VALUE;
-    if (protocol.debtDecrypting && typeof protocol.debt.decrypted.data === "undefined") {
-      // Only show "Loading..." if we don't have any previous value
-      return "Loading...";
-    }
-    if (typeof protocol.debt.decrypted.data === "bigint") {
-      return formatUSDC(protocol.debt.decrypted.data);
-    }
+    if (protocol.debtDecrypting && typeof protocol.debt.decrypted.data === "undefined") return "Loading...";
+    if (typeof protocol.debt.decrypted.data === "bigint") return formatUSDC(protocol.debt.decrypted.data);
     return "0.00";
   }, [protocol.canRead, protocol.debt.decrypted.data, protocol.debtDecrypting, showDecrypted]);
 
@@ -102,20 +112,30 @@ export default function BorrowPage() {
       const success = await protocol.submitEncryptedAmount("borrow", amount);
       if (success) {
         setAmount("");
-        // Refresh cUSDC balance after a confirmed borrow.
         await refreshBalances();
+        void protocol.refetchActiveLoans();
       }
     } finally {
       setBorrowInFlight(false);
     }
   }
 
+  async function handleToggleDebt() {
+    const next = !showDecrypted;
+    setShowDecrypted(next);
+    if (next && protocol.canRead) {
+      setIsRevealingDebt(true);
+      try {
+        await protocol.debt.decrypted.refetch();
+      } finally {
+        setIsRevealingDebt(false);
+      }
+    }
+  }
+
   const projectedDebtLabel = useMemo(() => {
     if (!protocol.canRead || !showDecrypted) return HIDDEN_VALUE;
-    if (protocol.debtDecrypting && typeof protocol.debt.decrypted.data === "undefined") {
-      // Only show "Loading..." if we don't have any previous value
-      return "Loading...";
-    }
+    if (protocol.debtDecrypting && typeof protocol.debt.decrypted.data === "undefined") return "Loading...";
     return formatUSDC(projectedDebt);
   }, [projectedDebt, protocol.canRead, protocol.debtDecrypting, showDecrypted, protocol.debt.decrypted.data]);
 
@@ -127,6 +147,17 @@ export default function BorrowPage() {
       </header>
 
       <ProtocolAlerts protocol={protocol} />
+
+      {/* Active loans banner */}
+      {activeLoanCount > 0 && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          You have <strong>{activeLoanCount}</strong> active loan{activeLoanCount !== 1 ? "s" : ""}.
+          {protocol.totalActivePrincipal > 0n && (
+            <> Total principal: <strong>${totalDebtUSDC}</strong> cUSDC.</>
+          )}
+          {" "}You can continue borrowing as long as collateral covers your total debt (LTV enforced by the protocol).
+        </div>
+      )}
 
       <div className="border rounded-lg p-4">
         <div className="grid gap-4 items-start md:grid-cols-[1.7fr_1.1fr]">
@@ -183,9 +214,19 @@ export default function BorrowPage() {
             )}
 
             <div className="max-w-[60%] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground mb-2">
                 {`Your credit tier ${creditTier} allows up to ${tierLtvPercent.toFixed(2)}% LTV at ${borrowAprPercent.toFixed(2)}% APR.`}
               </p>
+              {typedAmount > 0n && (
+                <div className="text-xs text-slate-600 mt-2 pt-2 border-t border-slate-200">
+                  <div className="font-semibold mb-1">Interest Estimates:</div>
+                  <div className="space-y-0.5">
+                    <div>30 days: ~${interestEstimates.days30}</div>
+                    <div>90 days: ~${interestEstimates.days90}</div>
+                    <div>1 year: ~${interestEstimates.year1}</div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -212,8 +253,8 @@ export default function BorrowPage() {
               <Button
                 variant="outline"
                 className="px-4 py-2"
-                onClick={() => setShowDecrypted((value) => !value)}
-                isLoading={pendingDecrypt}
+                onClick={handleToggleDebt}
+                isLoading={pendingDecrypt || isRevealingDebt}
                 loadingText="Decrypting..."
               >
                 <span className="inline-flex items-center gap-2 whitespace-nowrap">
@@ -268,6 +309,10 @@ export default function BorrowPage() {
                   <span className="font-mono text-foreground min-w-0 text-right truncate">
                     {canRenderRiskPreview ? `${formatUSDC(maxBorrowAmount)} cUSDC` : HIDDEN_VALUE}
                   </span>
+                </div>
+                <div className="flex justify-between items-center text-sm min-w-0">
+                  <span className="text-muted-foreground">Active Loans:</span>
+                  <span className="font-mono text-foreground min-w-0 text-right truncate">{activeLoanCount}</span>
                 </div>
               </div>
             </div>
