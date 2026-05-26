@@ -28,7 +28,7 @@ export const walnutRpcUrl = requirePublicEnv(
 
 export const walnutContractAddress = requirePublicEnv(
   "NEXT_PUBLIC_WALNUT_LENDING_ADDRESS",
-  process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS
+  process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS
 ) as Address;
 
 export const walnutLendingAbi = walnutLendingArtifact.abi as Abi;

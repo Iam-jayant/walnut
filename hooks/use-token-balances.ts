@@ -6,9 +6,10 @@ import type { Address } from "viem";
 import { useCofheClient } from "@cofhe/react";
 import { FheTypes } from "@cofhe/sdk";
 import { useWalnutPermit } from "@/components/walnut/permit-provider";
+import { debugError } from "@/lib/debug";
 
 // Contract addresses from environment
-const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as Address;
+const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as Address;
 const FHERC20_ADDRESS = process.env.NEXT_PUBLIC_FHERC20_ADDRESS as Address;
 const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
@@ -68,14 +69,17 @@ const FHERC20_ABI = [
 // WalnutLending ABI (minimal)
 const WALNUT_LENDING_ABI = [
   {
-    inputs: [
-      { name: "", type: "address" },
-      { name: "", type: "uint256" },
-    ],
-    name: "vaults",
+    inputs: [{ name: "user", type: "address" }],
+    name: "getVaults",
     outputs: [
-      { name: "token", type: "address" },
-      { name: "amount", type: "uint256" },
+      {
+        name: "",
+        type: "tuple[]",
+        components: [
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint256" },
+        ],
+      },
     ],
     stateMutability: "view",
     type: "function",
@@ -257,7 +261,7 @@ export function useTokenBalances() {
             usdValueError,
           });
         } catch (error) {
-          console.error(`Failed to fetch balance for ${token.symbol}:`, error);
+          debugError(`Failed to fetch balance for ${token.symbol}:`, error);
         }
       }
 
@@ -283,62 +287,59 @@ export function useTokenBalances() {
     let active = true;
 
     const fetchVaultHoldings = async () => {
-      const amountsByToken = new Map<string, bigint>();
-      const tokenAddressByKey = new Map<string, Address>();
+      try {
+        // Use getVaults to fetch all vault holdings at once
+        const vaultData = await publicClient.readContract({
+          address: WALNUT_LENDING_ADDRESS,
+          abi: WALNUT_LENDING_ABI,
+          functionName: "getVaults",
+          args: [account.address!],
+        });
 
-      for (let i = 0; i < 50; i++) {
-        try {
-          const [token, amount] = await publicClient.readContract({
-            address: WALNUT_LENDING_ADDRESS,
-            abi: WALNUT_LENDING_ABI,
-            functionName: "vaults",
-            args: [account.address!, BigInt(i)],
-          });
-
-          // If token is zero address, we've reached the end
-          if (token === "0x0000000000000000000000000000000000000000" || amount === 0n) {
-            break;
-          }
-
-          const tokenKey = token.toLowerCase();
-          amountsByToken.set(tokenKey, (amountsByToken.get(tokenKey) ?? 0n) + amount);
-          tokenAddressByKey.set(tokenKey, token);
-        } catch (error) {
-          // No more vault holdings
-          break;
+        // Aggregate amounts by token address
+        const amountsByToken = new Map<string, bigint>();
+        for (const vault of vaultData) {
+          const tokenKey = vault.token.toLowerCase();
+          amountsByToken.set(tokenKey, (amountsByToken.get(tokenKey) ?? 0n) + vault.amount);
         }
-      }
 
-      const holdings = await Promise.all(
-        SUPPORTED_TOKENS.map(async (tokenInfo) => {
-          const tokenKey = tokenInfo.address.toLowerCase();
-          const amount = amountsByToken.get(tokenKey) ?? 0n;
-          if (amount <= 0n) return null;
+        // Build holdings array with token info and USD values
+        const holdings = await Promise.all(
+          SUPPORTED_TOKENS.map(async (tokenInfo) => {
+            const tokenKey = tokenInfo.address.toLowerCase();
+            const amount = amountsByToken.get(tokenKey) ?? 0n;
+            if (amount <= 0n) return null;
 
-          let usdValue: bigint | undefined;
-          try {
-            usdValue = await publicClient.readContract({
-              address: ORACLE_ADDRESS,
-              abi: ORACLE_ABI,
-              functionName: "getUSDValue",
-              args: [tokenInfo.address, amount],
-            });
-          } catch (error) {
-            console.error(`Failed to fetch USD value for vault holding:`, error);
-          }
+            let usdValue: bigint | undefined;
+            try {
+              usdValue = await publicClient.readContract({
+                address: ORACLE_ADDRESS,
+                abi: ORACLE_ABI,
+                functionName: "getUSDValue",
+                args: [tokenInfo.address, amount],
+              });
+            } catch (error) {
+              debugError(`Failed to fetch USD value for vault holding:`, error);
+            }
 
-          return {
-            token: tokenAddressByKey.get(tokenKey) ?? tokenInfo.address,
-            amount,
-            symbol: tokenInfo.symbol,
-            decimals: tokenInfo.decimals,
-            usdValue,
-          } satisfies VaultHolding;
-        })
-      );
+            return {
+              token: tokenInfo.address,
+              amount,
+              symbol: tokenInfo.symbol,
+              decimals: tokenInfo.decimals,
+              usdValue,
+            } satisfies VaultHolding;
+          })
+        );
 
-      if (active) {
-        setVaultHoldings(holdings.filter((holding): holding is VaultHolding => holding !== null));
+        if (active) {
+          setVaultHoldings(holdings.filter((holding): holding is VaultHolding => holding !== null));
+        }
+      } catch (error) {
+        debugError("Failed to fetch vault holdings:", error);
+        if (active) {
+          setVaultHoldings([]);
+        }
       }
     };
 

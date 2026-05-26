@@ -4,7 +4,7 @@
       "inputs": [
         {
           "internalType": "address",
-          "name": "_wUSDC",
+          "name": "_cUSDC",
           "type": "address"
         },
         {
@@ -824,7 +824,7 @@
     },
     {
       "inputs": [],
-      "name": "wUSDC",
+      "name": "cUSDC",
       "outputs": [
         {
           "internalType": "contract IWalnutFHERC20",
