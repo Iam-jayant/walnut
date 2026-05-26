@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Layers, ArrowLeftRight, Clock, Settings, ShieldCheck, Activity, Users, ChevronDown, Droplet, HandCoins } from "lucide-react";
+import { LayoutGrid, Layers, ArrowLeftRight, Clock, Settings, ShieldCheck, Activity, Users, ChevronDown, Droplet, HandCoins, Wallet } from "lucide-react";
 import { useAccountModal, useConnectModal } from "@rainbow-me/rainbowkit";
 import { useAccount } from "wagmi";
 import { useState } from "react";
@@ -35,6 +35,7 @@ const navigationItems: NavItem[] = [
   },
   { label: "Liquidation", href: "/app/liquidation", icon: ShieldCheck },
   { label: "P2P", href: "/app/p2p", icon: Users },
+  { label: "ENS Aggregation", href: "/app/ens", icon: Wallet },
   { label: "History", href: "/app/history", icon: Clock },
   { label: "Settings", href: "/app/settings", icon: Settings },
 ];

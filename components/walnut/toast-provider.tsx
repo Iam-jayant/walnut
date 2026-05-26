@@ -1,16 +1,17 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-type ToastVariant = "success" | "error" | "pending";
+export type ToastVariant = "success" | "error" | "pending";
 
 type ToastItem = {
   id: string;
   message: string;
   variant: ToastVariant;
+  durationMs?: number;
 };
 
 type ToastContextValue = {
@@ -28,8 +29,14 @@ function variantClasses(variant: ToastVariant) {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timersRef = useRef(new Map<string, number>());
 
   const removeToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
@@ -40,8 +47,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
       setToasts((current) => [nextToast, ...current].slice(0, 4));
 
-      if (toast.variant === "success") {
-        window.setTimeout(() => removeToast(id), 3000);
+      const durationMs =
+        toast.durationMs ??
+        (toast.variant === "success" ? 4500 : toast.variant === "pending" ? 7000 : 9000);
+
+      if (durationMs > 0) {
+        const timer = window.setTimeout(() => removeToast(id), durationMs);
+        timersRef.current.set(id, timer);
       }
 
       return id;
@@ -49,17 +61,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [removeToast]
   );
 
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach((timer) => window.clearTimeout(timer));
+      timersRef.current.clear();
+    };
+  }, []);
+
   const value = useMemo(() => ({ addToast, removeToast }), [addToast, removeToast]);
 
   return (
-    <ToastContext.Provider value={value}>
-      {children}
-      <div className="fixed bottom-5 right-5 z-50 flex w-[min(360px,90vw)] flex-col gap-3">
+      <ToastContext.Provider value={value}>
+        {children}
+      <div className="fixed bottom-5 left-1/2 z-50 flex w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-3">
         {toasts.map((toast) => (
           <div
             key={toast.id}
+            role="status"
             className={cn(
-              "flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-lg",
+              "flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur",
               variantClasses(toast.variant)
             )}
           >
