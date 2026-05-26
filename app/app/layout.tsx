@@ -18,7 +18,7 @@ function AppLayoutContent({ children }: { children: ReactNode }) {
   return (
     <div className="relative min-h-screen bg-[#FDFDFD]">
       {showSidebar && <SidebarNav />}
-      <main className={`relative z-10 min-h-screen ${showSidebar ? 'ml-64 border-l border-[#EFEFEF]' : ''} bg-[#FFFFFF] px-8 py-8 shadow-sm`}>
+      <main className={`relative min-h-screen ${showSidebar ? 'ml-64 border-l border-[#EFEFEF]' : ''} bg-[#FFFFFF] px-8 py-8 shadow-sm`}>
         <div className="mx-auto w-full max-w-7xl">
           {children}
         </div>

@@ -61,6 +61,7 @@ export default function WalnutDashboardPage() {
   const [isRevealingValues, setIsRevealingValues] = useState(false);
   const [skipPermit, setSkipPermit] = useState(false);
   const [isCreatingPermit, setIsCreatingPermit] = useState(false);
+  const [showFaqModal, setShowFaqModal] = useState(false);
   const protocol = useWalnutProtocol();
   const tokenBalances = useTokenBalances();
   
@@ -213,9 +214,18 @@ export default function WalnutDashboardPage() {
     return Math.min(100, Number(scaled) / 100);
   }, [protocol.collateral.decrypted.data, protocol.debt.decrypted.data]);
   const poolUtilizationPercent = useMemo(() => {
-    if (typeof protocol.utilizationRate !== "bigint") return 0;
-    return Number(protocol.utilizationRate) / 100;
-  }, [protocol.utilizationRate]);
+    // Pool utilization = user's personal decrypted debt / total pool deposits (plain uint256).
+    // totalBorrowed from contract is FHE-encrypted (its .decrypted.data is a ciphertext handle,
+    // not a plaintext amount), so we use the user's own decrypted debt as a proxy instead.
+    // totalPoolCollateral.decrypted.data is totalDeposited - a plain uint256 (not FHE).
+    if (!showDecrypted || !protocol.canRead) return null; // null = hidden
+    const userDebt = protocol.debt?.decrypted?.data;
+    const deposited = protocol.totalPoolCollateral?.decrypted?.data;
+    if (typeof userDebt !== "bigint" || typeof deposited !== "bigint" || deposited <= 0n) return null;
+    // Use bigint arithmetic: userDebt * 10_000n / deposited gives basis points
+    const bps = (userDebt * 10_000n) / deposited;
+    return Math.min(100, Number(bps) / 100);
+  }, [showDecrypted, protocol.canRead, protocol.debt?.decrypted?.data, protocol.totalPoolCollateral?.decrypted?.data]);
 
   const readinessLabel = protocol.permit.isPermitInitializing 
     ? "Loading..." 
@@ -229,9 +239,12 @@ export default function WalnutDashboardPage() {
       : "walnut-chip-pending";
 
   const showKpiValues = showDecrypted && protocol.canRead;
-  // Utilization rate is NOT encrypted - always show it
-  const utilizationLabel = `${poolUtilizationPercent.toFixed(2)}%`;
-  const utilizationBarWidth = Math.max(8, poolUtilizationPercent);
+  // Utilization: null means hidden (toggle off or no decrypted data)
+  const utilizationLabel = poolUtilizationPercent === null ? ENCRYPTION_MASK : `${poolUtilizationPercent.toFixed(2)}%`;
+  // Only apply a min bar width when we actually have data
+  const utilizationBarWidth = (poolUtilizationPercent !== null && poolUtilizationPercent > 0)
+    ? Math.max(2, Math.min(100, poolUtilizationPercent))
+    : 0;
   const collateralMetric = showDecrypted ? collateralLabel : ENCRYPTION_MASK;
   const debtMetric = showDecrypted ? debtLabel : ENCRYPTION_MASK;
   const availableMetric = availableCollateralLabel; // Already handles showDecrypted internally
@@ -338,8 +351,7 @@ export default function WalnutDashboardPage() {
           <p className="text-[0.95rem] text-muted-foreground mt-2">One place for collateral, debt, health, and quick protocol actions.</p>
         </div>
         <div className="flex items-center gap-4 text-muted-foreground">
-          <Bell className="w-5 h-5 cursor-pointer hover:text-foreground transition-colors" />
-          <HelpCircle className="w-5 h-5 cursor-pointer hover:text-foreground transition-colors" />
+          <HelpCircle className="w-5 h-5 cursor-pointer hover:text-foreground transition-colors" onClick={() => setShowFaqModal(true)} />
         </div>
       </div>
 
@@ -393,26 +405,20 @@ export default function WalnutDashboardPage() {
                   : '$0.00'
               ) : ENCRYPTION_MASK}
             </div>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
-            </div>
+            <div className="h-5" />
           </div>
         </div>
         
         <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
           <div className="flex items-start justify-between mb-2">
-             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Total Borrowed</div>
+             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Your Debt</div>
           </div>
           <div>
             <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">
-              {showDecrypted ? (
-                typeof protocol.totalPoolDebt.decrypted.data === 'bigint' 
-                  ? `$${formatTokenAmount(protocol.totalPoolDebt.decrypted.data, 6)}` 
-                  : '$0.00'
-              ) : ENCRYPTION_MASK}
+              {debtMetric === ENCRYPTION_MASK || debtMetric === "Loading..." || debtMetric === "—" ? debtMetric : `$${debtMetric}`}
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
+              <span className="text-[10px] text-muted-foreground">FHE-encrypted on-chain</span>
             </div>
           </div>
         </div>
@@ -423,9 +429,7 @@ export default function WalnutDashboardPage() {
           </div>
           <div>
             <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{availableMetric === ENCRYPTION_MASK || availableMetric === "Loading..." || availableMetric === "—" ? availableMetric : `$${availableMetric}`}</div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] text-muted-foreground">Historical data unavailable</span>
-            </div>
+            <div className="h-5" />
           </div>
         </div>
         
@@ -435,21 +439,31 @@ export default function WalnutDashboardPage() {
           </div>
           <div>
             <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight mb-2">{utilizationLabel}</div>
-            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-1.5 flex">
-               <div className="bg-emerald-500 h-full rounded-l-full transition-all duration-1000" style={{ width: `${utilizationBarWidth}%` }} />
-            </div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${
-                utilizationBarWidth > 80 ? 'bg-red-400' :
-                utilizationBarWidth > 50 ? 'bg-amber-400' :
-                'bg-emerald-400'
-              }`} />
-              <span className="text-[11px] text-slate-500">
-                {utilizationBarWidth > 80 ? 'High' :
-                 utilizationBarWidth > 50 ? 'Moderate' :
-                 'Low'}
-              </span>
-            </div>
+            {poolUtilizationPercent !== null ? (
+              <>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-1.5 flex">
+                   <div className={`h-full rounded-l-full transition-all duration-1000 ${
+                     utilizationBarWidth > 80 ? 'bg-red-500' :
+                     utilizationBarWidth > 50 ? 'bg-amber-500' :
+                     'bg-emerald-500'
+                   }`} style={{ width: `${utilizationBarWidth}%` }} />
+                </div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <div className={`w-1.5 h-1.5 rounded-full ${
+                    utilizationBarWidth > 80 ? 'bg-red-400' :
+                    utilizationBarWidth > 50 ? 'bg-amber-400' :
+                    'bg-emerald-400'
+                  }`} />
+                  <span className="text-[11px] text-slate-500">
+                    {utilizationBarWidth > 80 ? 'High' :
+                     utilizationBarWidth > 50 ? 'Moderate' :
+                     'Low'}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="text-[11px] text-slate-400 mt-1">Reveal values to compute</div>
+            )}
           </div>
         </div>
       </div>
@@ -480,7 +494,9 @@ export default function WalnutDashboardPage() {
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-slate-900">{token.symbol}</div>
-                    <div className="text-[11px] text-slate-500">{token.decimals} decimals</div>
+                    <div className="text-[11px] text-slate-400">
+                      {token.symbol === 'USDC' ? 'USD Coin' : token.symbol === 'WETH' ? 'Wrapped Ether' : token.symbol === 'LINK' ? 'Chainlink Token' : 'Crypto Asset'}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -598,6 +614,74 @@ export default function WalnutDashboardPage() {
         </div>
       </div>
     </div>
+
+    {/* FAQ Modal */}
+    {showFaqModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100 flex flex-col max-h-[85vh] animate-in scale-in-95 duration-200">
+          <div className="p-6 border-b border-slate-100">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-indigo-500" />
+                About Walnut Protocol
+              </h2>
+              <button 
+                onClick={() => setShowFaqModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-md p-1 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Confidential Multi-Loan Lending on Fhenix Network</p>
+          </div>
+          
+          <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-600">
+            <div>
+              <h4 className="font-semibold text-slate-900 mb-1">🔒 Fully Homomorphic Encryption (FHE)</h4>
+              <p className="leading-relaxed">
+                Walnut leverages Fhenix's FHE Coprocessor to encrypt all positions. Your collateral balance, active debt, credit tiers, and borrow utilization ratios are encrypted on-chain. Nobody else can spy on your liquidation risks or financial positions!
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-slate-900 mb-1">🏦 Concurrent Multi-Loan System</h4>
+              <p className="leading-relaxed">
+                Unlike standard lending platforms that merge all borrowed funds into a single index, Walnut allows you to manage multiple distinct, isolated loans concurrently. Each loan has its own tracked principal, accrues interest separately, and can be repaid individually.
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-slate-900 mb-1">❤️ Loan Health Factor</h4>
+              <p className="leading-relaxed">
+                Your Health Factor measures the safety of your borrowed positions. It is computed as:
+                <code className="block bg-slate-50 p-2 rounded-lg font-mono text-[10px] my-1.5 text-slate-700 text-center">
+                  Health Factor = (Collateral USD * LTV) / Debt USD
+                </code>
+                If your Health Factor drops below <strong>1.0</strong>, the position becomes vulnerable to liquidation.
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-slate-900 mb-1">🚀 Getting Started</h4>
+              <p className="leading-relaxed">
+                1. <strong>Deposit</strong> mock USDC as collateral in the Vault.<br />
+                2. Visit the <strong>Borrow</strong> page to instantiate a new loan.<br />
+                3. Repay your loans via the <strong>Repay</strong> studio to secure your collateral.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+            <button 
+              onClick={() => setShowFaqModal(false)}
+              className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition-colors"
+            >
+              Got it, thanks!
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

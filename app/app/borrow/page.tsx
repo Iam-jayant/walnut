@@ -76,9 +76,20 @@ export default function BorrowPage() {
 
   const exceedsLTV = canRenderRiskPreview ? ltvRatio > tierLtvPercent : false;
   const exceedsMaxBorrow = amountNumber > maxBorrowAmount;
-  const borrowAprPercent = typeof protocol.currentBorrowRate === "bigint"
-    ? Number(protocol.currentBorrowRate) / 100
-    : 6;
+  // currentBorrowRate() on-chain is broken: it multiplies by totalBorrowed which is an FHE
+  // ciphertext handle, producing garbage (e.g. 2.95e+30%). We replicate the contract formula
+  // client-side: rate = 600 + (userDebt * 600 / totalDeposited) in basis points, / 100 for %.
+  // Falls back to 6% base rate when values aren't available.
+  const borrowAprPercent = useMemo(() => {
+    const userDebt = protocol.debt?.decrypted?.data;
+    const deposited = protocol.totalPoolCollateral?.decrypted?.data;
+    if (typeof userDebt === "bigint" && typeof deposited === "bigint" && deposited > 0n) {
+      const bps = 600n + (userDebt * 600n) / deposited;
+      const pct = Number(bps) / 100;
+      return pct > 0 && pct < 1000 ? pct : 6;
+    }
+    return 6; // base rate: 6% APR
+  }, [protocol.debt?.decrypted?.data, protocol.totalPoolCollateral?.decrypted?.data]);
 
   // Active loans summary
   const activeLoanCount = protocol.activeLoans.length;
