@@ -145,11 +145,11 @@ async function main() {
   console.log("CHECK 5: Contract Configuration");
   console.log("-----------------------------------");
   try {
-    const wUSDC = await walnutV2.wUSDC();
+    const cUSDC = await walnutV2.cUSDC();
     const oracleAddr = await walnutV2.oracle();
     const treasury = await walnutV2.treasury();
     
-    console.log("wUSDC address:", wUSDC);
+    console.log("cUSDC address:", cUSDC);
     console.log("Oracle address:", oracleAddr);
     console.log("Treasury address:", treasury);
     

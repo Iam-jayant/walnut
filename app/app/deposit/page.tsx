@@ -17,7 +17,7 @@ const targetChainName =
   wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
   `Chain ${walnutChainId}`;
 
-const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as Address;
+const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as Address;
 const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
 const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 
@@ -31,7 +31,7 @@ function TokenBadge({ symbol, name }: { symbol: string; name?: string }) {
   // Reuse same token images as the dashboard (CoinGecko CDN), fallback to local /tokens/{symbol}.png
   const TOKEN_IMAGES: Record<string, string> = {
     USDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
-    wUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
+    cUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
     WETH: "https://assets.coingecko.com/coins/images/2518/standard/weth.png",
     LINK: "https://assets.coingecko.com/coins/images/877/large/chainlink.png",
   };
@@ -189,13 +189,31 @@ export default function DepositPage() {
       if (needsApproval) {
         setDepositStep('approve_pending');
         setErrorMessage(null);
+        
+        let approveGasLimit;
+        try {
+          const estimatedGas = await publicClient?.estimateContractGas({
+            address: selectedToken as `0x${string}`,
+            abi: ERC20_ABI,
+            functionName: 'approve',
+            args: [WALNUT_LENDING_ADDRESS, parsedAmount],
+            account: account.address,
+          });
+          if (estimatedGas) {
+            approveGasLimit = (estimatedGas * 130n) / 100n; // 30% buffer
+          }
+        } catch (e) {
+          console.warn("Approve gas estimation failed", e);
+        }
+
         const approveHash = await approveAsync({ 
           address: selectedToken, 
           abi: ERC20_ABI, 
           functionName: 'approve', 
           args: [WALNUT_LENDING_ADDRESS, parsedAmount],
           maxFeePerGas,
-          maxPriorityFeePerGas
+          maxPriorityFeePerGas,
+          gas: approveGasLimit
         });
         setApproveTxHash(approveHash);
         addToast({ variant: 'pending', message: 'Approving tokens...' });
@@ -208,13 +226,33 @@ export default function DepositPage() {
       }
 
       setDepositStep('deposit_pending');
+      
+      let depositGasLimit;
+      try {
+        const estimatedGas = await publicClient?.estimateContractGas({
+          address: WALNUT_LENDING_ADDRESS,
+          abi: WALNUT_V2_ABI,
+          functionName: 'deposit',
+          args: [selectedToken, parsedAmount],
+          account: account.address,
+        });
+        if (estimatedGas) {
+          depositGasLimit = (estimatedGas * 130n) / 100n; // 30% buffer
+        }
+      } catch (e) {
+        console.warn("Deposit gas estimation failed", e);
+        // Fallback to a very high safe value for FHE transactions if estimation reverts completely
+        depositGasLimit = 15000000n;
+      }
+
       const hash = await depositAsync({ 
         address: WALNUT_LENDING_ADDRESS, 
         abi: WALNUT_V2_ABI, 
         functionName: 'deposit', 
         args: [selectedToken, parsedAmount],
         maxFeePerGas,
-        maxPriorityFeePerGas
+        maxPriorityFeePerGas,
+        gas: depositGasLimit
       });
       setDepositTxHash(hash);
       addToast({ variant: 'pending', message: 'Deposit submitted...' });
