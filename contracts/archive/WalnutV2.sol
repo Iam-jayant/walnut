@@ -20,7 +20,7 @@ interface IWalnutPriceOracle {
 contract WalnutV2 {
     using SafeERC20 for IERC20;
 
-    IWalnutFHERC20 public immutable wUSDC;
+    IWalnutFHERC20 public immutable cUSDC;
     IWalnutPriceOracle public immutable oracle;
     address public immutable treasury;
     
@@ -76,15 +76,15 @@ contract WalnutV2 {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     
     constructor(
-        address _wUSDC,
+        address _cUSDC,
         address _oracle,
         address _treasury
     ) {
-        require(_wUSDC != address(0), "Invalid wUSDC");
+        require(_cUSDC != address(0), "Invalid cUSDC");
         require(_oracle != address(0), "Invalid oracle");
         require(_treasury != address(0), "Invalid treasury");
         
-        wUSDC = IWalnutFHERC20(_wUSDC);
+        cUSDC = IWalnutFHERC20(_cUSDC);
         oracle = IWalnutPriceOracle(_oracle);
         treasury = _treasury;
         
@@ -188,9 +188,9 @@ contract WalnutV2 {
         _debt[msg.sender] = updatedDebt;
         euint128 mintAmount = FHE.select(withinLimit, amount, FHE.asEuint128(0));
         FHE.allowThis(mintAmount);
-        FHE.allow(mintAmount, address(wUSDC));
+        FHE.allow(mintAmount, address(cUSDC));
         
-        wUSDC.mintInternal(msg.sender, mintAmount);
+        cUSDC.mintInternal(msg.sender, mintAmount);
         borrowTimestamp[msg.sender] = block.timestamp;
         FHE.allow(_debt[msg.sender], msg.sender);
         emit BorrowSubmitted(msg.sender, block.timestamp);
@@ -251,8 +251,8 @@ contract WalnutV2 {
         
         euint128 burnAmount = FHE.select(sufficient, requiredAmount, FHE.asEuint128(0));
         FHE.allowThis(burnAmount);
-        FHE.allow(burnAmount, address(wUSDC));
-        wUSDC.burnInternal(msg.sender, burnAmount);
+        FHE.allow(burnAmount, address(cUSDC));
+        cUSDC.burnInternal(msg.sender, burnAmount);
         FHE.allow(_debt[msg.sender], msg.sender);
         FHE.allow(_repaymentCount[msg.sender], msg.sender);
         emit RepaymentSettlementIntent(
