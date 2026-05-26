@@ -1,17 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Gavel, Clock, TrendingDown, AlertTriangle, CheckCircle } from "lucide-react";
+import { Gavel, Clock, TrendingDown, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { parseAbi, formatUnits } from "viem";
+import { parseAbi } from "viem";
 
 import { Button } from "@/components/ui/button";
-import { GlassPanel } from "@/components/walnut/glass-panel";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { useToast } from "@/components/walnut/toast-provider";
 
-const WALNUT_LENDING_ADDRESS = (process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS ?? process.env.NEXT_PUBLIC_V2_CONTRACT_ADDRESS) as `0x${string}`;
-
-const AUCTION_DURATION = 10 * 60; // 10 minutes in seconds
+const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as `0x${string}`;
 
 type LiquidatablePosition = {
   borrower: string;
@@ -33,6 +31,7 @@ export default function LiquidationPage() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  const { addToast } = useToast();
 
   const [liquidatablePositions, setLiquidatablePositions] = useState<LiquidatablePosition[]>([]);
   const [activeAuctions, setActiveAuctions] = useState<AuctionStatus[]>([]);
@@ -42,7 +41,6 @@ export default function LiquidationPage() {
   const [isOpeningAuction, setIsOpeningAuction] = useState(false);
   const [isSubmittingBid, setIsSubmittingBid] = useState(false);
   const [isSelectingWinner, setIsSelectingWinner] = useState(false);
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   // Fetch liquidatable positions from events
   useEffect(() => {
@@ -50,11 +48,13 @@ export default function LiquidationPage() {
 
     const fetchLiquidatablePositions = async () => {
       try {
+        const latestBlock = await publicClient.getBlockNumber();
+        const fromBlock = latestBlock > 120_000n ? latestBlock - 120_000n : 0n;
         const logs = await publicClient.getLogs({
           address: WALNUT_LENDING_ADDRESS as `0x${string}`,
           event: parseAbi(["event LiquidationTriggered(address indexed user)"])[0],
-          fromBlock: "earliest",
-          toBlock: "latest",
+          fromBlock,
+          toBlock: latestBlock,
         });
 
         const positions: LiquidatablePosition[] = [];
@@ -96,11 +96,13 @@ export default function LiquidationPage() {
 
     const fetchActiveAuctions = async () => {
       try {
+        const latestBlock = await publicClient.getBlockNumber();
+        const fromBlock = latestBlock > 120_000n ? latestBlock - 120_000n : 0n;
         const logs = await publicClient.getLogs({
           address: WALNUT_LENDING_ADDRESS as `0x${string}`,
           event: parseAbi(["event AuctionOpened(address indexed borrower, uint256 endTime)"])[0],
-          fromBlock: "earliest",
-          toBlock: "latest",
+          fromBlock,
+          toBlock: latestBlock,
         });
 
         const auctions: AuctionStatus[] = [];
@@ -146,14 +148,16 @@ export default function LiquidationPage() {
 
     const fetchMyBids = async () => {
       try {
+        const latestBlock = await publicClient.getBlockNumber();
+        const fromBlock = latestBlock > 120_000n ? latestBlock - 120_000n : 0n;
         const logs = await publicClient.getLogs({
           address: WALNUT_LENDING_ADDRESS as `0x${string}`,
           event: parseAbi(["event BidSubmitted(address indexed borrower, address indexed bidder)"])[0],
           args: {
             bidder: address,
           },
-          fromBlock: "earliest",
-          toBlock: "latest",
+          fromBlock,
+          toBlock: latestBlock,
         });
 
         const bids = logs.map((log) => ({
@@ -175,6 +179,7 @@ export default function LiquidationPage() {
 
     setIsOpeningAuction(true);
     try {
+      addToast({ variant: "pending", message: "Opening private auction..." });
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
         abi: parseAbi(["function openAuction(address borrower) external"]),
@@ -183,10 +188,10 @@ export default function LiquidationPage() {
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
-      alert("Auction opened successfully!");
+      addToast({ variant: "success", message: "Auction opened successfully!" });
     } catch (error) {
       console.error("Error opening auction:", error);
-      alert("Failed to open auction");
+      addToast({ variant: "error", message: "Failed to open auction" });
     } finally {
       setIsOpeningAuction(false);
     }
@@ -197,6 +202,7 @@ export default function LiquidationPage() {
 
     setIsSubmittingBid(true);
     try {
+      addToast({ variant: "pending", message: "Encrypting bid & preparing transaction..." });
       // Encrypt the bid amount (penalty in basis points)
       const penaltyBps = Math.floor(parseFloat(bidAmount) * 100); // Convert percentage to basis points
       
@@ -214,13 +220,15 @@ export default function LiquidationPage() {
         args: [selectedBorrower as `0x${string}`, encryptedPenalty as any],
       });
 
+      addToast({ variant: "pending", message: "Submitting encrypted bid..." });
       await publicClient?.waitForTransactionReceipt({ hash });
-      alert("Bid submitted successfully!");
+      addToast({ variant: "success", message: "Bid submitted successfully!" });
+      
       setBidAmount("");
       setSelectedBorrower("");
     } catch (error) {
       console.error("Error submitting bid:", error);
-      alert("Failed to submit bid");
+      addToast({ variant: "error", message: "Failed to submit bid" });
     } finally {
       setIsSubmittingBid(false);
     }
@@ -231,6 +239,7 @@ export default function LiquidationPage() {
 
     setIsSelectingWinner(true);
     try {
+      addToast({ variant: "pending", message: "Initiating winner selection..." });
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
         abi: parseAbi(["function selectWinningBid(address borrower) external returns (uint256)"]),
@@ -239,10 +248,10 @@ export default function LiquidationPage() {
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
-      alert("Winner selection initiated! CoFHE will process the encrypted bids.");
+      addToast({ variant: "success", message: "Winner selection initiated! CoFHE processing encrypted bids." });
     } catch (error) {
       console.error("Error selecting winner:", error);
-      alert("Failed to select winner");
+      addToast({ variant: "error", message: "Failed to select winner" });
     } finally {
       setIsSelectingWinner(false);
     }
@@ -260,269 +269,274 @@ export default function LiquidationPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <GlassPanel className="walnut-hero">
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Sealed-Bid Liquidation Auctions</p>
-        <h1 className="mt-2 font-display text-3xl text-foreground">Private Liquidation System</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
+    <div className="p-6 space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Private Liquidation System</h1>
+        <p className="text-sm text-muted-foreground">
           Liquidators submit encrypted penalty bids. CoFHE selects the minimum bid in ciphertext. Only the winner is revealed.
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="walnut-status-chip walnut-chip-success">
-            <CheckCircle className="mr-1 h-3 w-3" />
-            Live on Testnet
-          </span>
-        </div>
-      </GlassPanel>
+      </header>
 
-      {/* Liquidatable Positions */}
-      <GlassPanel className="walnut-card walnut-card-strong p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h3 className="font-display text-xl text-foreground">Liquidatable Positions</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Positions with health factor below 1.05 threshold
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-muted-foreground">{liquidatablePositions.length} positions</span>
-          </div>
+      <div className="border rounded-lg p-4">
+        <div className="mb-3 text-sm font-medium flex items-center gap-1.5 text-slate-800">
+          <CheckCircle className="h-4 w-4 text-green-500" />
+          Status: Live on Testnet
         </div>
 
-        {liquidatablePositions.length === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center">
-            <TrendingDown className="mx-auto h-12 w-12 text-slate-400" />
-            <p className="mt-3 text-sm text-muted-foreground">No liquidatable positions at this time</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {liquidatablePositions.map((position) => (
-              <div
-                key={position.borrower}
-                className="rounded-lg border border-red-200 bg-red-50 p-4"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-red-600" />
-                      <p className="font-mono text-sm text-red-900">
-                        {position.borrower.slice(0, 6)}...{position.borrower.slice(-4)}
-                      </p>
-                    </div>
-                    <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-xs text-red-700">Health Factor</p>
-                        <p className="font-mono text-red-900">{position.healthFactor}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-red-700">Collateral</p>
-                        <p className="font-mono text-red-900">{position.collateral}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-red-700">Debt</p>
-                        <p className="font-mono text-red-900">{position.debt}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => handleOpenAuction(position.borrower)}
-                    isLoading={isOpeningAuction}
-                    loadingText="Opening..."
-                    className="bg-red-600 text-white hover:bg-red-700"
+        <div className="grid gap-4 md:grid-cols-3">
+          {/* Main Auction Section */}
+          <section className="md:col-span-2 space-y-4">
+            
+            {/* Liquidatable Positions List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="text-sm font-semibold text-slate-900">Liquidatable Positions</h3>
+                <span className="text-xs text-muted-foreground">{liquidatablePositions.length} positions</span>
+              </div>
+
+              {liquidatablePositions.length === 0 ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-6 text-center">
+                  <TrendingDown className="mx-auto h-8 w-8 text-slate-400" />
+                  <p className="mt-2 text-xs font-semibold text-slate-700">No liquidatable positions at this time</p>
+                </div>
+              ) : (
+                liquidatablePositions.map((position) => (
+                  <div
+                    key={position.borrower}
+                    className="rounded-lg border border-red-200 bg-red-50/30 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-fade-in"
                   >
-                    Open Auction
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                        <span className="font-mono text-sm font-semibold text-red-950">
+                          {position.borrower.slice(0, 8)}...{position.borrower.slice(-6)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-6 text-xs text-slate-700 pt-1.5">
+                        <div>
+                          <p className="text-[10px] uppercase font-mono text-muted-foreground">Health Factor</p>
+                          <p className="font-semibold text-red-700">{position.healthFactor}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-mono text-muted-foreground">Collateral</p>
+                          <p className="font-semibold font-mono">{position.collateral}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-mono text-muted-foreground">Debt</p>
+                          <p className="font-semibold font-mono">{position.debt}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => handleOpenAuction(position.borrower)}
+                      isLoading={isOpeningAuction}
+                      loadingText="Opening..."
+                      className="bg-red-600 text-white hover:bg-red-700 rounded-lg self-start md:self-center"
+                    >
+                      Open Auction
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Active Auctions List */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="text-sm font-semibold text-slate-900">Active Auctions</h3>
+                <span className="text-xs text-muted-foreground">{activeAuctions.length} auctions</span>
+              </div>
+
+              {activeAuctions.length === 0 ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-6 text-center">
+                  <Gavel className="mx-auto h-8 w-8 text-slate-400" />
+                  <p className="mt-2 text-xs font-semibold text-slate-700">No active auctions at this time</p>
+                </div>
+              ) : (
+                activeAuctions.map((auction) => {
+                  const timeRemaining = formatTimeRemaining(auction.endTime);
+                  const canSelectWinner = auction.endTime <= Math.floor(Date.now() / 1000) && !auction.settled;
+
+                  return (
+                    <div
+                      key={auction.borrower}
+                      className="rounded-lg border border-slate-200 bg-white p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm"
+                    >
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-slate-600" />
+                          <span className="font-mono text-sm font-semibold text-slate-900">
+                            {auction.borrower.slice(0, 8)}...{auction.borrower.slice(-6)}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-6 text-xs text-slate-700 pt-1.5">
+                          <div>
+                            <p className="text-[10px] uppercase font-mono text-muted-foreground">Time Remaining</p>
+                            <p className="font-semibold text-slate-800 font-mono">{timeRemaining}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-mono text-muted-foreground">Total Bids</p>
+                            <p className="font-semibold text-slate-800">{auction.bidCount}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-mono text-muted-foreground">Status</p>
+                            <p className="font-semibold text-slate-800">
+                              {auction.settled ? "Settled" : auction.active ? "Active" : "Ended"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 self-start md:self-center">
+                        {auction.active && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedBorrower(auction.borrower)}
+                            className="rounded-lg"
+                          >
+                            Submit Bid
+                          </Button>
+                        )}
+                        {canSelectWinner && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleSelectWinner(auction.borrower)}
+                            isLoading={isSelectingWinner}
+                            loadingText="Selecting..."
+                            className="bg-black text-white hover:bg-slate-900 rounded-lg"
+                          >
+                            Select Winner
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Bidding Panel */}
+            {selectedBorrower && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/20 p-5 space-y-4 max-w-md animate-fade-in">
+                <div className="flex items-center gap-1.5 border-b pb-2">
+                  <Gavel className="h-4 w-4 text-slate-800" />
+                  <h3 className="text-sm font-semibold text-slate-900">Submit Encrypted Bid</h3>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Target: <span className="font-mono text-slate-950 font-semibold">{selectedBorrower.slice(0, 10)}...{selectedBorrower.slice(-8)}</span>
+                </p>
+
+                <div>
+                  <label className="block text-xs font-mono uppercase text-muted-foreground mb-1">
+                    Liquidation Penalty (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="15"
+                    value={bidAmount}
+                    onChange={(e) => setBidAmount(e.target.value)}
+                    placeholder="e.g., 5.0"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-foreground focus:outline-none"
+                  />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Lower penalty increases chances to win. Standard range: 3-10%
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleSubmitBid}
+                    isLoading={isSubmittingBid}
+                    loadingText="Submitting..."
+                    disabled={!bidAmount || parseFloat(bidAmount) <= 0}
+                    className="bg-black text-white hover:bg-slate-900 rounded-lg text-xs"
+                  >
+                    Submit Encrypted Bid
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedBorrower("");
+                      setBidAmount("");
+                    }}
+                    className="rounded-lg text-xs"
+                  >
+                    Cancel
                   </Button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </GlassPanel>
+            )}
 
-      {/* Active Auctions */}
-      <GlassPanel className="walnut-card walnut-card-strong p-6">
-        <h3 className="font-display text-xl text-foreground mb-4">Active Auctions</h3>
-
-        {activeAuctions.length === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center">
-            <Gavel className="mx-auto h-12 w-12 text-slate-400" />
-            <p className="mt-3 text-sm text-muted-foreground">No active auctions</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {activeAuctions.map((auction) => {
-              const timeRemaining = formatTimeRemaining(auction.endTime);
-              const canSelectWinner = auction.endTime <= Math.floor(Date.now() / 1000) && !auction.settled;
-
-              return (
-                <div
-                  key={auction.borrower}
-                  className="rounded-lg border border-slate-200 bg-white p-4"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-accent" />
-                        <p className="font-mono text-sm text-foreground">
-                          {auction.borrower.slice(0, 6)}...{auction.borrower.slice(-4)}
-                        </p>
-                      </div>
-                      <div className="mt-2 flex gap-6 text-sm">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Time Remaining</p>
-                          <p className="font-mono text-foreground">{timeRemaining}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Bids</p>
-                          <p className="font-mono text-foreground">{auction.bidCount}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Status</p>
-                          <p className="font-mono text-foreground">
-                            {auction.settled ? "Settled" : auction.active ? "Active" : "Ended"}
-                          </p>
-                        </div>
-                      </div>
+            {/* Your Submitted Bids */}
+            {myBids.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <div className="border-b pb-2">
+                  <h3 className="text-sm font-semibold text-slate-900">Your Submitted Bids</h3>
+                </div>
+                <div className="space-y-1.5 max-w-md">
+                  {myBids.map((bid, index) => (
+                    <div
+                      key={index}
+                      className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 flex items-center justify-between shadow-sm"
+                    >
+                      <span className="font-mono text-xs text-slate-800">
+                        {bid.borrower.slice(0, 8)}...{bid.borrower.slice(-6)}
+                      </span>
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+                        Bid Encrypted ✅
+                      </span>
                     </div>
-                    <div className="flex gap-2">
-                      {auction.active && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedBorrower(auction.borrower)}
-                        >
-                          Submit Bid
-                        </Button>
-                      )}
-                      {canSelectWinner && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleSelectWinner(auction.borrower)}
-                          isLoading={isSelectingWinner}
-                          loadingText="Selecting..."
-                          className="bg-accent text-white"
-                        >
-                          Select Winner
-                        </Button>
-                      )}
-                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Right Sidebar Info */}
+          <aside className="space-y-3">
+            <div className="p-4 border rounded-lg bg-white shadow-sm space-y-4">
+              <div>
+                <p className="text-xs font-mono uppercase text-muted-foreground">System Thresholds</p>
+                <div className="mt-3 space-y-2 text-xs">
+                  <div className="flex justify-between border-b pb-1.5">
+                    <span className="text-muted-foreground">Liquidation Threshold</span>
+                    <span className="font-mono text-slate-900 font-semibold">HF &lt; 1.05</span>
+                  </div>
+                  <div className="flex justify-between border-b pb-1.5">
+                    <span className="text-muted-foreground">Auction Duration</span>
+                    <span className="font-mono text-slate-900 font-semibold">10 Minutes</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Winning Rule</span>
+                    <span className="font-mono text-slate-900 font-semibold">Minimum Penalty Bps</span>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </GlassPanel>
-
-      {/* Submit Bid Form */}
-      {selectedBorrower && (
-        <GlassPanel className="walnut-card walnut-card-strong p-6">
-          <h3 className="font-display text-xl text-foreground mb-4">Submit Encrypted Bid</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Bidding on: <span className="font-mono">{selectedBorrower.slice(0, 6)}...{selectedBorrower.slice(-4)}</span>
-          </p>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Liquidation Penalty (%)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="15"
-                value={bidAmount}
-                onChange={(e) => setBidAmount(e.target.value)}
-                placeholder="e.g., 5.0"
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-foreground"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Lower penalty = better chance to win. Typical range: 3-10%
-              </p>
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSubmitBid}
-                isLoading={isSubmittingBid}
-                loadingText="Submitting..."
-                disabled={!bidAmount || parseFloat(bidAmount) <= 0}
-                className="bg-black text-white hover:bg-slate-900"
-              >
-                Submit Encrypted Bid
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSelectedBorrower("");
-                  setBidAmount("");
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </GlassPanel>
-      )}
-
-      {/* My Bids */}
-      {myBids.length > 0 && (
-        <GlassPanel className="walnut-card walnut-card-strong p-6">
-          <h3 className="font-display text-xl text-foreground mb-4">Your Submitted Bids</h3>
-          <div className="space-y-2">
-            {myBids.map((bid, index) => (
-              <div
-                key={index}
-                className="rounded-lg border border-slate-200 bg-slate-50 p-3 flex items-center justify-between"
-              >
-                <p className="font-mono text-sm text-foreground">
-                  {bid.borrower.slice(0, 6)}...{bid.borrower.slice(-4)}
-                </p>
-                <span className="text-xs text-muted-foreground">Bid encrypted</span>
               </div>
-            ))}
-          </div>
-        </GlassPanel>
-      )}
+            </div>
 
-      {/* How It Works */}
-      <GlassPanel className="walnut-card p-6">
-        <button
-          onClick={() => setShowHowItWorks(!showHowItWorks)}
-          className="flex w-full items-center justify-between text-left"
-        >
-          <h3 className="font-display text-xl text-foreground">How Sealed-Bid Auctions Work</h3>
-          <span className="text-muted-foreground">{showHowItWorks ? "−" : "+"}</span>
-        </button>
-
-        {showHowItWorks && (
-          <div className="mt-4 space-y-4 text-sm text-muted-foreground">
-            <div>
-              <p className="font-semibold text-foreground">1. Position Becomes Liquidatable</p>
-              <p className="mt-1">When a borrower's health factor drops below 1.05, their position is marked as liquidatable.</p>
+            <div className="p-4 border rounded-lg bg-white shadow-sm space-y-3 text-sm">
+              <h3 className="text-xs font-mono uppercase text-muted-foreground font-semibold">How Sealed-Bid Auctions Work</h3>
+              <div className="space-y-3 text-xs text-muted-foreground leading-relaxed">
+                <div>
+                  <p className="font-semibold text-slate-950">1. Trigger & Open</p>
+                  <p className="mt-0.5">When HF falls below 1.05, position is liquidatable. Any liquidator can trigger a 10-minute auction.</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-950">2. Private Sealed Bidding</p>
+                  <p className="mt-0.5">Liquidators submit encrypted penalty bids. Bids are stored as private ciphertexts on-chain.</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-950">3. FHE Win Computation</p>
+                  <p className="mt-0.5">Upon ending, CoFHE processes the bids privately. It selects the minimum penalty and reveals *only* the winner address.</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="font-semibold text-foreground">2. Auction Opens</p>
-              <p className="mt-1">Any liquidator can open a 10-minute sealed-bid auction for the position.</p>
-            </div>
-            <div>
-              <p className="font-semibold text-foreground">3. Encrypted Bidding</p>
-              <p className="mt-1">Liquidators submit encrypted penalty bids (e.g., 5% penalty). All bids remain private.</p>
-            </div>
-            <div>
-              <p className="font-semibold text-foreground">4. Winner Selection</p>
-              <p className="mt-1">After auction ends, CoFHE computes the minimum bid using FHE.select on encrypted values. Only the winner is revealed.</p>
-            </div>
-            <div>
-              <p className="font-semibold text-foreground">5. Settlement</p>
-              <p className="mt-1">The winning liquidator receives the collateral at their bid penalty. Borrower gets the best outcome.</p>
-            </div>
-          </div>
-        )}
-      </GlassPanel>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

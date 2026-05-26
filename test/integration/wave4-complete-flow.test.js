@@ -18,7 +18,7 @@ const { encrypt, decrypt, decryptCollateral, resetMockState } = require("../help
  */
 describe("Real Token Integration - Complete Flow", function () {
   let walnutV2;
-  let wUSDC;
+  let cUSDC;
   let oracle;
   let mockUSDC;
   let mockWETH;
@@ -81,20 +81,20 @@ describe("Real Token Integration - Complete Flow", function () {
 
     // Deploy WalnutFHERC20
     const WalnutFHERC20 = await ethers.getContractFactory("WalnutFHERC20");
-    wUSDC = await WalnutFHERC20.deploy();
-    await wUSDC.waitForDeployment();
+    cUSDC = await WalnutFHERC20.deploy();
+    await cUSDC.waitForDeployment();
 
     // Deploy WalnutV2
     const WalnutV2 = await ethers.getContractFactory("WalnutV2");
     walnutV2 = await WalnutV2.deploy(
-      await wUSDC.getAddress(),
+      await cUSDC.getAddress(),
       await oracle.getAddress(),
       treasury.address
     );
     await walnutV2.waitForDeployment();
 
-    // Set WalnutV2 as minter for wUSDC
-    await wUSDC.connect(owner).setMinter(await walnutV2.getAddress());
+    // Set WalnutV2 as minter for cUSDC
+    await cUSDC.connect(owner).setMinter(await walnutV2.getAddress());
 
     // Mint tokens to users
     await mockUSDC.mint(user1.address, ethers.parseUnits("10000", 6));
@@ -126,13 +126,13 @@ describe("Real Token Integration - Complete Flow", function () {
       await walnutV2.connect(user1).borrow(encryptedBorrow);
       
       const debtAfterBorrow = await decrypt(await walnutV2.getEncryptedDebt(user1.address));
-      const wUSDCBalance = await decrypt(await wUSDC.balanceOf(user1.address));
+      const cUSDCBalance = await decrypt(await cUSDC.balanceOf(user1.address));
       
       expect(debtAfterBorrow).to.equal(borrowAmount);
-      expect(wUSDCBalance).to.equal(borrowAmount);
-      console.log(`     ✅ Borrowed: ${ethers.formatUnits(borrowAmount, 6)} wUSDC`);
+      expect(cUSDCBalance).to.equal(borrowAmount);
+      console.log(`     ✅ Borrowed: ${ethers.formatUnits(borrowAmount, 6)} cUSDC`);
       console.log(`     ✅ Debt: ${ethers.formatUnits(debtAfterBorrow, 6)} USD`);
-      console.log(`     ✅ wUSDC Balance: ${ethers.formatUnits(wUSDCBalance, 6)}`);
+      console.log(`     ✅ cUSDC Balance: ${ethers.formatUnits(cUSDCBalance, 6)}`);
       
       // ===== STEP 3: WAIT FOR INTEREST ACCRUAL =====
       console.log("\n  3️⃣  INTEREST ACCRUAL PHASE");
@@ -163,12 +163,12 @@ describe("Real Token Integration - Complete Flow", function () {
       await walnutV2.connect(user1).repay(encryptedRepay);
       
       const debtAfterRepay = await decrypt(await walnutV2.getEncryptedDebt(user1.address));
-      const wUSDCBalanceAfterRepay = await decrypt(await wUSDC.balanceOf(user1.address));
+      const cUSDCBalanceAfterRepay = await decrypt(await cUSDC.balanceOf(user1.address));
       
       expect(debtAfterRepay).to.equal(0n);
-      console.log(`     ✅ Repaid: ${ethers.formatUnits(repayAmount, 6)} wUSDC`);
+      console.log(`     ✅ Repaid: ${ethers.formatUnits(repayAmount, 6)} cUSDC`);
       console.log(`     ✅ Debt After Repay: ${ethers.formatUnits(debtAfterRepay, 6)} USD`);
-      console.log(`     ✅ wUSDC Balance: ${ethers.formatUnits(wUSDCBalanceAfterRepay, 6)}`);
+      console.log(`     ✅ cUSDC Balance: ${ethers.formatUnits(cUSDCBalanceAfterRepay, 6)}`);
       
       // ===== STEP 5: WITHDRAW =====
       console.log("\n  5️⃣  WITHDRAW PHASE");
@@ -295,17 +295,17 @@ describe("Real Token Integration - Complete Flow", function () {
         await newOracle.setPriceFeed(await newMockUSDC.getAddress(), await newMockAggregator.getAddress());
         
         const WalnutFHERC20 = await ethers.getContractFactory("WalnutFHERC20");
-        const newWUSDC = await WalnutFHERC20.deploy();
-        await newWUSDC.waitForDeployment();
+        const newcUSDC = await WalnutFHERC20.deploy();
+        await newcUSDC.waitForDeployment();
         
         const WalnutV2 = await ethers.getContractFactory("WalnutV2");
         const newWalnutV2 = await WalnutV2.deploy(
-          await newWUSDC.getAddress(),
+          await newcUSDC.getAddress(),
           await newOracle.getAddress(),
           newTreasury.address
         );
         await newWalnutV2.waitForDeployment();
-        await newWUSDC.connect(newOwner).setMinter(await newWalnutV2.getAddress());
+        await newcUSDC.connect(newOwner).setMinter(await newWalnutV2.getAddress());
         
         await newMockUSDC.mint(newUser.address, ethers.parseUnits("10000", 6));
         await newMockUSDC.connect(newUser).approve(await newWalnutV2.getAddress(), ethers.parseUnits("1000", 6));
@@ -593,30 +593,30 @@ describe("Real Token Integration - Complete Flow", function () {
       console.log(`     ✅ Only owner can set price feeds`);
     });
 
-    it("Should only allow minter to mint wUSDC", async function () {
+    it("Should only allow minter to mint cUSDC", async function () {
       const mintAmount = await encrypt(ethers.parseUnits("100", 6));
       
       try {
-        await wUSDC.connect(user1).mint(user1.address, mintAmount);
+        await cUSDC.connect(user1).mint(user1.address, mintAmount);
         expect.fail("Should have reverted");
       } catch (error) {
         expect(error.message).to.include("Only minter");
       }
       
-      console.log(`     ✅ Only minter can mint wUSDC`);
+      console.log(`     ✅ Only minter can mint cUSDC`);
     });
 
-    it("Should only allow minter to burn wUSDC", async function () {
+    it("Should only allow minter to burn cUSDC", async function () {
       const burnAmount = await encrypt(ethers.parseUnits("100", 6));
       
       try {
-        await wUSDC.connect(user1).burn(user1.address, burnAmount);
+        await cUSDC.connect(user1).burn(user1.address, burnAmount);
         expect.fail("Should have reverted");
       } catch (error) {
         expect(error.message).to.include("Only minter");
       }
       
-      console.log(`     ✅ Only minter can burn wUSDC`);
+      console.log(`     ✅ Only minter can burn cUSDC`);
     });
   });
 
