@@ -9,10 +9,12 @@ import { CtaSection } from "@/components/landing/cta-section";
 import { FooterSection } from "@/components/landing/footer-section";
 import { ScrollProgress } from "@/components/landing/scroll-progress";
 import { PageLoader } from "@/components/landing/page-loader";
+import { WaveChangelog } from "@/components/changelog/WaveChangelog";
 
 export default function Home() {
   return (
     <>
+      <WaveChangelog />
       <PageLoader />
       <main className="relative min-h-screen overflow-x-hidden noise-overlay">
         <ScrollProgress />

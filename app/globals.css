@@ -97,6 +97,7 @@
       radial-gradient(circle at 88% 8%, rgba(0, 0, 0, 0.045), transparent 24%),
       linear-gradient(160deg, #ffffff 0%, #fbfbfb 55%, #f7f7f7 100%);
     min-height: 100vh;
+    overflow-x: hidden;
   }
 }
 
