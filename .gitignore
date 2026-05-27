@@ -60,3 +60,12 @@ build-output.log
 .DS_Store
 Thumbs.db
 
+# Archive and legacy code
+_archive/
+/contracts/archive/
+
+# Build artifacts
+.dist/
+
+# IDE specific
+.vscode/settings.json
