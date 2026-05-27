@@ -9,9 +9,9 @@ import { cn } from "@/lib/utils";
 
 const navLinks = [
   { name: "Home", href: "/" },
+  { name: "Vision", href: "/vision" },
   { name: "Privacy", href: "/privacy" },
   { name: "Docs", href: "/docs" },
-  { name: "Vision", href: "#" },
 ];
 
 export function Navigation() {
@@ -66,6 +66,9 @@ export function Navigation() {
     }
     if (href === "/docs") {
       return pathname === "/docs";
+    }
+    if (href === "/vision") {
+      return pathname === "/vision";
     }
     if (href.startsWith("#")) {
       return activeSection === href;
