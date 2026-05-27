@@ -2,7 +2,7 @@
 
 **Live App**: [walnut-protocol.vercel.app](https://walnut-protocol.vercel.app) *(update with actual URL)*  
 **Demo Video**: [Watch Demo](https://youtube.com/...) *(update with actual URL)*  
-**Contracts**: [WalnutLending](https://sepolia.arbiscan.io/address/0xD647A9533C9C8831E7E95a4dcB2Dda1afDfF934d) | [cUSDC](https://sepolia.arbiscan.io/address/0x561152D0a49A6CeFE6046d6762efF57cD7aA57DF) | [Oracle](https://sepolia.arbiscan.io/address/0x5d598F3C9b45191d9f131cCbF957E969Eb173b98)  
+**Contracts**: [WalnutLending](https://sepolia.arbiscan.io/address/0x786e919d305a012B9006bbd644a07E29029498b5) | [cUSDC](https://sepolia.arbiscan.io/address/0xe5cDaf3DfC5C721b2dE05494c73a7Bb2739501d9) | [Oracle](https://sepolia.arbiscan.io/address/0x27b0afF49b042C1d57Cce5af46D7290860B7565D)  
 **Tests**: 55+ passing | **Network**: Arbitrum Sepolia
 
 > Deposit USDC. Borrow cUSDC. Nobody sees how much.
@@ -17,7 +17,7 @@ Zero-Knowledge proofs let you prove something is true without revealing why. FHE
 
 - **Encrypted Positions**: Collateral, debt, and health factors stored as encrypted `euint128` values on-chain
 - **Protocol-Owned Accounting**: Users cannot manipulate debt calculations through calldata
-- **Single Active Loan**: One borrow epoch per user prevents timestamp corruption
+- **Multi-Loan Support**: Users can have multiple concurrent loans, each with independent interest calculation
 - **Credit Tier System**: Encrypted repayment history unlocks better LTV ratios (70% → 90%)
 - **Interest Calculation**: 8% APR with 25% protocol fee, 75% to lenders
 - **Permit-Based Decryption**: Users sign permits to decrypt their own data in the frontend
@@ -27,23 +27,23 @@ Zero-Knowledge proofs let you prove something is true without revealing why. FHE
 ## Tech Stack
 
 **Smart Contracts**:
-- Solidity 0.8.19
+- Solidity 0.8.25
 - CoFHE (Fhenix) for FHE operations
 - Chainlink price feeds for collateral valuation
-- Hardhat for development and testing
+- Hardhat 2.24.2 for development and testing
 
 **Frontend**:
-- Next.js 14 with App Router
-- TypeScript (strict mode)
-- wagmi + viem for Web3 interactions
-- TanStack Query for state management
-- CoFHE SDK for client-side encryption
-- Tailwind CSS for styling
+- Next.js 16.2.1 with App Router
+- TypeScript 5 (strict mode)
+- wagmi 2.19.5 + viem 2.47.6 for Web3 interactions
+- TanStack Query 5.95.2 for state management
+- CoFHE SDK 0.5.0 for client-side encryption
+- Tailwind CSS 4.1.9 for styling
 
 **Infrastructure**:
 - Arbitrum Sepolia testnet
 - Vercel for frontend hosting
-- Privara for private settlement coordination
+- Privara (@reineira-os/sdk 0.3.1) for private settlement coordination
 
 ## Contract Addresses
 
@@ -51,11 +51,11 @@ Zero-Knowledge proofs let you prove something is true without revealing why. FHE
 
 | Contract | Address | Arbiscan |
 |----------|---------|----------|
-| WalnutLending | `0xD647A9533C9C8831E7E95a4dcB2Dda1afDfF934d` | [View](https://sepolia.arbiscan.io/address/0xD647A9533C9C8831E7E95a4dcB2Dda1afDfF934d) |
-| cUSDC (WalnutFHERC20) | `0x561152D0a49A6CeFE6046d6762efF57cD7aA57DF` | [View](https://sepolia.arbiscan.io/address/0x561152D0a49A6CeFE6046d6762efF57cD7aA57DF) |
-| WalnutPriceOracle | `0x5d598F3C9b45191d9f131cCbF957E969Eb173b98` | [View](https://sepolia.arbiscan.io/address/0x5d598F3C9b45191d9f131cCbF957E969Eb173b98) |
-| MockUSDC | `0xaf80C080857956021C0200dFdFC48349eB02F3ff` | [View](https://sepolia.arbiscan.io/address/0xaf80C080857956021C0200dFdFC48349eB02F3ff) |
-| MockUSDCPriceFeed | `0xb93D1D4A01E5ed25a96519154F976117d333740b` | [View](https://sepolia.arbiscan.io/address/0xb93D1D4A01E5ed25a96519154F976117d333740b) |
+| WalnutLending | `0x786e919d305a012B9006bbd644a07E29029498b5` | [View](https://sepolia.arbiscan.io/address/0x786e919d305a012B9006bbd644a07E29029498b5) |
+| cUSDC (WalnutFHERC20) | `0xe5cDaf3DfC5C721b2dE05494c73a7Bb2739501d9` | [View](https://sepolia.arbiscan.io/address/0xe5cDaf3DfC5C721b2dE05494c73a7Bb2739501d9) |
+| WalnutPriceOracle | `0x27b0afF49b042C1d57Cce5af46D7290860B7565D` | [View](https://sepolia.arbiscan.io/address/0x27b0afF49b042C1d57Cce5af46D7290860B7565D) |
+| MockUSDC | `0x58484E5a0745bAfFb30CBc7267690bE11a9ee7B3` | [View](https://sepolia.arbiscan.io/address/0x58484E5a0745bAfFb30CBc7267690bE11a9ee7B3) |
+| MockUSDCPriceFeed | `0xfC1C40539808CEbF355f9EE81Ab930a265EC9B4E` | [View](https://sepolia.arbiscan.io/address/0xfC1C40539808CEbF355f9EE81Ab930a265EC9B4E) |
 
 All contracts are verified on Arbiscan.
 
@@ -91,10 +91,10 @@ NEXT_PUBLIC_RPC_URL_PRIMARY=https://sepolia-rollup.arbitrum.io/rpc
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
 
 # Contract addresses (already deployed)
-NEXT_PUBLIC_V2_CONTRACT_ADDRESS=0xD647A9533C9C8831E7E95a4dcB2Dda1afDfF934d
-NEXT_PUBLIC_FHERC20_ADDRESS=0x561152D0a49A6CeFE6046d6762efF57cD7aA57DF
-NEXT_PUBLIC_ORACLE_ADDRESS=0x5d598F3C9b45191d9f131cCbF957E969Eb173b98
-NEXT_PUBLIC_MOCK_USDC_ADDRESS=0xaf80C080857956021C0200dFdFC48349eB02F3ff
+NEXT_PUBLIC_V2_CONTRACT_ADDRESS=0x786e919d305a012B9006bbd644a07E29029498b5
+NEXT_PUBLIC_FHERC20_ADDRESS=0xe5cDaf3DfC5C721b2dE05494c73a7Bb2739501d9
+NEXT_PUBLIC_ORACLE_ADDRESS=0x27b0afF49b042C1d57Cce5af46D7290860B7565D
+NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x58484E5a0745bAfFb30CBc7267690bE11a9ee7B3
 ```
 
 ### Run the Application
