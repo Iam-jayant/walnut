@@ -92,14 +92,15 @@ contract WalnutPriceOracle {
         // Query Chainlink aggregator
         AggregatorV3Interface aggregator = AggregatorV3Interface(feed);
         (
-            /* uint80 roundId */,
+            uint80 roundId,
             int256 price,
             /* uint256 startedAt */,
             uint256 updatedAt,
-            /* uint80 answeredInRound */
+            uint80 answeredInRound
         ) = aggregator.latestRoundData();
         
         // Validate price data
+        require(answeredInRound >= roundId, "Stale round");
         require(block.timestamp - updatedAt < STALENESS_THRESHOLD, "Stale price");
         require(price > 0, "Invalid price");
         
