@@ -888,11 +888,11 @@ export function useWalnutProtocol() {
             : null,
         });
         
-        // Add 20% buffer to gas fees to account for base fee fluctuations
+        // Add 50% buffer to gas fees to account for base fee fluctuations
         if (feeEstimate?.maxFeePerGas) {
-          const bufferedMaxFee = (feeEstimate.maxFeePerGas * 120n) / 100n;
+          const bufferedMaxFee = (feeEstimate.maxFeePerGas * 150n) / 100n;
           const bufferedPriorityFee = feeEstimate.maxPriorityFeePerGas 
-            ? (feeEstimate.maxPriorityFeePerGas * 120n) / 100n
+            ? (feeEstimate.maxPriorityFeePerGas * 150n) / 100n
             : undefined;
           
           finalConfig = {
@@ -901,7 +901,7 @@ export function useWalnutProtocol() {
             ...(bufferedPriorityFee && { maxPriorityFeePerGas: bufferedPriorityFee }),
           } as typeof config;
           
-          console.info("[Walnut Gas Debug] Applied 20% buffer to gas fees", {
+          console.info("[Walnut Gas Debug] Applied 50% buffer to gas fees", {
             originalMaxFee: feeEstimate.maxFeePerGas.toString(),
             bufferedMaxFee: bufferedMaxFee.toString(),
           });
@@ -1654,6 +1654,7 @@ export function useWalnutProtocol() {
     hasDecryptError,
     isWriting,
     isEncrypting,
+    encryptor,
     // Multi-loan
     allLoans,
     activeLoans,
