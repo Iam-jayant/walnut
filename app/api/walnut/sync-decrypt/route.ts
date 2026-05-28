@@ -6,9 +6,9 @@ import { arbitrumSepolia } from "viem/chains";
 export const runtime = "nodejs";
 
 const syncAbi = parseAbi([
-  "function syncLoanPrincipal(uint256 requestId, uint128 result, bytes signature) external",
-  "function syncLoanRepay(uint256 requestId, uint128 result, bytes signature) external",
-  "function syncTotalBorrowed(uint256 requestId, uint128 result, bytes signature) external",
+  "function syncLoanPrincipal(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncLoanRepay(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncTotalBorrowed(bytes32 ciphertext, uint128 result, bytes signature) external",
 ]);
 
 type SyncFunction = "syncLoanPrincipal" | "syncLoanRepay" | "syncTotalBorrowed";
@@ -63,6 +63,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "Invalid decrypt result bounds" }, { status: 400 });
     }
 
+    const ciphertextHex = ('0x' + requestId.toString(16).padStart(64, '0')) as `0x${string}`;
+
     const contractAddress = envOrThrow("NEXT_PUBLIC_WALNUT_LENDING_ADDRESS") as `0x${string}`;
     const rpcUrl =
       process.env.ARBITRUM_SEPOLIA_RPC_URL ??
@@ -86,7 +88,7 @@ export async function POST(request: Request) {
       address: contractAddress,
       abi: syncAbi,
       functionName: body.syncFunction,
-      args: [requestId, result, body.signature],
+      args: [ciphertextHex, result, body.signature],
     });
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
