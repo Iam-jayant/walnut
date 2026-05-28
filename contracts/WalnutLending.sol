@@ -18,6 +18,7 @@ interface IWalnutStablecoin {
 
 interface IWalnutOracle {
     function getUSDValue(address token, uint256 amount) external view returns (uint256);
+    function priceFeeds(address token) external view returns (address);
 }
 
 contract WalnutLending is ReentrancyGuard {
@@ -51,6 +52,7 @@ contract WalnutLending is ReentrancyGuard {
     struct PendingSync {
         address user;
         uint256 loanIndex;
+        euint128 encryptedAmount; // used for rollbacks in borrow cancels
     }
     mapping(uint256 => PendingSync) private _pendingPrincipalSyncs;
     mapping(uint256 => PendingSync) private _pendingRepaySyncs;
@@ -71,6 +73,8 @@ contract WalnutLending is ReentrancyGuard {
     }
 
     mapping(uint256 => PendingWithdraw) public pendingWithdraws;
+    mapping(uint256 => address) public _pendingGuardChecks;
+    mapping(uint256 => address) public _pendingLiquidationChecks;
     mapping(uint256 => address) public decryptRequests;
 
     // ─── Credit tier ─────────────────────────────────────────────────────────
@@ -88,22 +92,22 @@ contract WalnutLending is ReentrancyGuard {
     // ─── Auditor / guard ─────────────────────────────────────────────────────
     mapping(address => uint256)  public auditorPermitExpiry;
     mapping(address => euint128) private _guardThreshold;
-    mapping(uint256 => address)  private _pendingGuardChecks;
 
     // ─── Constants ────────────────────────────────────────────────────────────
     uint256 public constant BORROW_APR        = 800;
     uint256 public constant PROTOCOL_FEE_APR  = 200;
     uint256 public constant SECONDS_PER_YEAR  = 365 days;
-    uint256 public constant PRECISION         = 1e6;
+    uint256 public constant PRECISION         = 1e6; // reserved
     uint128 public constant LIQUIDATION_THRESHOLD = 10500;
 
     // ─── Events ───────────────────────────────────────────────────────────────
-    event Deposited(address indexed user, address indexed token, uint256 amount, uint256 usdValue);
+    event Deposited(address indexed user, address indexed token, uint256 amount);
     event Borrowed(address indexed user, uint256 timestamp);
     event LoanOpened(address indexed user, uint256 loanId, uint256 openedAt);
     event LoanPrincipalSynced(address indexed user, uint256 loanId, uint256 principal);
     event LoanRepaid(address indexed user, uint256 loanId, uint256 principal, uint256 interest);
     event LoanRepayFailed(address indexed user, uint256 loanId, string reason);
+    event BorrowCancelled(address indexed user, uint256 loanId, string reason);
     // Kept for backward compat with existing listeners
     event BorrowPrincipalSyncRequested(address indexed user, uint256 requestId, uint256 openedAt);
     event RepayStateSyncRequested(address indexed user, uint256 requestId, uint256 loanId);
@@ -137,10 +141,7 @@ contract WalnutLending is ReentrancyGuard {
         _;
     }
 
-    modifier onlyCoFHE() {
-        require(msg.sender == TASK_MANAGER_ADDRESS, "WalnutLending: not CoFHE");
-        _;
-    }
+
 
     // ─── Constructor ──────────────────────────────────────────────────────────
     constructor(address _stablecoin, address _oracle, address _treasury) {
@@ -182,7 +183,7 @@ contract WalnutLending is ReentrancyGuard {
 
     // ─── FHE safe helpers ─────────────────────────────────────────────────────
     function _safeCollateral(address user) internal returns (euint128) {
-        if (euint128.unwrap(_collateral[user]) == 0) {
+        if (!FHE.isInitialized(_collateral[user])) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -191,7 +192,7 @@ contract WalnutLending is ReentrancyGuard {
     }
 
     function _safeDebt(address user) internal returns (euint128) {
-        if (euint128.unwrap(_debt[user]) == 0) {
+        if (!FHE.isInitialized(_debt[user])) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -200,7 +201,7 @@ contract WalnutLending is ReentrancyGuard {
     }
 
     function _safeRepaymentCount(address user) internal returns (euint128) {
-        if (euint128.unwrap(_repaymentCount[user]) == 0) {
+        if (!FHE.isInitialized(_repaymentCount[user])) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -209,7 +210,7 @@ contract WalnutLending is ReentrancyGuard {
     }
 
     function _safeDefaultCount(address user) internal returns (euint128) {
-        if (euint128.unwrap(_defaultCount[user]) == 0) {
+        if (!FHE.isInitialized(_defaultCount[user])) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -218,7 +219,7 @@ contract WalnutLending is ReentrancyGuard {
     }
 
     function _safeTotalBorrowed() internal returns (euint128) {
-        if (euint128.unwrap(_totalBorrowedEncrypted) == 0) {
+        if (!FHE.isInitialized(_totalBorrowedEncrypted)) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -226,20 +227,37 @@ contract WalnutLending is ReentrancyGuard {
         return _totalBorrowedEncrypted;
     }
 
-    // ─── DEPOSIT (unchanged) ──────────────────────────────────────────────────
-    function deposit(address token, uint256 amount) external nonReentrant whenNotPaused {
+    // ─── DEPOSIT ──────────────────────────────────────────────────────────────
+    function deposit(address token, uint256 amount, InEuint128 calldata encryptedUSDValue) external nonReentrant whenNotPaused {
         require(amount > 0, "WalnutLending: zero amount");
+        require(token != address(0), "WalnutLending: invalid token");
+
+        // Verify token support via oracle price feeds
+        require(oracle.priceFeeds(token) != address(0), "WalnutLending: unsupported token");
 
         SafeERC20.safeTransferFrom(IERC20(token), msg.sender, address(this), amount);
 
         uint256 usdValue = oracle.getUSDValue(token, amount);
         require(usdValue > 0, "WalnutLending: zero USD value");
 
-        euint128 encryptedValue = FHE.asEuint128(usdValue);
-        FHE.allowThis(encryptedValue);
+        euint128 userUSD = FHE.asEuint128(encryptedUSDValue);
+        FHE.allowThis(userUSD);
+
+        euint128 oracleUSD = FHE.asEuint128(usdValue);
+        FHE.allowThis(oracleUSD);
+
+        // Homomorphically verify bounds
+        ebool isValid = FHE.lte(userUSD, oracleUSD);
+        FHE.allowThis(isValid);
+
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+
+        euint128 verifiedUSD = FHE.select(isValid, userUSD, zero);
+        FHE.allowThis(verifiedUSD);
 
         euint128 currentCollateral = _safeCollateral(msg.sender);
-        euint128 updatedCollateral = FHE.add(currentCollateral, encryptedValue);
+        euint128 updatedCollateral = FHE.add(currentCollateral, verifiedUSD);
         FHE.allowThis(updatedCollateral);
         _collateral[msg.sender] = updatedCollateral;
 
@@ -248,13 +266,13 @@ contract WalnutLending is ReentrancyGuard {
         vaults[msg.sender].push(VaultHolding(token, amount));
         totalDeposited += usdValue;
 
-        emit Deposited(msg.sender, token, amount, usdValue);
+        // NOTE: Collateral privacy is subject to standard ERC20 on-chain transfer visibility.
+        emit Deposited(msg.sender, token, amount);
     }
 
     // ─── BORROW (multi-loan, no single-loan restriction) ──────────────────────
     function borrow(InEuint128 calldata encryptedAmount) external nonReentrant whenNotPaused {
-        // No single-loan restriction — multiple concurrent loans are supported.
-        // LTV enforcement is done in FHE: silent reject if over limit.
+        require(loans[msg.sender].length < 50, "WalnutLending: max loans limit reached");
 
         euint128 amount = FHE.asEuint128(encryptedAmount);
         FHE.allowThis(amount);
@@ -276,9 +294,6 @@ contract WalnutLending is ReentrancyGuard {
         euint128 divisor = FHE.asEuint128(10000);
         FHE.allowThis(divisor);
 
-        // Compare cross-products instead of using FHE.div:
-        // candidateDebt <= collateral * ltv / 10000
-        // is equivalent to candidateDebt * 10000 <= collateral * ltv.
         euint128 debtTimesScale = FHE.mul(candidateDebt, divisor);
         FHE.allowThis(debtTimesScale);
 
@@ -290,7 +305,9 @@ contract WalnutLending is ReentrancyGuard {
         FHE.allowThis(updatedDebt);
         _debt[msg.sender] = updatedDebt;
 
-        euint128 mintAmount = FHE.select(withinLimit, amount, FHE.asEuint128(0));
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+        euint128 mintAmount = FHE.select(withinLimit, amount, zero);
         FHE.allowThis(mintAmount);
         FHE.allow(mintAmount, address(stablecoin));
 
@@ -301,7 +318,7 @@ contract WalnutLending is ReentrancyGuard {
             loanId:           loanId,
             principal:        0,
             openedAt:         openedAt,
-            active:           true,
+            active:           false, // Initialize to false (ghost loan fix)
             principalPending: true
         }));
         uint256 loanIndex = loans[msg.sender].length - 1;
@@ -356,8 +373,12 @@ contract WalnutLending is ReentrancyGuard {
         // Reduce total encrypted debt by loan principal (if sufficient repayment)
         euint128 currentDebt = _safeDebt(msg.sender);
         ebool debtGtePrincipal = FHE.gte(currentDebt, principalAmount);
+        
+        ebool canReduce = FHE.and(sufficient, debtGtePrincipal);
+        FHE.allowThis(canReduce);
+        
         euint128 safeReducedDebt = FHE.select(
-            FHE.and(sufficient, debtGtePrincipal),
+            canReduce,
             FHE.sub(currentDebt, principalAmount),
             currentDebt
         );
@@ -366,23 +387,27 @@ contract WalnutLending is ReentrancyGuard {
 
         // Increment repayment count on successful repayment
         euint128 currentRepaymentCount = _safeRepaymentCount(msg.sender);
-        euint128 incrementedCount = FHE.add(currentRepaymentCount, FHE.asEuint128(1));
+        euint128 one = FHE.asEuint128(1);
+        FHE.allowThis(one);
+        euint128 incrementedCount = FHE.add(currentRepaymentCount, one);
         FHE.allowThis(incrementedCount);
         _repaymentCount[msg.sender] = FHE.select(sufficient, incrementedCount, currentRepaymentCount);
         FHE.allowThis(_repaymentCount[msg.sender]);
 
-        euint128 burnAmount = FHE.select(sufficient, requiredAmount, FHE.asEuint128(0));
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+        euint128 burnAmount = FHE.select(sufficient, requiredAmount, zero);
         FHE.allowThis(burnAmount);
         FHE.allow(burnAmount, address(stablecoin));
 
         // Update encrypted pool total
         euint128 currentTotalBorrowed = _safeTotalBorrowed();
-        euint128 aggregateReduction   = FHE.select(sufficient, principalAmount, FHE.asEuint128(0));
+        euint128 aggregateReduction   = FHE.select(sufficient, principalAmount, zero);
         FHE.allowThis(aggregateReduction);
         _totalBorrowedEncrypted = FHE.sub(currentTotalBorrowed, aggregateReduction);
         FHE.allowThis(_totalBorrowedEncrypted);
 
-        euint128 repaySignal = FHE.select(sufficient, FHE.asEuint128(1), FHE.asEuint128(0));
+        euint128 repaySignal = FHE.select(sufficient, one, zero);
         FHE.allowThis(repaySignal);
 
         // CEI: state changes done — now external calls
@@ -409,7 +434,16 @@ contract WalnutLending is ReentrancyGuard {
         FHE.allowThis(encryptedValue);
 
         euint128 currentCollateral = _safeCollateral(msg.sender);
-        euint128 newCollateral     = FHE.sub(currentCollateral, encryptedValue);
+        
+        // Defensive underflow safety: select original collateral if withdrawal exceeds balance
+        ebool sufficient = FHE.gte(currentCollateral, encryptedValue);
+        FHE.allowThis(sufficient);
+        
+        euint128 newCollateral = FHE.select(
+            sufficient, 
+            FHE.sub(currentCollateral, encryptedValue), 
+            currentCollateral
+        );
         FHE.allowThis(newCollateral);
 
         // CEI: state changes before transfer
@@ -438,7 +472,7 @@ contract WalnutLending is ReentrancyGuard {
     }
 
     function checkPositionGuard(address user) external {
-        require(_guardThreshold[user].unwrap() != 0, "WalnutLending: no guard set");
+        require(FHE.isInitialized(_guardThreshold[user]), "WalnutLending: no guard set");
 
         if (!hasActiveLoan(user)) return;
 
@@ -466,19 +500,29 @@ contract WalnutLending is ReentrancyGuard {
         euint128 signal = FHE.select(debtIsZero, FHE.asEuint128(0), triggerSignal);
         FHE.allowThis(signal);
 
-        uint256 requestId = _requestDecrypt(signal);
-        _pendingGuardChecks[requestId] = user;
+        uint256 ctHash = uint256(euint128.unwrap(signal));
+        FHE.allowPublic(signal);
+        _pendingGuardChecks[ctHash] = user;
     }
 
-    function onGuardCheckDecrypted(uint256 requestId, uint128 result) external onlyCoFHE {
-        address user = _pendingGuardChecks[requestId];
+    function syncPositionGuardCheck(euint128 ciphertext, uint128 result, bytes calldata signature) external {
+        uint256 ctHash = uint256(euint128.unwrap(ciphertext));
+        require(
+            ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResultSafe(ctHash, result, signature),
+            "WalnutLending: invalid decrypt signature"
+        );
+        _handleGuardCheckResult(ctHash, result);
+    }
+
+    function _handleGuardCheckResult(uint256 ctHash, uint128 result) internal {
+        address user = _pendingGuardChecks[ctHash];
         if (user == address(0)) return;
 
         if (result == 1) {
             emit PositionGuardTriggered(user);
         }
 
-        delete _pendingGuardChecks[requestId];
+        delete _pendingGuardChecks[ctHash];
     }
 
     // ─── AUDITOR PERMITS ─────────────────────────────────────────────────────
@@ -495,21 +539,18 @@ contract WalnutLending is ReentrancyGuard {
         emit AuditorPermitRevoked(auditor);
     }
 
-    // ─── CoFHE CALLBACKS ──────────────────────────────────────────────────────
-    function onLoanPrincipalDecrypted(uint256 requestId, uint128 result) external onlyCoFHE {
-        _handleLoanPrincipalResult(requestId, result);
-    }
-
-    function syncLoanPrincipal(uint256 requestId, uint128 result, bytes calldata signature) external {
+    // ─── CoFHE CLIENT-DRIVEN SYNC & RECOVERY ──────────────────────────────────
+    function syncLoanPrincipal(euint128 ciphertext, uint128 result, bytes calldata signature) external {
+        uint256 ctHash = uint256(euint128.unwrap(ciphertext));
         require(
-            FHE.verifyDecryptResultSafe(requestId, result, signature),
+            ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResultSafe(ctHash, result, signature),
             "WalnutLending: invalid decrypt signature"
         );
-        _handleLoanPrincipalResult(requestId, result);
+        _handleLoanPrincipalResult(ctHash, result);
     }
 
-    function _handleLoanPrincipalResult(uint256 requestId, uint128 result) internal {
-        PendingSync memory ps = _pendingPrincipalSyncs[requestId];
+    function _handleLoanPrincipalResult(uint256 ctHash, uint128 result) internal {
+        PendingSync memory ps = _pendingPrincipalSyncs[ctHash];
         if (ps.user == address(0)) return;
 
         if (ps.loanIndex < loans[ps.user].length) {
@@ -517,30 +558,28 @@ contract WalnutLending is ReentrancyGuard {
             loan.principalPending = false;
             if (result > 0) {
                 loan.principal = uint256(result);
+                loan.active = true; // Set active only after FHE success confirmation!
                 emit LoanPrincipalSynced(ps.user, loan.loanId, loan.principal);
             } else {
-                // Mint was silently rejected by FHE LTV check — deactivate loan
+                // Borrow silently rejected by FHE LTV check — deactivate loan (already inactive)
                 loan.active = false;
             }
         }
 
-        delete _pendingPrincipalSyncs[requestId];
+        delete _pendingPrincipalSyncs[ctHash];
     }
 
-    function onLoanRepayDecrypted(uint256 requestId, uint128 result) external onlyCoFHE {
-        _handleLoanRepayResult(requestId, result);
-    }
-
-    function syncLoanRepay(uint256 requestId, uint128 result, bytes calldata signature) external {
+    function syncLoanRepay(euint128 ciphertext, uint128 result, bytes calldata signature) external {
+        uint256 ctHash = uint256(euint128.unwrap(ciphertext));
         require(
-            FHE.verifyDecryptResultSafe(requestId, result, signature),
+            ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResultSafe(ctHash, result, signature),
             "WalnutLending: invalid decrypt signature"
         );
-        _handleLoanRepayResult(requestId, result);
+        _handleLoanRepayResult(ctHash, result);
     }
 
-    function _handleLoanRepayResult(uint256 requestId, uint128 result) internal {
-        PendingSync memory ps = _pendingRepaySyncs[requestId];
+    function _handleLoanRepayResult(uint256 ctHash, uint128 result) internal {
+        PendingSync memory ps = _pendingRepaySyncs[ctHash];
         if (ps.user == address(0)) return;
 
         if (ps.loanIndex < loans[ps.user].length) {
@@ -554,75 +593,47 @@ contract WalnutLending is ReentrancyGuard {
             }
         }
 
-        delete _pendingRepaySyncs[requestId];
+        delete _pendingRepaySyncs[ctHash];
     }
 
     function requestCreditTierUpdate(address user) external {
         euint128 currentCount = _safeRepaymentCount(user);
         FHE.allowThis(currentCount);
-        FHE.allow(currentCount, address(this));
-        uint256 requestId = _requestDecrypt(currentCount);
-        decryptRequests[requestId] = user;
+        FHE.allowPublic(currentCount);
+        uint256 ctHash = uint256(euint128.unwrap(currentCount));
+        decryptRequests[ctHash] = user;
     }
 
-    function onCreditCountDecrypted(uint256 requestId, uint128 result) external onlyCoFHE {
-        _handleCreditCountResult(requestId, result);
-    }
-
-    function syncCreditCount(uint256 requestId, uint128 result, bytes calldata signature) external {
+    function syncCreditCount(euint128 ciphertext, uint128 result, bytes calldata signature) external {
+        uint256 ctHash = uint256(euint128.unwrap(ciphertext));
         require(
-            FHE.verifyDecryptResultSafe(requestId, result, signature),
+            ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResultSafe(ctHash, result, signature),
             "WalnutLending: invalid decrypt signature"
         );
-        _handleCreditCountResult(requestId, result);
+        _handleCreditCountResult(ctHash, result);
     }
 
-    function _handleCreditCountResult(uint256 requestId, uint128 result) internal {
-        address user = decryptRequests[requestId];
+    function _handleCreditCountResult(uint256 ctHash, uint128 result) internal {
+        address user = decryptRequests[ctHash];
         if (user == address(0)) return;
 
         creditTier[user] = _tierFromRepaymentCount(result);
         emit CreditTierUpdated(user, creditTier[user]);
 
-        delete decryptRequests[requestId];
+        delete decryptRequests[ctHash];
     }
 
-    function onWithdrawSafetyDecrypted(uint256 requestId, bool safe) external onlyCoFHE {
-        PendingWithdraw memory request = pendingWithdraws[requestId];
-        if (request.user == address(0)) return;
-
-        delete pendingWithdraws[requestId];
-
-        if (!safe) {
-            emit WithdrawFinalized(request.user, request.token, request.amount, false);
-            return;
-        }
-
-        _collateral[request.user] = request.newCollateral;
-        FHE.allowThis(_collateral[request.user]);
-        FHE.allow(_collateral[request.user], request.user);
-
-        SafeERC20.safeTransfer(IERC20(request.token), request.user, request.amount);
-        _removeFromVault(request.user, request.token, request.amount);
-
-        emit Withdrawn(request.user, request.token, request.amount);
-        emit WithdrawFinalized(request.user, request.token, request.amount, true);
-    }
-
-    function onTotalBorrowedDecrypted(uint256 requestId, uint128 result) external onlyCoFHE {
-        _handleTotalBorrowedResult(requestId, result);
-    }
-
-    function syncTotalBorrowed(uint256 requestId, uint128 result, bytes calldata signature) external {
+    function syncTotalBorrowed(euint128 ciphertext, uint128 result, bytes calldata signature) external {
+        uint256 ctHash = uint256(euint128.unwrap(ciphertext));
         require(
-            FHE.verifyDecryptResultSafe(requestId, result, signature),
+            ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResultSafe(ctHash, result, signature),
             "WalnutLending: invalid decrypt signature"
         );
-        _handleTotalBorrowedResult(requestId, result);
+        _handleTotalBorrowedResult(ctHash, result);
     }
 
-    function _handleTotalBorrowedResult(uint256 requestId, uint128 result) internal {
-        uint256 version = pendingTotalBorrowedSyncVersions[requestId];
+    function _handleTotalBorrowedResult(uint256 ctHash, uint128 result) internal {
+        uint256 version = pendingTotalBorrowedSyncVersions[ctHash];
         if (version == 0) return;
 
         if (version >= totalBorrowedSyncVersion) {
@@ -631,7 +642,67 @@ contract WalnutLending is ReentrancyGuard {
             emit TotalBorrowedCacheUpdated(totalBorrowed, version);
         }
 
-        delete pendingTotalBorrowedSyncVersions[requestId];
+        delete pendingTotalBorrowedSyncVersions[ctHash];
+    }
+
+    // ─── DECENTRALIZED FAILURE RECOVERY CANCEL FLOWS ──────────────────────────
+    function cancelPendingBorrow(uint256 ctHash) external nonReentrant {
+        PendingSync memory ps = _pendingPrincipalSyncs[ctHash];
+        require(ps.user == msg.sender, "WalnutLending: not your loan");
+        require(block.timestamp > loans[ps.user][ps.loanIndex].openedAt + 1 hours, "WalnutLending: timeout not reached");
+
+        loans[ps.user][ps.loanIndex].principalPending = false;
+        loans[ps.user][ps.loanIndex].active = false;
+
+        // Rollback debt homomorphically while preventing underflows
+        euint128 currentDebt = _safeDebt(ps.user);
+        ebool canReduce = FHE.gte(currentDebt, ps.encryptedAmount);
+        FHE.allowThis(canReduce);
+        
+        _debt[ps.user] = FHE.select(
+            canReduce,
+            FHE.sub(currentDebt, ps.encryptedAmount),
+            currentDebt
+        );
+        FHE.allowThis(_debt[ps.user]);
+        FHE.allow(_debt[ps.user], ps.user);
+
+        // Rollback totalBorrowedEncrypted pool aggregates safely
+        euint128 currentTotal = _safeTotalBorrowed();
+        ebool totalCanReduce = FHE.gte(currentTotal, ps.encryptedAmount);
+        FHE.allowThis(totalCanReduce);
+        
+        _totalBorrowedEncrypted = FHE.select(
+            totalCanReduce,
+            FHE.sub(currentTotal, ps.encryptedAmount),
+            currentTotal
+        );
+        FHE.allowThis(_totalBorrowedEncrypted);
+
+        delete _pendingPrincipalSyncs[ctHash];
+        emit BorrowCancelled(ps.user, loans[ps.user][ps.loanIndex].loanId, "Borrow sync timed out");
+    }
+
+    function cancelPendingRepay(uint256 ctHash) external nonReentrant {
+        PendingSync memory ps = _pendingRepaySyncs[ctHash];
+        require(ps.user == msg.sender, "WalnutLending: not your loan");
+        
+        Loan storage loan = loans[ps.user][ps.loanIndex];
+        require(block.timestamp > loan.openedAt + 1 hours, "WalnutLending: timeout not reached");
+
+        // Always restore the optimistic debt reduction on cancellation
+        euint128 principalEnc = FHE.asEuint128(loan.principal);
+        FHE.allowThis(principalEnc);
+
+        _debt[ps.user] = FHE.add(_safeDebt(ps.user), principalEnc);
+        FHE.allowThis(_debt[ps.user]);
+        FHE.allow(_debt[ps.user], ps.user);
+
+        _totalBorrowedEncrypted = FHE.add(_safeTotalBorrowed(), principalEnc);
+        FHE.allowThis(_totalBorrowedEncrypted);
+
+        delete _pendingRepaySyncs[ctHash];
+        emit LoanRepayFailed(ps.user, loan.loanId, "Repay sync timed out");
     }
 
     // ─── INTEREST CALCULATION ─────────────────────────────────────────────────
@@ -645,8 +716,8 @@ contract WalnutLending is ReentrancyGuard {
         if (openedAt == 0 || principal == 0) return (0, 0, 0);
 
         uint256 elapsed = block.timestamp - openedAt;
-        totalInterest = (principal * BORROW_APR * elapsed * PRECISION)
-            / (SECONDS_PER_YEAR * 10000 * PRECISION);
+        totalInterest = (principal * BORROW_APR * elapsed)
+            / (SECONDS_PER_YEAR * 10000);
         protocolFee   = totalInterest / 4;
         lenderPayment = totalInterest - protocolFee;
     }
@@ -811,20 +882,16 @@ contract WalnutLending is ReentrancyGuard {
         }
     }
 
-    function _requestDecrypt(euint128 value) internal returns (uint256 requestId) {
-        requestId = uint256(euint128.unwrap(value));
-        FHE.allowPublic(value);
-    }
-
     function _requestLoanPrincipalSync(
         address user,
         uint256 loanIndex,
         euint128 mintedAmount,
         uint256 openedAt
     ) internal {
-        uint256 requestId = _requestDecrypt(mintedAmount);
-        _pendingPrincipalSyncs[requestId] = PendingSync({ user: user, loanIndex: loanIndex });
-        emit BorrowPrincipalSyncRequested(user, requestId, openedAt);
+        uint256 ctHash = uint256(euint128.unwrap(mintedAmount));
+        _pendingPrincipalSyncs[ctHash] = PendingSync({ user: user, loanIndex: loanIndex, encryptedAmount: mintedAmount });
+        FHE.allowPublic(mintedAmount);
+        emit BorrowPrincipalSyncRequested(user, ctHash, openedAt);
     }
 
     function _requestLoanRepaySync(
@@ -832,16 +899,20 @@ contract WalnutLending is ReentrancyGuard {
         uint256 loanIndex,
         euint128 repaySignal
     ) internal {
-        uint256 requestId = _requestDecrypt(repaySignal);
-        _pendingRepaySyncs[requestId] = PendingSync({ user: user, loanIndex: loanIndex });
-        emit RepayStateSyncRequested(user, requestId, loans[user][loanIndex].loanId);
+        uint256 ctHash = uint256(euint128.unwrap(repaySignal));
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+        _pendingRepaySyncs[ctHash] = PendingSync({ user: user, loanIndex: loanIndex, encryptedAmount: zero });
+        FHE.allowPublic(repaySignal);
+        emit RepayStateSyncRequested(user, ctHash, loans[user][loanIndex].loanId);
     }
 
     function _requestTotalBorrowedSync() internal {
         _totalBorrowedSyncNonce += 1;
-        uint256 requestId = _requestDecrypt(_totalBorrowedEncrypted);
-        pendingTotalBorrowedSyncVersions[requestId] = _totalBorrowedSyncNonce;
-        emit TotalBorrowedSyncRequested(requestId, _totalBorrowedSyncNonce);
+        uint256 ctHash = uint256(euint128.unwrap(_totalBorrowedEncrypted));
+        pendingTotalBorrowedSyncVersions[ctHash] = _totalBorrowedSyncNonce;
+        FHE.allowPublic(_totalBorrowedEncrypted);
+        emit TotalBorrowedSyncRequested(ctHash, _totalBorrowedSyncNonce);
     }
 
     function _tierFromRepaymentCount(uint128 count) internal pure returns (uint8) {
@@ -865,7 +936,7 @@ contract WalnutLending is ReentrancyGuard {
     }
 
     mapping(address => LiquidationAuction) public auctions;
-    mapping(uint256 => address) private _pendingAuctionSettlements;
+    mapping(address => uint256) public _pendingAuctionSettlements;
     mapping(address => bool) public liquidatable;
     uint256 public constant AUCTION_DURATION = 10 minutes;
 
@@ -910,7 +981,7 @@ contract WalnutLending is ReentrancyGuard {
         emit BidSubmitted(borrower, msg.sender);
     }
 
-    function selectWinningBid(address borrower) external nonReentrant returns (uint256 requestId) {
+    function selectWinningBid(address borrower) external nonReentrant returns (uint256 ctHash) {
         LiquidationAuction storage auction = auctions[borrower];
         require(auction.borrower == borrower && auction.endTime != 0, "WalnutLending: auction not found");
         require(block.timestamp >= auction.endTime,  "WalnutLending: auction not ended");
@@ -938,25 +1009,33 @@ contract WalnutLending is ReentrancyGuard {
             winnerIdx = nextWinnerIdx;
         }
 
-        requestId = _requestDecrypt(winnerIdx);
-        _pendingAuctionSettlements[requestId] = borrower;
+        ctHash = uint256(euint128.unwrap(winnerIdx));
+        FHE.allowPublic(winnerIdx);
+        _pendingAuctionSettlements[borrower] = ctHash;
 
         emit WinnerSelectionRequested(borrower);
     }
 
-    function onWinnerSelected(uint256 requestId, uint128 result) external onlyCoFHE {
-        address borrower = _pendingAuctionSettlements[requestId];
-        if (borrower == address(0)) return;
+    function syncWinnerSelected(address borrower, euint128 ciphertext, uint128 result, bytes calldata signature) external {
+        uint256 ctHash = uint256(euint128.unwrap(ciphertext));
+        require(_pendingAuctionSettlements[borrower] == ctHash, "WalnutLending: ctHash mismatch");
+        require(
+            ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResultSafe(ctHash, result, signature),
+            "WalnutLending: invalid decrypt signature"
+        );
+        _handleWinnerSelectedResult(borrower, result);
+    }
 
+    function _handleWinnerSelectedResult(address borrower, uint128 result) internal {
         LiquidationAuction storage auction = auctions[borrower];
         if (auction.settled) {
-            delete _pendingAuctionSettlements[requestId];
+            delete _pendingAuctionSettlements[borrower];
             return;
         }
 
         uint256 winnerIndex = uint256(result);
         if (winnerIndex >= auction.bidders.length) {
-            delete _pendingAuctionSettlements[requestId];
+            delete _pendingAuctionSettlements[borrower];
             return;
         }
 
@@ -965,24 +1044,36 @@ contract WalnutLending is ReentrancyGuard {
 
         emit AuctionSettled(borrower, auction.bidders[winnerIndex], result);
 
-        delete _pendingAuctionSettlements[requestId];
+        delete _pendingAuctionSettlements[borrower];
     }
 
-    function requestLiquidationCheck(address user) external returns (uint256 requestId) {
+    function requestLiquidationCheck(address user) external returns (uint256 ctHash) {
         euint128 healthFactor = _computeHealthFactor(user);
-        requestId = _requestDecrypt(healthFactor);
-        _pendingGuardChecks[requestId] = user;
+        ctHash = uint256(euint128.unwrap(healthFactor));
+        FHE.allowPublic(healthFactor);
+        _pendingLiquidationChecks[ctHash] = user;
     }
 
-    function onLiquidationResult(uint256 requestId, uint128 result) external onlyCoFHE {
-        address user = _pendingGuardChecks[requestId];
+    function syncLiquidationResult(euint128 ciphertext, uint128 result, bytes calldata signature) external {
+        uint256 ctHash = uint256(euint128.unwrap(ciphertext));
+        require(
+            ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResultSafe(ctHash, result, signature),
+            "WalnutLending: invalid decrypt signature"
+        );
+        _handleLiquidationResult(ctHash, result);
+    }
+
+    function _handleLiquidationResult(uint256 ctHash, uint128 result) internal {
+        address user = _pendingLiquidationChecks[ctHash];
         if (user == address(0)) return;
 
         if (result < LIQUIDATION_THRESHOLD) {
             liquidatable[user] = true;
 
             euint128 currentDefaultCount  = _safeDefaultCount(user);
-            euint128 updatedDefaultCount  = FHE.add(currentDefaultCount, FHE.asEuint128(1));
+            euint128 one = FHE.asEuint128(1);
+            FHE.allowThis(one);
+            euint128 updatedDefaultCount  = FHE.add(currentDefaultCount, one);
             FHE.allowThis(updatedDefaultCount);
             _defaultCount[user] = updatedDefaultCount;
             FHE.allowThis(_defaultCount[user]);
@@ -991,7 +1082,7 @@ contract WalnutLending is ReentrancyGuard {
             emit LiquidationTriggered(user);
         }
 
-        delete _pendingGuardChecks[requestId];
+        delete _pendingLiquidationChecks[ctHash];
     }
 
     function getAuctionSummary(address borrower)
@@ -1042,11 +1133,14 @@ contract WalnutLending is ReentrancyGuard {
         require(additionalWallet != address(0),  "WalnutLending: zero address");
         require(additionalWallet != msg.sender,  "WalnutLending: cannot link self");
         require(walletToPrimary[additionalWallet] == address(0), "WalnutLending: wallet already linked");
+        require(linkedWallets[msg.sender].length < 10, "WalnutLending: max linked wallets limit reached");
 
         linkedWallets[msg.sender].push(additionalWallet);
         walletToPrimary[additionalWallet] = msg.sender;
 
-        FHE.allow(_collateral[additionalWallet], msg.sender);
+        if (FHE.isInitialized(_collateral[additionalWallet])) {
+            FHE.allow(_collateral[additionalWallet], msg.sender);
+        }
 
         emit WalletLinked(msg.sender, additionalWallet);
     }
