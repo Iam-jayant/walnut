@@ -47,7 +47,7 @@ contract WalnutFHERC20 {
     // that has never been written.
 
     function _safeBalance(address account) internal returns (euint128) {
-        if (euint128.unwrap(balances[account]) == 0) {
+        if (!FHE.isInitialized(balances[account])) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -56,7 +56,7 @@ contract WalnutFHERC20 {
     }
 
     function _safeTotalSupply() internal returns (euint128) {
-        if (euint128.unwrap(totalSupply) == 0) {
+        if (!FHE.isInitialized(totalSupply)) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -65,7 +65,7 @@ contract WalnutFHERC20 {
     }
 
     function _safeAllowance(address _owner, address spender) internal returns (euint128) {
-        if (euint128.unwrap(allowances[_owner][spender]) == 0) {
+        if (!FHE.isInitialized(allowances[_owner][spender])) {
             euint128 zero = FHE.asEuint128(0);
             FHE.allowThis(zero);
             return zero;
@@ -83,6 +83,7 @@ contract WalnutFHERC20 {
 
     function mintInternal(address to, euint128 amount) external onlyMinter {
         require(to != address(0), "Mint to zero address");
+        FHE.allowThis(amount);
         _mintInternal(to, amount);
     }
 
@@ -129,7 +130,9 @@ contract WalnutFHERC20 {
         FHE.allowThis(newBalance);
         balances[from] = newBalance;
 
-        euint128 burnAmount = FHE.select(hasSufficientBalance, amount, FHE.asEuint128(0));
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+        euint128 burnAmount = FHE.select(hasSufficientBalance, amount, zero);
         FHE.allowThis(burnAmount);
 
         euint128 currentTotalSupply = _safeTotalSupply();
@@ -160,7 +163,9 @@ contract WalnutFHERC20 {
         FHE.allowThis(newSenderBalance);
         balances[msg.sender] = newSenderBalance;
 
-        euint128 transferAmount = FHE.select(hasSufficientBalance, amount, FHE.asEuint128(0));
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+        euint128 transferAmount = FHE.select(hasSufficientBalance, amount, zero);
         FHE.allowThis(transferAmount);
 
         euint128 recipientBalance = _safeBalance(to);
@@ -215,7 +220,9 @@ contract WalnutFHERC20 {
         FHE.allowThis(newFromBalance);
         balances[from] = newFromBalance;
 
-        euint128 transferAmount = FHE.select(canTransfer, amount, FHE.asEuint128(0));
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+        euint128 transferAmount = FHE.select(canTransfer, amount, zero);
         FHE.allowThis(transferAmount);
 
         euint128 toBalance = _safeBalance(to);
