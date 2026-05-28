@@ -78,9 +78,9 @@ async function mintMockUSDC(recipient, amount) {
   console.log('\n✅ Mock USDC minted successfully!\n');
 }
 
-// Get arguments from command line or use defaults
-const recipient = process.argv[2] || '0x65c3768E98eE211a7589fe94c753e11cB8895069';
-const amount = process.argv[3] || '10000'; // Default 10000 USDC
+// Get arguments from environment variables, command line, or use defaults
+const recipient = process.env.RECIPIENT || process.argv[2] || '0x65c3768E98eE211a7589fe94c753e11cB8895069';
+const amount = process.env.AMOUNT || process.argv[3] || '10000'; // Default 10000 USDC
 
 console.log('Arguments:', { recipient, amount });
 

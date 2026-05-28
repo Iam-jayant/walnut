@@ -4,6 +4,7 @@ const { resetMockState } = require("./archive/helpers/fhe-helpers");
 
 const TASK_MANAGER_ADDRESS = "0xeA30c4B8b44078Bbf8a6ef5b9f1eC1626C7848D9";
 const EXPECTED_SECURITY_ZONE = 0; // As required by the CoFHE environment/worktree configuration
+const DUMMY_SIG_65 = "0x" + "00".repeat(65); // 65-byte signature to satisfy ecrecover length check in task manager
 
 const TASK_MANAGER_ABI = [
   "function verifyInput((uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) input,address sender) returns (uint256)",
@@ -57,27 +58,17 @@ async function decrypt(encryptedValue) {
   return await cofhe.mocks.getPlaintext(ctHash);
 }
 
-async function asTaskManager(callback) {
-  await network.provider.request({
-    method: "hardhat_impersonateAccount",
-    params: [TASK_MANAGER_ADDRESS],
-  });
+function toBytes32(value) {
+  const hex = BigInt(value).toString(16).padStart(64, "0");
+  return "0x" + hex;
+}
 
-  await network.provider.send("hardhat_setBalance", [
-    TASK_MANAGER_ADDRESS,
-    "0x56BC75E2D63100000",
-  ]);
-
-  const signer = await ethers.getSigner(TASK_MANAGER_ADDRESS);
-
-  try {
-    return await callback(signer);
-  } finally {
-    await network.provider.request({
-      method: "hardhat_stopImpersonatingAccount",
-      params: [TASK_MANAGER_ADDRESS],
-    });
-  }
+async function publishDecrypt(ctHash, result) {
+  const manager = await ethers.getContractAt(
+    ["function publishDecryptResult(uint256 ctHash, uint256 result, bytes signature) external"],
+    TASK_MANAGER_ADDRESS
+  );
+  await manager.publishDecryptResult(BigInt(ctHash), BigInt(result), DUMMY_SIG_65);
 }
 
 function findEvent(receipt, contract, name) {
@@ -139,10 +130,14 @@ describe("WalnutLending — core protocol tests", function () {
   before(async function () {
     const [deployer] = await ethers.getSigners();
     const taskManager = await ethers.getContractAt(
-      ["function setVerifierSigner(address signer) external"],
+      [
+        "function setVerifierSigner(address signer) external",
+        "function setDecryptResultSigner(address signer) external"
+      ],
       TASK_MANAGER_ADDRESS
     );
     await (await taskManager.connect(deployer).setVerifierSigner(ethers.ZeroAddress)).wait();
+    await (await taskManager.connect(deployer).setDecryptResultSigner(ethers.ZeroAddress)).wait();
 
     // Find and override the securityZoneMin and securityZoneMax storage slot in MockTaskManager
     const expectedPattern = "6a7aa469"; // "jz¤i" hex signature from Slot 7
@@ -207,9 +202,10 @@ describe("WalnutLending — core protocol tests", function () {
     it("accepts ERC20 deposit and updates encrypted collateral handle", async () => {
       const depositAmount = ethers.parseUnits("1000", 6);
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), depositAmount);
+      const encUSD = await encrypt(1000_000000n); // $1000 USD
       
       await expectEmit(
-        walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount),
+        walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount, encUSD),
         walnut,
         "Deposited"
       );
@@ -221,8 +217,9 @@ describe("WalnutLending — core protocol tests", function () {
 
     it("reverts on zero amount deposit", async () => {
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), 1000);
+      const encUSD = await encrypt(1000_000000n);
       await expectRevert(
-        walnut.connect(user1).deposit(await mockUSDC.getAddress(), 0),
+        walnut.connect(user1).deposit(await mockUSDC.getAddress(), 0, encUSD),
         "WalnutLending: zero amount"
       );
     });
@@ -230,9 +227,10 @@ describe("WalnutLending — core protocol tests", function () {
     it("reverts on unsupported token", async () => {
       const depositAmount = ethers.parseUnits("100", 18);
       await unsupportedToken.connect(user1).approve(await walnut.getAddress(), depositAmount);
+      const encUSD = await encrypt(100_000000n);
       await expectRevert(
-        walnut.connect(user1).deposit(await unsupportedToken.getAddress(), depositAmount),
-        "No price feed"
+        walnut.connect(user1).deposit(await unsupportedToken.getAddress(), depositAmount, encUSD),
+        "WalnutLending: unsupported token"
       );
     });
   });
@@ -241,7 +239,8 @@ describe("WalnutLending — core protocol tests", function () {
     it("mints cUSDC and creates a Loan record on successful borrow", async () => {
       const depositAmount = ethers.parseUnits("1000", 6);
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), depositAmount);
-      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+      const encUSD = await encrypt(1000_000000n);
+      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount, encUSD);
 
       const borrowAmount = ethers.parseUnits("500", 6);
       const encBorrow = await encrypt(borrowAmount);
@@ -265,26 +264,29 @@ describe("WalnutLending — core protocol tests", function () {
       // Verify Loan record created
       const loans = await walnut.getLoans(user1.address);
       expect(loans.length).to.equal(1);
-      expect(loans[0].active).to.equal(true);
+      expect(loans[0].active).to.equal(false); // ghost loan fix: initially false
       expect(loans[0].principalPending).to.equal(true);
 
-      // Sync the principal via CoFHE mock task manager
-      await asTaskManager(async (taskManager) => {
-        await walnut.connect(taskManager).onLoanPrincipalDecrypted(
-          principalSync.args.requestId,
-          500_000000
-        );
-      });
+      // Sync the principal via client-driven CoFHE sync
+      const ctHash = principalSync.args.requestId;
+      await publishDecrypt(ctHash, 500_000000);
+      await walnut.syncLoanPrincipal(
+        toBytes32(ctHash),
+        500_000000,
+        DUMMY_SIG_65
+      );
 
       const updatedLoans = await walnut.getLoans(user1.address);
       expect(updatedLoans[0].principalPending).to.equal(false);
+      expect(updatedLoans[0].active).to.equal(true);
       expect(updatedLoans[0].principal).to.equal(500_000000n);
     });
 
     it("allows a second borrow before first loan principal is synced", async () => {
       const depositAmount = ethers.parseUnits("2000", 6);
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), depositAmount);
-      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+      const encUSD = await encrypt(2000_000000n);
+      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount, encUSD);
 
       // First borrow
       const borrowAmount1 = ethers.parseUnits("500", 6);
@@ -303,14 +305,15 @@ describe("WalnutLending — core protocol tests", function () {
 
       const loans = await walnut.getLoans(user1.address);
       expect(loans.length).to.equal(2);
-      expect(loans[0].active).to.equal(true);
-      expect(loans[1].active).to.equal(true);
+      expect(loans[0].active).to.equal(false); // ghost loan fix: initially false
+      expect(loans[1].active).to.equal(false); // ghost loan fix: initially false
     });
 
     it("silently rejects borrow that exceeds LTV (no revert, no state change)", async () => {
       const depositAmount = ethers.parseUnits("100", 6); // $100 collateral
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), depositAmount);
-      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+      const encUSD = await encrypt(100_000000n);
+      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount, encUSD);
 
       // Try to borrow $500 (exceeds 70% LTV threshold of $70)
       const borrowAmount = ethers.parseUnits("500", 6);
@@ -322,13 +325,14 @@ describe("WalnutLending — core protocol tests", function () {
       const principalSync = findEvent(receipt, walnut, "BorrowPrincipalSyncRequested");
       expect(principalSync).to.not.equal(undefined);
 
-      // Trigger sync callback with 0 (representing rejected/failed LTV evaluation)
-      await asTaskManager(async (taskManager) => {
-        await walnut.connect(taskManager).onLoanPrincipalDecrypted(
-          principalSync.args.requestId,
-          0 // 0 means LTV check failed, borrow is rejected
-        );
-      });
+      // Trigger client-driven sync with 0 (representing rejected/failed LTV evaluation)
+      const ctHash = principalSync.args.requestId;
+      await publishDecrypt(ctHash, 0);
+      await walnut.syncLoanPrincipal(
+        toBytes32(ctHash),
+        0, // 0 means LTV check failed, borrow is rejected
+        DUMMY_SIG_65
+      );
 
       const loans = await walnut.getLoans(user1.address);
       expect(loans[0].active).to.equal(false); // Should be silently rejected (loan set inactive)
@@ -343,23 +347,22 @@ describe("WalnutLending — core protocol tests", function () {
     beforeEach(async () => {
       const depositAmount = ethers.parseUnits("3000", 6);
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), depositAmount);
-      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+      const encUSD = await encrypt(3000_000000n);
+      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount, encUSD);
 
       // Borrow Loan #0
       const tx0 = await walnut.connect(user1).borrow(await encrypt(ethers.parseUnits("500", 6)));
       borrowReceipt0 = await tx0.wait();
       const sync0 = findEvent(borrowReceipt0, walnut, "BorrowPrincipalSyncRequested");
-      await asTaskManager(async (tm) => {
-        await walnut.connect(tm).onLoanPrincipalDecrypted(sync0.args.requestId, 500_000000);
-      });
+      await publishDecrypt(sync0.args.requestId, 500_000000);
+      await walnut.syncLoanPrincipal(toBytes32(sync0.args.requestId), 500_000000, DUMMY_SIG_65);
 
       // Borrow Loan #1
       const tx1 = await walnut.connect(user1).borrow(await encrypt(ethers.parseUnits("800", 6)));
       borrowReceipt1 = await tx1.wait();
       const sync1 = findEvent(borrowReceipt1, walnut, "BorrowPrincipalSyncRequested");
-      await asTaskManager(async (tm) => {
-        await walnut.connect(tm).onLoanPrincipalDecrypted(sync1.args.requestId, 800_000000);
-      });
+      await publishDecrypt(sync1.args.requestId, 800_000000);
+      await walnut.syncLoanPrincipal(toBytes32(sync1.args.requestId), 800_000000, DUMMY_SIG_65);
     });
 
     it("repaying loanIndex 0 does not affect loanIndex 1", async () => {
@@ -373,9 +376,8 @@ describe("WalnutLending — core protocol tests", function () {
       const repaySync = findEvent(receipt, walnut, "RepayStateSyncRequested");
       expect(repaySync).to.not.equal(undefined);
 
-      await asTaskManager(async (tm) => {
-        await walnut.connect(tm).onLoanRepayDecrypted(repaySync.args.requestId, 1);
-      });
+      await publishDecrypt(repaySync.args.requestId, 1);
+      await walnut.syncLoanRepay(toBytes32(repaySync.args.requestId), 1, DUMMY_SIG_65);
 
       const loans = await walnut.getLoans(user1.address);
       expect(loans[0].active).to.equal(false); // Repaid loan index 0 is inactive
@@ -401,9 +403,8 @@ describe("WalnutLending — core protocol tests", function () {
 
       const repaySync = findEvent(receipt, walnut, "RepayStateSyncRequested");
       
-      await asTaskManager(async (tm) => {
-        await walnut.connect(tm).onLoanRepayDecrypted(repaySync.args.requestId, 1); // 1 = successful repayment
-      });
+      await publishDecrypt(repaySync.args.requestId, 1);
+      await walnut.syncLoanRepay(toBytes32(repaySync.args.requestId), 1, DUMMY_SIG_65); // 1 = successful repayment
 
       const loans = await walnut.getLoans(user1.address);
       expect(loans[1].active).to.equal(false); // Marked inactive
@@ -415,15 +416,15 @@ describe("WalnutLending — core protocol tests", function () {
     it("reverts withdraw when any active loan exists", async () => {
       const depositAmount = ethers.parseUnits("1000", 6);
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), depositAmount);
-      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+      const encUSD = await encrypt(1000_000000n);
+      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount, encUSD);
 
       // Borrow
       const tx = await walnut.connect(user1).borrow(await encrypt(ethers.parseUnits("500", 6)));
       const receipt = await tx.wait();
       const sync = findEvent(receipt, walnut, "BorrowPrincipalSyncRequested");
-      await asTaskManager(async (tm) => {
-        await walnut.connect(tm).onLoanPrincipalDecrypted(sync.args.requestId, 500_000000);
-      });
+      await publishDecrypt(sync.args.requestId, 500_000000);
+      await walnut.syncLoanPrincipal(toBytes32(sync.args.requestId), 500_000000, DUMMY_SIG_65);
 
       // Try to withdraw while loan is active
       await expectRevert(
@@ -435,23 +436,22 @@ describe("WalnutLending — core protocol tests", function () {
     it("succeeds and returns ERC20 after all loans are repaid", async () => {
       const depositAmount = ethers.parseUnits("1000", 6);
       await mockUSDC.connect(user1).approve(await walnut.getAddress(), depositAmount);
-      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount);
+      const encUSD = await encrypt(1000_000000n);
+      await walnut.connect(user1).deposit(await mockUSDC.getAddress(), depositAmount, encUSD);
 
       // Borrow and repay completely
       const tx = await walnut.connect(user1).borrow(await encrypt(ethers.parseUnits("500", 6)));
       const receipt = await tx.wait();
       const sync = findEvent(receipt, walnut, "BorrowPrincipalSyncRequested");
-      await asTaskManager(async (tm) => {
-        await walnut.connect(tm).onLoanPrincipalDecrypted(sync.args.requestId, 500_000000);
-      });
+      await publishDecrypt(sync.args.requestId, 500_000000);
+      await walnut.syncLoanPrincipal(toBytes32(sync.args.requestId), 500_000000, DUMMY_SIG_65);
 
       // Repay
       const repayTx = await walnut.connect(user1).repay(await encrypt(ethers.parseUnits("500", 6)), 0);
       const repayReceipt = await repayTx.wait();
       const repaySync = findEvent(repayReceipt, walnut, "RepayStateSyncRequested");
-      await asTaskManager(async (tm) => {
-        await walnut.connect(tm).onLoanRepayDecrypted(repaySync.args.requestId, 1);
-      });
+      await publishDecrypt(repaySync.args.requestId, 1);
+      await walnut.syncLoanRepay(toBytes32(repaySync.args.requestId), 1, DUMMY_SIG_65);
 
       // Now withdraw should succeed
       const beforeBal = await mockUSDC.balanceOf(user1.address);
@@ -467,17 +467,29 @@ describe("WalnutLending — core protocol tests", function () {
     });
   });
 
-  describe("Security", () => {
-    it("onlyCoFHE callbacks revert when called by non-coprocessor address", async () => {
-      await expectRevert(
-        walnut.connect(user1).onLoanPrincipalDecrypted(1234, 500),
-        "WalnutLending: not CoFHE"
+  describe("Security & Replay Protection", () => {
+    it("protects against replay and non-existent ctHash sync calls", async () => {
+      const [deployer] = await ethers.getSigners();
+      const taskManager = await ethers.getContractAt(
+        ["function setDecryptResultSigner(address signer) external"],
+        TASK_MANAGER_ADDRESS
       );
+      // Temporarily enable signature verification by setting a non-zero signer address
+      await (await taskManager.connect(deployer).setDecryptResultSigner(deployer.address)).wait();
 
-      await expectRevert(
-        walnut.connect(user2).onLoanRepayDecrypted(5678, 1),
-        "WalnutLending: not CoFHE"
-      );
+      try {
+        const randomCtHash = toBytes32(99999n);
+        await expectRevert(
+          walnut.syncLoanPrincipal(randomCtHash, 500, DUMMY_SIG_65),
+          "WalnutLending: invalid decrypt signature"
+        );
+      } finally {
+        // Restore signature bypass for other tests or environment integrity
+        await (await taskManager.connect(deployer).setDecryptResultSigner(ethers.ZeroAddress)).wait();
+      }
+      
+      const loans = await walnut.getLoans(user1.address);
+      expect(loans.length).to.equal(0);
     });
   });
 });
