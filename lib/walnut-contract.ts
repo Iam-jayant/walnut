@@ -1,6 +1,6 @@
 import type { Abi, Address } from "viem";
 
-import walnutLendingArtifact from "@/artifacts/contracts/WalnutLending.sol/WalnutLending.json";
+import walnutLendingArtifact from "../artifacts/contracts/WalnutLending.sol/WalnutLending.json";
 
 function requirePublicEnv(key: string, value: string | undefined) {
   if (!value) {
@@ -31,4 +31,38 @@ export const walnutContractAddress = requirePublicEnv(
   process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS
 ) as Address;
 
+export const walnutFherc20Address = requirePublicEnv(
+  "NEXT_PUBLIC_FHERC20_ADDRESS",
+  process.env.NEXT_PUBLIC_FHERC20_ADDRESS
+) as Address;
+
+export const walnutOracleAddress = requirePublicEnv(
+  "NEXT_PUBLIC_ORACLE_ADDRESS",
+  process.env.NEXT_PUBLIC_ORACLE_ADDRESS
+) as Address;
+
+export const walnutMockUsdcAddress = requirePublicEnv(
+  "NEXT_PUBLIC_MOCK_USDC_ADDRESS",
+  process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS
+) as Address;
+
 export const walnutLendingAbi = walnutLendingArtifact.abi as Abi;
+
+export async function getGasFeeOverrides(publicClient: any) {
+  try {
+    const feeEstimate = await publicClient?.estimateFeesPerGas();
+    if (feeEstimate?.maxFeePerGas) {
+      return {
+        maxFeePerGas: (feeEstimate.maxFeePerGas * 150n) / 100n, // 50% buffer for Arbitrum Sepolia base fee surges
+        maxPriorityFeePerGas: feeEstimate.maxPriorityFeePerGas
+          ? (feeEstimate.maxPriorityFeePerGas * 150n) / 100n
+          : undefined,
+      };
+    }
+  } catch (error) {
+    console.warn("[Walnut Gas Helper] Failed to estimate gas fees:", error);
+  }
+  return {};
+}
+
+
