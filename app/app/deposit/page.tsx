@@ -3,6 +3,7 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import type { Address } from "viem";
+import { Encryptable } from "@cofhe/sdk";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useTokenBalances } from "@/hooks/use-token-balances";
 import { useToast } from "@/components/walnut/toast-provider";
 import { wagmiConfig } from "@/lib/web3-config";
-import { walnutChainId } from "@/lib/walnut-contract";
+import { walnutChainId, walnutLendingAbi } from "@/lib/walnut-contract";
 
 const targetChainName =
   wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
@@ -110,9 +111,7 @@ const ERC20_ABI = [
   { inputs: [], name: "decimals", outputs: [{ name: "", type: "uint8" }], stateMutability: "view", type: "function" },
 ] as const;
 
-const WALNUT_V2_ABI = [
-  { inputs: [{ name: "token", type: "address" }, { name: "amount", type: "uint256" }], name: "deposit", outputs: [], stateMutability: "nonpayable", type: "function" },
-] as const;
+// WALNUT_V2_ABI removed in favor of imported walnutLendingAbi
 
 const ORACLE_ABI = [
   { inputs: [{ name: "token", type: "address" }, { name: "amount", type: "uint256" }], name: "getUSDValue", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
@@ -226,14 +225,32 @@ export default function DepositPage() {
       }
 
       setDepositStep('deposit_pending');
+
+      const toEncrypt = usdValue ?? 0n;
+      if (toEncrypt === 0n) {
+        throw new Error("Zero USD valuation. Please wait for price oracle or enter a valid amount.");
+      }
+
+      let encryptedVal;
+      try {
+        const [enc] = await protocol.encryptor.encryptInputsAsync({
+          items: [Encryptable.uint128(toEncrypt)],
+          account: account.address,
+          chainId: walnutChainId,
+        });
+        encryptedVal = enc;
+      } catch (err) {
+        console.error("FHE Encryption failed", err);
+        throw new Error("Collateral valuation encryption failed. Please make sure your wallet supports FHE encryption.");
+      }
       
       let depositGasLimit;
       try {
         const estimatedGas = await publicClient?.estimateContractGas({
           address: WALNUT_LENDING_ADDRESS,
-          abi: WALNUT_V2_ABI,
+          abi: walnutLendingAbi,
           functionName: 'deposit',
-          args: [selectedToken, parsedAmount],
+          args: [selectedToken, parsedAmount, encryptedVal as any],
           account: account.address,
         });
         if (estimatedGas) {
@@ -247,9 +264,9 @@ export default function DepositPage() {
 
       const hash = await depositAsync({ 
         address: WALNUT_LENDING_ADDRESS, 
-        abi: WALNUT_V2_ABI, 
+        abi: walnutLendingAbi, 
         functionName: 'deposit', 
-        args: [selectedToken, parsedAmount],
+        args: [selectedToken, parsedAmount, encryptedVal as any],
         maxFeePerGas,
         maxPriorityFeePerGas,
         gas: depositGasLimit

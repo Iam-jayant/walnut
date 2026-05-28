@@ -7,13 +7,20 @@ import { Copy, ExternalLink, RefreshCw, Shield, KeyRound, Wallet, Server, Landma
 import { Button } from "@/components/ui/button";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useToast, type ToastVariant } from "@/components/walnut/toast-provider";
-import { walnutChainId } from "@/lib/walnut-contract";
+import {
+  walnutChainId,
+  walnutContractAddress,
+  walnutFherc20Address,
+  walnutOracleAddress,
+  walnutMockUsdcAddress,
+} from "@/lib/walnut-contract";
 import { wagmiConfig } from "@/lib/web3-config";
 
-const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS;
-const FHERC20_ADDRESS = process.env.NEXT_PUBLIC_FHERC20_ADDRESS;
-const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS;
-const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS;
+const WALNUT_LENDING_ADDRESS = walnutContractAddress;
+const FHERC20_ADDRESS = walnutFherc20Address;
+const ORACLE_ADDRESS = walnutOracleAddress;
+const MOCK_USDC_ADDRESS = walnutMockUsdcAddress;
+
 
 const targetChainName =
   wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??

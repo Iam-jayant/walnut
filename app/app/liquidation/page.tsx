@@ -8,6 +8,8 @@ import { parseAbi } from "viem";
 import { Button } from "@/components/ui/button";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useToast } from "@/components/walnut/toast-provider";
+import { Encryptable } from "@cofhe/sdk";
+import { walnutChainId, walnutLendingAbi, getGasFeeOverrides } from "@/lib/walnut-contract";
 
 const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as `0x${string}`;
 
@@ -59,19 +61,19 @@ export default function LiquidationPage() {
 
         const positions: LiquidatablePosition[] = [];
         for (const log of logs) {
-          const borrower = log.args.user as string;
+          const user = log.args.user as string;
           
           // Check if still liquidatable
           const isLiquidatable = await publicClient.readContract({
             address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-            abi: parseAbi(["function liquidatable(address) view returns (bool)"]),
+            abi: walnutLendingAbi,
             functionName: "liquidatable",
-            args: [borrower as `0x${string}`],
+            args: [user as `0x${string}`],
           });
 
           if (isLiquidatable) {
             positions.push({
-              borrower,
+              borrower: user,
               healthFactor: "< 1.05",
               collateral: "Encrypted",
               debt: "Encrypted",
@@ -111,9 +113,7 @@ export default function LiquidationPage() {
           
           const summary = await publicClient.readContract({
             address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-            abi: parseAbi([
-              "function getAuctionSummary(address) view returns (address, uint256, uint256, bool, bool)",
-            ]),
+            abi: walnutLendingAbi,
             functionName: "getAuctionSummary",
             args: [borrower as `0x${string}`],
           });
@@ -180,11 +180,13 @@ export default function LiquidationPage() {
     setIsOpeningAuction(true);
     try {
       addToast({ variant: "pending", message: "Opening private auction..." });
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi(["function openAuction(address borrower) external"]),
+        abi: walnutLendingAbi,
         functionName: "openAuction",
         args: [borrower as `0x${string}`],
+        ...feeOverrides,
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
@@ -206,18 +208,24 @@ export default function LiquidationPage() {
       // Encrypt the bid amount (penalty in basis points)
       const penaltyBps = Math.floor(parseFloat(bidAmount) * 100); // Convert percentage to basis points
       
-      // In production, use FHE encryption here
-      const encryptedPenalty = {
-        data: BigInt(penaltyBps),
-      };
+      // Perform dynamic, fully homomorphic encryption of bid in FHE on the Sepolia network.
+      const [encryptedPenalty] = await protocol.encryptor.encryptInputsAsync({
+        items: [Encryptable.uint128(BigInt(penaltyBps))],
+        account: address!,
+        chainId: walnutChainId,
+      });
 
+      if (!encryptedPenalty) {
+        throw new Error("FHE encryption failed. Please try again.");
+      }
+
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi([
-          "function submitBid(address borrower, (bytes data) encryptedPenalty) external",
-        ]),
+        abi: walnutLendingAbi,
         functionName: "submitBid",
         args: [selectedBorrower as `0x${string}`, encryptedPenalty as any],
+        ...feeOverrides,
       });
 
       addToast({ variant: "pending", message: "Submitting encrypted bid..." });
@@ -240,11 +248,13 @@ export default function LiquidationPage() {
     setIsSelectingWinner(true);
     try {
       addToast({ variant: "pending", message: "Initiating winner selection..." });
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi(["function selectWinningBid(address borrower) external returns (uint256)"]),
+        abi: walnutLendingAbi,
         functionName: "selectWinningBid",
         args: [borrower as `0x${string}`],
+        ...feeOverrides,
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });

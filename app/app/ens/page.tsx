@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { Wallet, Plus, Trash2, Eye, EyeOff, CheckCircle, Link as LinkIcon, Info, Shield, Coins, HelpCircle, KeyRound, Sparkles, X } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { parseAbi, isAddress } from "viem";
+import { isAddress } from "viem";
 
 import { Button } from "@/components/ui/button";
+import { walnutLendingAbi, getGasFeeOverrides } from "@/lib/walnut-contract";
 import { Input } from "@/components/ui/input";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useToast } from "@/components/walnut/toast-provider";
@@ -45,7 +46,7 @@ export default function ENSPage() {
       try {
         const wallets = await publicClient.readContract({
           address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-          abi: parseAbi(["function getLinkedWallets(address) view returns (address[])"]),
+          abi: walnutLendingAbi,
           functionName: "getLinkedWallets",
           args: [address as `0x${string}`],
         });
@@ -74,11 +75,13 @@ export default function ENSPage() {
     setIsLoadingAggregated(true);
     try {
       addToast({ variant: "pending", message: "Summing collateral via FHE addition..." });
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi(["function getAggregatedCollateral(address) returns (uint256)"]),
+        abi: walnutLendingAbi,
         functionName: "getAggregatedCollateral",
         args: [address as `0x${string}`],
+        ...feeOverrides,
       });
 
       addToast({ variant: "pending", message: "Confirming sum transaction on-chain..." });
@@ -120,11 +123,13 @@ export default function ENSPage() {
     setIsLinkingWallet(true);
     try {
       addToast({ variant: "pending", message: "Submitting link wallet request..." });
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi(["function registerLinkedWallet(address additionalWallet) external"]),
+        abi: walnutLendingAbi,
         functionName: "registerLinkedWallet",
         args: [newWalletAddress as `0x${string}`],
+        ...feeOverrides,
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
@@ -146,11 +151,13 @@ export default function ENSPage() {
     setRemovingAddress(walletAddress);
     try {
       addToast({ variant: "pending", message: "Submitting unlink wallet request..." });
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi(["function removeLinkedWallet(address wallet) external"]),
+        abi: walnutLendingAbi,
         functionName: "removeLinkedWallet",
         args: [walletAddress as `0x${string}`],
+        ...feeOverrides,
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });

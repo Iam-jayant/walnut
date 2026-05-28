@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Users, Plus, X, CheckCircle, Clock, Info, Shield, Coins } from "lucide-react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { parseAbi } from "viem";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +10,7 @@ import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useToast } from "@/components/walnut/toast-provider";
 import { useCofheEncrypt } from "@cofhe/react";
 import { Encryptable } from "@cofhe/sdk";
-import { walnutChainId } from "@/lib/walnut-contract";
+import { walnutChainId, walnutLendingAbi, getGasFeeOverrides } from "@/lib/walnut-contract";
 
 const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as `0x${string}`;
 
@@ -35,6 +34,17 @@ type MyOffer = {
   matchedWith?: string;
 };
 
+function formatEncryptedVal(val: string): { title: string; subtitle: string } {
+  if (!val) return { title: "🔒 Encrypted", subtitle: "N/A" };
+  if (val.startsWith("0x") && val.length > 20) {
+    return {
+      title: "🔒 Encrypted",
+      subtitle: `${val.slice(0, 10)}...${val.slice(-8)}`
+    };
+  }
+  return { title: "🔒 Encrypted", subtitle: val };
+}
+
 export default function P2PPage() {
   const protocol = useWalnutProtocol();
   const { address } = useAccount();
@@ -47,6 +57,7 @@ export default function P2PPage() {
   const [offers, setOffers] = useState<LoanOffer[]>([]);
   const [myOffers, setMyOffers] = useState<MyOffer[]>([]);
   const [totalOfferCount, setTotalOfferCount] = useState(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Modal display state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -72,7 +83,7 @@ export default function P2PPage() {
       try {
         const count = await publicClient.readContract({
           address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-          abi: parseAbi(["function getOfferCount() view returns (uint256)"]),
+          abi: walnutLendingAbi,
           functionName: "getOfferCount",
         });
 
@@ -85,7 +96,7 @@ export default function P2PPage() {
     fetchOfferCount();
     const interval = setInterval(fetchOfferCount, 15000);
     return () => clearInterval(interval);
-  }, [publicClient]);
+  }, [publicClient, refreshTrigger]);
 
   // Fetch all offers
   useEffect(() => {
@@ -98,10 +109,8 @@ export default function P2PPage() {
           offerPromises.push(
             publicClient.readContract({
               address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-              abi: parseAbi([
-                "function offers(uint256) view returns (address lender, bytes encryptedApr, bytes encryptedSize, bytes encryptedTenor, bool active, bool matched)",
-              ]),
-              functionName: "offers",
+              abi: walnutLendingAbi,
+              functionName: "loanOffers",
               args: [BigInt(i)],
             })
           );
@@ -109,22 +118,21 @@ export default function P2PPage() {
 
         const results = await Promise.all(offerPromises);
         const fetchedOffers: LoanOffer[] = results.map((result, index) => {
-          const [lender, encryptedApr, encryptedSize, encryptedTenor, active, matched] = result as [
+          const [lender, encryptedApr, encryptedSize, encryptedTenor, matched, borrower] = result as [
             string,
             string,
             string,
             string,
             boolean,
-            boolean
+            string
           ];
-
           return {
             offerId: index,
             lender,
-            encryptedApr: "••••",
-            encryptedSize: "••••",
-            encryptedTenor: "••••",
-            active,
+            encryptedApr,
+            encryptedSize,
+            encryptedTenor,
+            active: !matched && lender !== "0x0000000000000000000000000000000000000000",
             matched,
           };
         });
@@ -136,7 +144,7 @@ export default function P2PPage() {
     };
 
     fetchOffers();
-  }, [publicClient, totalOfferCount]);
+  }, [publicClient, totalOfferCount, refreshTrigger]);
 
   // Fetch my offers
   useEffect(() => {
@@ -149,10 +157,8 @@ export default function P2PPage() {
           offerPromises.push(
             publicClient.readContract({
               address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-              abi: parseAbi([
-                "function offers(uint256) view returns (address lender, bytes encryptedApr, bytes encryptedSize, bytes encryptedTenor, bool active, bool matched)",
-              ]),
-              functionName: "offers",
+              abi: walnutLendingAbi,
+              functionName: "loanOffers",
               args: [BigInt(i)],
             })
           );
@@ -162,16 +168,17 @@ export default function P2PPage() {
         const myOffersList: MyOffer[] = [];
 
         for (let i = 0; i < results.length; i++) {
-          const [lender, , , , active, matched] = results[i] as [
+          const [lender, , , , matched, borrower] = results[i] as [
             string,
             string,
             string,
             string,
             boolean,
-            boolean
+            string
           ];
 
           if (lender.toLowerCase() === address.toLowerCase()) {
+            const active = !matched && lender !== "0x0000000000000000000000000000000000000000";
             myOffersList.push({
               offerId: i,
               apr: "Encrypted",
@@ -179,6 +186,7 @@ export default function P2PPage() {
               tenor: "Encrypted",
               active,
               matched,
+              matchedWith: borrower !== "0x0000000000000000000000000000000000000000" ? borrower : undefined,
             });
           }
         }
@@ -190,7 +198,7 @@ export default function P2PPage() {
     };
 
     fetchMyOffers();
-  }, [publicClient, address, totalOfferCount]);
+  }, [publicClient, address, totalOfferCount, refreshTrigger]);
 
   const handlePostOffer = async () => {
     if (!walletClient || !address || !postApr || !postSize || !postTenor) return;
@@ -223,18 +231,19 @@ export default function P2PPage() {
         throw new Error("FHE encryption failed. Please try again.");
       }
 
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi([
-          "function postLoanOffer((bytes data) encryptedApr, (bytes data) encryptedSize, (bytes data) encryptedTenor) external",
-        ]),
+        abi: walnutLendingAbi,
         functionName: "postLoanOffer",
         args: [encryptedApr as any, encryptedSize as any, encryptedTenor as any],
+        ...feeOverrides,
       });
 
       addToast({ variant: "pending", message: "Posting encrypted offer on-chain..." });
       await publicClient?.waitForTransactionReceipt({ hash });
       addToast({ variant: "success", message: "Loan offer posted successfully!" });
+      setRefreshTrigger((prev) => prev + 1);
       
       setPostApr("");
       setPostSize("");
@@ -256,15 +265,18 @@ export default function P2PPage() {
     setSelectedOfferId(offerId);
     try {
       addToast({ variant: "pending", message: "Submitting match transaction..." });
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi(["function matchOffer(uint256 offerId) external"]),
+        abi: walnutLendingAbi,
         functionName: "matchOffer",
         args: [BigInt(offerId)],
+        ...feeOverrides,
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
       addToast({ variant: "success", message: "Offer matched! Privara settlement initiated." });
+      setRefreshTrigger((prev) => prev + 1);
     } catch (error) {
       console.error("Error matching offer:", error);
       addToast({ variant: "error", message: "Failed to match offer" });
@@ -280,15 +292,18 @@ export default function P2PPage() {
     setIsCancellingOffer(true);
     try {
       addToast({ variant: "pending", message: "Submitting cancellation..." });
+      const feeOverrides = await getGasFeeOverrides(publicClient);
       const hash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: parseAbi(["function cancelOffer(uint256 offerId) external"]),
+        abi: walnutLendingAbi,
         functionName: "cancelOffer",
         args: [BigInt(offerId)],
+        ...feeOverrides,
       });
 
       await publicClient?.waitForTransactionReceipt({ hash });
       addToast({ variant: "success", message: "Offer cancelled successfully!" });
+      setRefreshTrigger((prev) => prev + 1);
     } catch (error) {
       console.error("Error cancelling offer:", error);
       addToast({ variant: "error", message: "Failed to cancel offer" });
@@ -429,15 +444,36 @@ export default function P2PPage() {
                       <div className="grid grid-cols-3 gap-6 text-sm">
                         <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
                           <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">APR</p>
-                          <p className="font-bold text-slate-800 mt-0.5">{offer.encryptedApr}</p>
+                          <div className="flex flex-col mt-0.5">
+                            <span className="font-semibold text-slate-800 text-xs flex items-center gap-1">
+                              {formatEncryptedVal(offer.encryptedApr).title}
+                            </span>
+                            <span className="text-[9px] font-mono text-slate-400">
+                              {formatEncryptedVal(offer.encryptedApr).subtitle}
+                            </span>
+                          </div>
                         </div>
                         <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
                           <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">Size</p>
-                          <p className="font-bold text-slate-800 mt-0.5">{offer.encryptedSize}</p>
+                          <div className="flex flex-col mt-0.5">
+                            <span className="font-semibold text-slate-800 text-xs flex items-center gap-1">
+                              {formatEncryptedVal(offer.encryptedSize).title}
+                            </span>
+                            <span className="text-[9px] font-mono text-slate-400">
+                              {formatEncryptedVal(offer.encryptedSize).subtitle}
+                            </span>
+                          </div>
                         </div>
                         <div className="bg-slate-50/50 border border-slate-100 rounded-xl px-3.5 py-2">
                           <p className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">Tenor</p>
-                          <p className="font-bold text-slate-800 mt-0.5">{offer.encryptedTenor}</p>
+                          <div className="flex flex-col mt-0.5">
+                            <span className="font-semibold text-slate-800 text-xs flex items-center gap-1">
+                              {formatEncryptedVal(offer.encryptedTenor).title}
+                            </span>
+                            <span className="text-[9px] font-mono text-slate-400">
+                              {formatEncryptedVal(offer.encryptedTenor).subtitle}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
