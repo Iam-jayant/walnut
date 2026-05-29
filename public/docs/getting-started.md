@@ -36,10 +36,10 @@ Walnut is a confidential lending protocol built with Fully Homomorphic Encryptio
 
 | Contract | Address |
 |----------|---------|
-| WalnutLending | `0x786e919d305a012B9006bbd644a07E29029498b5` |
-| WalnutFHERC20 (cUSDC) | `0xe5cDaf3DfC5C721b2dE05494c73a7Bb2739501d9` |
-| WalnutPriceOracle | `0x27b0afF49b042C1d57Cce5af46D7290860B7565D` |
-| MockUSDC | `0x58484E5a0745bAfFb30CBc7267690bE11a9ee7B3` |
+| WalnutLending | `0x7D2624efEEe1640d347fbE4632d352c8648A26f5` |
+| WalnutFHERC20 (cUSDC) | `0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef` |
+| WalnutPriceOracle | `0x5Ca597609292912a9422EB6a954236564331911F` |
+| MockUSDC | `0x2956690C57012afF7086dB71bC9d4b08715d920F` |
 
 ## Next Steps
 

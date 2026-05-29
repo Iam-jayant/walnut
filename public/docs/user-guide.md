@@ -316,14 +316,14 @@ Your tier doesn't update automatically—you need to request it:
 1. Navigate to **"Settings"** (or use the dashboard tier widget)
 2. Click **"Request Tier Update"**
 3. Confirm the transaction
-4. Wait for the decrypt callback to process
+4. Wait for the enclave decryption to complete off-chain
 5. Your tier will update if you've met the requirements
 
 **How It Works:**
 - Your repayment count is encrypted on-chain
-- Requesting an update triggers a decrypt request
-- CoFHE decrypts your count and calls back with the result
-- The contract derives your tier from the count
+- Requesting an update triggers a decryption sync request
+- CoFHE decrypts your count off-chain, yielding an enclave ECDSA signature
+- The client submits the result and signature to update your tier on-chain (`syncCreditCount`)
 - Your public `creditTier` is updated
 
 ## Protocol Status Bar

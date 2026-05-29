@@ -22,11 +22,11 @@ flowchart TB
         Oracle[WalnutPriceOracle]
         MockUSDC[MockUSDC Token]
         PriceFeed[Chainlink Price Feed]
+        TM[TaskManager Contract]
     end
 
     subgraph CoFHE["CoFHE Network"]
-        TM[Task Manager]
-        Decrypt[Decryption Service]
+        Decrypt[Decryption Enclave Nodes]
     end
 
     subgraph External["External Services"]
@@ -35,18 +35,16 @@ flowchart TB
 
     UI --> SDK
     UI --> Wagmi
-    SDK -->|Encrypt inputs| WL
-    Wagmi -->|Transactions| WL
+    SDK -->|Request decryption| Decrypt
+    Decrypt -->|Return signature & result| SDK
+    Wagmi -->|Transactions & syncXxx| WL
     Wagmi -->|ERC20 ops| MockUSDC
 
     WL -->|Mint/Burn| FHERC
     WL -->|Price queries| Oracle
     WL -->|Transfer| MockUSDC
+    WL -->|verifyDecryptResultSafe| TM
     Oracle -->|Read price| PriceFeed
-
-    WL -->|Request decrypt| TM
-    TM -->|Callback| WL
-    Decrypt -->|Process| TM
 
     UI -->|Settlement request| Privara
 ```
@@ -62,9 +60,10 @@ flowchart LR
     Cipher -->|Transaction| Contract[WalnutLending<br/>Contract]
     Contract -->|FHE Operations| Compute[Encrypted<br/>Computation]
     Compute -->|Store| Storage[euint128<br/>On-Chain Storage]
-    Storage -->|FHE.allow| Permit[User Permit<br/>Authorization]
-    Permit -->|Decrypt Request| CoFHE[CoFHE Network]
-    CoFHE -->|Decrypted Value| Display[Frontend<br/>Display]
+    Storage -->|FHE.allowPublic| Permit[Public Decrypt<br/>Permission]
+    Permit -->|Decryption Signature| SDK[CoFHE SDK]
+    SDK -->|syncXxx transaction| Contract
+    Contract -->|verifyDecryptResultSafe| Display[Plaintext State<br/>Activated]
 ```
 
 ### Encryption Flow
@@ -91,6 +90,7 @@ sequenceDiagram
     participant MockUSDC
     participant WalnutFHERC20
     participant Oracle
+    participant TaskManager
     participant CoFHE Network
 
     Note over User,CoFHE Network: Deposit Flow
@@ -105,7 +105,7 @@ sequenceDiagram
     WalnutLending->>WalnutLending: FHE.allow(_collateral[user], user)
     WalnutLending-->>Frontend: Deposited event
 
-    Note over User,CoFHE Network: Borrow Flow
+    Note over User,CoFHE Network: Borrow Flow (Client-Driven Sync)
     User->>Frontend: Enter borrow amount
     Frontend->>CoFHE SDK: encrypt(amount)
     CoFHE SDK-->>Frontend: InEuint128
@@ -113,13 +113,20 @@ sequenceDiagram
     WalnutLending->>WalnutLending: Check LTV with FHE operations
     WalnutLending->>WalnutLending: FHE.select(withinLimit, amount, 0)
     WalnutLending->>WalnutFHERC20: mintInternal(user, mintAmount)
-    WalnutLending->>WalnutLending: Create new Loan in userLoans array
-    WalnutLending->>CoFHE Network: Request principal decrypt
-    CoFHE Network-->>WalnutLending: onLoanPrincipalDecrypted(requestId, principal)
-    WalnutLending->>WalnutLending: Update loan.principal and loan.active
-    WalnutLending-->>Frontend: Borrowed event + LoanOpened event
+    WalnutLending->>WalnutLending: Create new Loan (pending state)
+    WalnutLending->>WalnutLending: FHE.allowPublic(mintAmount)
+    WalnutLending-->>Frontend: Emit BorrowPrincipalSyncRequested(requestId)
+    
+    Frontend->>CoFHE SDK: requestDecryption(requestId)
+    CoFHE SDK->>CoFHE Network: Decrypt allowed ciphertext
+    CoFHE Network-->>CoFHE SDK: Return decryptedValue & Signature
+    Frontend->>WalnutLending: syncLoanPrincipal(requestId, decryptedValue, signature)
+    WalnutLending->>TaskManager: verifyDecryptResultSafe(requestId, decryptedValue, signature)
+    TaskManager-->>WalnutLending: true (signature verified)
+    WalnutLending->>WalnutLending: Update loan.principal and set loan.active = true
+    WalnutLending-->>Frontend: Emit LoanOpened event
 
-    Note over User,CoFHE Network: Repay Flow
+    Note over User,CoFHE Network: Repay Flow (Client-Driven Sync)
     User->>Frontend: Enter repay amount + select loan
     Frontend->>CoFHE SDK: encrypt(amount)
     CoFHE SDK-->>Frontend: InEuint128
@@ -128,10 +135,16 @@ sequenceDiagram
     WalnutLending->>WalnutLending: calculateInterest(user, loan.principal)
     WalnutLending->>WalnutLending: Check if amount >= principal + interest
     WalnutLending->>WalnutFHERC20: burnInternal(user, burnAmount)
-    WalnutLending->>CoFHE Network: Request repay state sync
-    CoFHE Network-->>WalnutLending: onLoanRepayDecrypted(requestId, signal)
+    WalnutLending->>WalnutLending: FHE.allowPublic(repaySignal)
+    WalnutLending-->>Frontend: Emit RepaySyncRequested(requestId) + RepaymentSettlementIntent event
+    
+    Frontend->>CoFHE SDK: requestDecryption(requestId)
+    CoFHE SDK->>CoFHE Network: Decrypt allowed ciphertext
+    CoFHE Network-->>CoFHE SDK: Return decryptedValue (signal) & Signature
+    Frontend->>WalnutLending: syncLoanRepay(requestId, signal, signature)
+    WalnutLending->>TaskManager: verifyDecryptResultSafe(requestId, signal, signature)
+    TaskManager-->>WalnutLending: true (signature verified)
     WalnutLending->>WalnutLending: Set loan.active = false if signal == 1
-    WalnutLending-->>Frontend: RepaymentSettlementIntent event
 ```
 
 ## Privara Settlement Flow
@@ -171,62 +184,64 @@ sequenceDiagram
 
 The settlement transaction is handled by Privara to keep the interest amount private. The user sees both transaction hashes but the actual interest amount remains encrypted.
 
-## Async Callback Flow
+## Client-Driven Decryption Sync Flow
 
-CoFHE uses an async callback pattern for decryption:
+Walnut Protocol uses the secure, modern **Client-Driven Decryption Sync** pattern to verify FHE decryption results on-chain. Rather than relying on fragile, push-based callback handlers, the client coordinates the decryption process off-chain and submits the cryptographically signed enclave results back to the smart contract:
 
 ```mermaid
 sequenceDiagram
-    participant Contract as WalnutLending
-    participant TM as Task Manager
-    participant CoFHE as CoFHE Network
-    participant Callback as Callback Handler
+    participant User
+    participant Client as Frontend (wagmi/viem)
+    participant SDK as CoFHE SDK
+    participant WL as WalnutLending Contract
+    participant TM as TaskManager Contract
+    participant FHE as FHE Enclave Nodes
 
-    Contract->>Contract: Need to decrypt value
-    Contract->>Contract: FHE.allowGlobal(value)
-    Contract->>TM: createDecryptTask(requestId, callbackAddress)
-    Note right of TM: Request stored with ID
-
-    TM->>CoFHE: Submit decrypt request
-    CoFHE->>CoFHE: Decrypt value
-    CoFHE->>TM: Return decrypted result
-
-    TM->>Callback: onXxxDecrypted(requestId, result)
-    Note right of Callback: Callback must have<br/>onlyCoFHE modifier
-
-    Callback->>Callback: Process result
-    Callback->>Callback: Update state
-    Callback->>Callback: Clean up request mapping
+    User->>Client: Triggers FHE operation (e.g., Borrow)
+    Client->>WL: Call borrow(encryptedAmount)
+    WL->>WL: Compute encrypted LTV bounds
+    WL->>WL: FHE.allowPublic(mintAmount)
+    WL-->>Client: Emit BorrowPrincipalSyncRequested(requestId)
+    
+    Client->>SDK: Initiate decryption for requestId
+    SDK->>FHE: Request decryption (with view permit)
+    FHE->>FHE: Decrypt allowed ciphertext
+    FHE-->>SDK: Return decrypted result + ECDSA Enclave Signature
+    SDK-->>Client: Return decrypted result & signature
+    
+    Client->>WL: Call syncLoanPrincipal(requestId, result, signature)
+    WL->>TM: Call verifyDecryptResultSafe(requestId, result, signature)
+    TM->>TM: Verify enclave ECDSA signature
+    TM-->>WL: Signature valid
+    WL->>WL: Update loan state (principal & set active = true)
+    WL-->>Client: Emit LoanOpened event
 ```
 
-### Callback Functions
+### Decentralized Timeout Recovery
 
-Walnut implements several callback handlers:
+To prevent positions from getting permanently locked in a pending sync state if a user closes their browser or a relayer fails, Walnut implements a fully decentralized **Timeout Recovery Flow**.
 
-1. **`onLoanPrincipalDecrypted(requestId, result)`**
-   - Called after borrow to sync loan principal
-   - Updates `userLoans[user][loanIndex].principal` and sets `active = true`
-   - Clears pending sync mapping
+After a **1-hour expiration window**, anyone (e.g., a keeper or the user) can call `cancelPendingBorrow(loanIndex)` or `cancelPendingRepay(loanIndex)` to safely cancel the pending operation and revert the state back to normal.
 
-2. **`onLoanRepayDecrypted(requestId, result)`**
-   - Called after repay to confirm full repayment
-   - Sets `userLoans[user][loanIndex].active = false` if result == 1
-   - Clears loan principal if result == 1
-   - Emits `LoanStateCleared` event
+### Client-Driven Sync Functions
 
-3. **`onTotalBorrowedDecrypted(requestId, result)`**
-   - Called to sync public aggregate total
-   - Updates `totalBorrowed` cache
-   - Uses versioning to prevent stale updates
+Walnut implements secure, client-driven sync handlers:
 
-4. **`onGuardCheckDecrypted(requestId, result)`**
-   - Called for position guard health checks
-   - Emits `PositionGuardTriggered` if result == 1
+1. **`syncLoanPrincipal(uint256 requestId, uint128 result, bytes calldata signature)`**
+   - Synchronizes loan principal after a successful borrow.
+   - Verifies signature, updates `userLoans[user][loanIndex].principal`, and sets `active = true`.
 
-5. **`onCreditCountDecrypted(requestId, result)`**
-   - Called to update credit tier
-   - Derives tier from repayment count
-   - Updates `creditTier[user]`
+2. **`syncLoanRepay(uint256 requestId, uint128 result, bytes calldata signature)`**
+   - Verifies the repayment signal. If result == 1 (fully repaid), sets `userLoans[user][loanIndex].active = false` and clears principal.
+
+3. **`syncCreditCount(uint256 requestId, uint128 result, bytes calldata signature)`**
+   - Updates the user's public credit tier on-chain based on their private decrypted repayment history.
+
+4. **`syncTotalBorrowed(uint256 requestId, uint128 result, bytes calldata signature)`**
+   - Updates the public `totalBorrowed` cache with versioning checks to prevent stale updates.
+
+5. **`syncPositionGuardCheck(uint256 requestId, uint128 result, bytes calldata signature)`**
+   - Checks position health. If result == 1, marks the user position as liquidatable.
 
 ## State Management
 
@@ -358,9 +373,7 @@ Users progress through tiers based on repayment count:
 | 4    | 50                  | 90%     |
 
 **Implementation:**
-- `_repaymentCount[user]` is encrypted
-- `creditTier[user]` is public (derived from count)
-- Tier update requires decrypt request + callback
+- Tier update requires decrypt request + client-driven sync
 - LTV enforced in `borrow()` using encrypted comparison
 
 ## Utilization and Dynamic Rates
@@ -452,15 +465,16 @@ Supports multiple concurrent loans per user:
 
 Public metrics without revealing individual positions:
 - `_totalBorrowedEncrypted` is canonical
-- `totalBorrowed` is public cache (updated via callback)
+- `totalBorrowed` is public cache (updated via sync)
 - Individual positions remain encrypted
 
-### Callback Security
+### Sync Validation Security
 
-Only CoFHE can call callbacks:
-- `onlyCoFHE` modifier checks `msg.sender == TASK_MANAGER_ADDRESS`
-- Prevents attackers from calling callbacks with fake data
-- Request mappings cleaned after processing
+Decryption results are verified cryptographically on-chain:
+- Uses `FHE.verifyDecryptResultSafe(requestId, result, signature)`
+- Only cryptographically signed ECDSA signatures from FHE enclave nodes are accepted
+- Prevents malicious actors from submitting fake sync values
+- Request mappings are cleaned up after a successful synchronization
 
 ## Deployment Architecture
 

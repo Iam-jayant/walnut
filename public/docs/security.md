@@ -52,27 +52,30 @@ Makes a value globally decryptable by anyone. **Never used in Walnut** because a
 
 **Security Principle**: Walnut never calls `allowGlobal()`. All encrypted user data is protected by `allow()` grants to specific addresses only.
 
-## `onlyCoFHE` Modifier Explained
+## Cryptographic Enclave Verification Explained
 
-The `onlyCoFHE` modifier is critical for callback security:
+Rather than relying on fragile, push-based callback modifiers, Walnut Protocol secures decryption results on-chain via the **TaskManager** contract using ECDSA enclave signatures:
 
 ```solidity
-modifier onlyCoFHE() {
-    require(msg.sender == COFHE_ADDRESS, "WalnutLending: only CoFHE");
-    _;
-}
+function verifyDecryptResultSafe(
+    uint256 ctHash,
+    uint128 result,
+    bytes calldata signature
+) external view returns (bool)
 ```
 
-**Purpose**: Ensures that only the CoFHE network can call decryption callback functions.
+**Purpose**: Validates that the decrypted value is authentic and has been cryptographically signed directly by decentralized CoFHE enclave nodes.
 
-**Why It Matters**: When the protocol requests decryption (e.g., for interest settlement), it submits a request to CoFHE and waits for a callback with the decrypted result. Without `onlyCoFHE`, an attacker could call the callback function directly with fake decrypted values, manipulating protocol state.
+**Why It Matters**: Because anyone can submit a decryption result back to the contract via public `syncXxx` functions (e.g. `syncLoanPrincipal`, `syncLoanRepay`, `syncCreditCount`), Walnut verifies the ECDSA signature on-chain to prevent malicious actors from providing false plaintext outputs. Without signature verification, an attacker could spoof the result and falsely clear debt or boost their credit tier.
 
-**Functions Protected**:
-- `onTotalBorrowedDecrypted()`: Updates public aggregate borrow total
-- `onGuardCheckDecrypted()`: Processes position guard health factor checks
-- Any future callback that processes decrypted values
+**Verification-Guarded Functions**:
+- `syncLoanPrincipal(...)`: Finalizes the active status of a newly opened loan
+- `syncLoanRepay(...)`: Validates repay signals and toggles loan active states
+- `syncTotalBorrowed(...)`: Updates the public cache for total protocol debt
+- `syncPositionGuardCheck(...)`: Processes health checks and flags liquidations
+- `syncCreditCount(...)`: Progresses the user's public credit tier on-chain
 
-**Attack Scenario Prevented**: Without `onlyCoFHE`, an attacker could call `onTotalBorrowedDecrypted(requestId, fakeValue)` to manipulate the public `totalBorrowed` metric, causing incorrect utilization rate calculations and dashboard displays.
+**Attack Scenario Prevented**: An attacker attempts to call `syncCreditCount` with a spoofed repayment count of `100` to skip directly to credit tier 4. The contract calls `verifyDecryptResultSafe`, identifies that the ECDSA enclave signature is missing or invalid for that specific ciphertext hash, and immediately reverts the transaction.
 
 ## Oracle Staleness Attack Surface
 
@@ -102,11 +105,11 @@ All administrative functions and their authorized callers:
 |----------|------------------|---------|------------|
 | `pause()` | Owner only | Emergency stop of all protocol operations | High |
 | `unpause()` | Owner only | Resume protocol operations after pause | High |
-| `setPositionGuard(euint128 threshold)` | Owner only | Set health factor threshold for position monitoring | Medium |
+| `setPositionGuard(InEuint128 threshold)` | Owner only | Set health factor threshold for position monitoring | Medium |
 | `grantAuditorPermit(address auditor, uint256 expiry)` | Owner only | Grant time-limited read access to encrypted positions | High |
 | `revokeAuditorPermit(address auditor)` | Owner only | Revoke auditor read access | Medium |
-| `onTotalBorrowedDecrypted(uint256 requestId, uint128 result)` | CoFHE only | Update public aggregate borrow total | Critical |
-| `onGuardCheckDecrypted(uint256 requestId, uint128 healthFactor)` | CoFHE only | Process position guard health check | Critical |
+| `syncTotalBorrowed(euint128 ciphertext, uint128 result, bytes signature)` | Anyone (Verified via TaskManager Enclave Signature) | Update public aggregate borrow total cache | Medium (Signature verified) |
+| `syncPositionGuardCheck(euint128 ciphertext, uint128 result, bytes signature)` | Anyone (Verified via TaskManager Enclave Signature) | Process position guard health check and flag liquidation | Medium (Signature verified) |
 | `setPriceFeed(address token, address feed)` | Owner only (Oracle) | Add or update Chainlink price feed | High |
 | `setMinter(address minter)` | Owner only (FHERC20) | Set authorized minter for cUSDC | Critical |
 
@@ -205,22 +208,21 @@ Walnut maintains both encrypted and public aggregate totals:
 ```solidity
 euint128 private _totalBorrowedEncrypted; // Canonical encrypted total
 uint256 public totalBorrowed; // Public cache for dashboard
-mapping(uint256 => bool) private _pendingTotalBorrowedSyncs; // Request tracking
+mapping(uint256 => uint256) public pendingTotalBorrowedSyncVersions; // Request version tracking
 ```
 
-**Security Principle**: The encrypted total is canonical; the public total is a cache updated via CoFHE callbacks.
+**Security Principle**: The encrypted total is canonical; the public total is a cache updated via client-driven decryption sync with enclave signature checks.
 
 **Synchronization Flow**:
-1. User borrows/repays → `_totalBorrowedEncrypted` updated immediately
-2. Contract requests decryption from CoFHE
-3. CoFHE calls back with decrypted value
-4. `onTotalBorrowedDecrypted()` updates `totalBorrowed` cache
-5. Pending request cleaned up
+1. User borrows/repays → `_totalBorrowedEncrypted` updated immediately on-chain.
+2. The transaction emits a `TotalBorrowedSyncRequested(ctHash, version)` event.
+3. The client receives this event, requests the enclave decryption off-chain to obtain the signed plaintext value.
+4. The client submits a transaction to `syncTotalBorrowed(ciphertext, result, signature)`.
+5. The contract verifies the enclave signature via the TaskManager and updates the public `totalBorrowed` cache.
 
 **Attack Surface**:
-- If CoFHE callback fails, public total becomes stale (dashboard shows outdated data)
-- If attacker could call `onTotalBorrowedDecrypted()` directly, they could manipulate public metrics
-- Mitigated by `onlyCoFHE` modifier
+- If signature checks were missing, aggregate metrics could be spoofed.
+- Mitigated completely by `verifyDecryptResultSafe` signature verification via the TaskManager.
 
 **Residual Risk**: Public total may lag behind encrypted total during high transaction volume. This affects dashboard display only, not protocol logic.
 

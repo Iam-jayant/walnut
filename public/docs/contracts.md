@@ -138,8 +138,8 @@ Borrows encrypted cUSDC against collateral, enforcing LTV limits via FHE. Suppor
 - Updates `_debt[msg.sender]`
 - Creates new `Loan` struct in `userLoans[msg.sender]` array
 - Updates `_totalBorrowedEncrypted`
-- Requests principal sync via CoFHE callback
-- Requests total borrowed sync
+- Emits `BorrowPrincipalSyncRequested` for client-driven decryption sync
+- Emits `TotalBorrowedSyncRequested` for client-driven total borrowed sync
 
 **Events:**
 - `Borrowed(user, timestamp)`
@@ -186,8 +186,8 @@ Repays a specific loan with interest, burning cUSDC and clearing debt.
 - Increments `_repaymentCount[msg.sender]` if sufficient
 - Burns cUSDC
 - Reduces `_totalBorrowedEncrypted`
-- Requests repay state sync via CoFHE callback
-- Requests total borrowed sync
+- Emits `RepayStateSyncRequested` for client-driven decryption sync
+- Emits `TotalBorrowedSyncRequested` for client-driven total borrowed sync
 
 **Events:**
 - `LoanRepaid(user, loanIndex, principal, interest)`
@@ -350,8 +350,9 @@ Checks if user's health factor is below their guard threshold.
 **Effects:**
 - Calculates health factor using FHE
 - Compares to threshold
-- Requests decrypt of trigger signal
-- Emits `PositionGuardTriggered` if HF < threshold (via callback)
+- Grants decryption permission to public enclave via `FHE.allowPublic`
+- Maps request ID to user in `_pendingGuardChecks`
+- Attendant sync execution in `syncPositionGuardCheck` emits `PositionGuardTriggered` if HF < threshold
 
 **FHE Operations:**
 - `FHE.mul(_collateral[user], 10000)` - Scale collateral
@@ -372,12 +373,12 @@ Requests credit tier update based on repayment count.
 - `user`: Address to update tier for
 
 **Effects:**
-- Grants contract permission to decrypt repayment count
-- Requests decrypt via CoFHE
-- Tier updated in callback based on count
+- Grants public enclave permission to decrypt repayment count via `FHE.allowPublic`
+- Maps decryption request ID to user in `decryptRequests`
+- Attendant sync execution in `syncCreditCount` updates user tier based on decrypted count
 
 **Events:**
-- `CreditTierUpdated(user, tier)` (emitted in callback)
+- `CreditTierUpdated(user, tier)` (emitted in `syncCreditCount`)
 
 ### View Functions
 
@@ -577,50 +578,52 @@ Revokes auditor's read access.
 **Events:**
 - `AuditorPermitRevoked(auditor)`
 
-### CoFHE Callback Functions
+### Client-Driven Decryption Sync Functions
 
-These functions are called by the CoFHE Task Manager after decryption.
+These functions are called by the client (frontend) off-chain to synchronize decrypted results and verify enclave signatures on-chain via the TaskManager.
 
-#### onLoanPrincipalDecrypted
+#### syncLoanPrincipal
 
 ```solidity
-function onLoanPrincipalDecrypted(uint256 requestId, uint128 result) external onlyCoFHE
+function syncLoanPrincipal(euint128 ciphertext, uint128 result, bytes calldata signature) external
 ```
 
-Callback after borrow principal is decrypted.
+Synchronizes borrow principal after a borrow operation.
 
 **Parameters:**
-- `requestId`: Decrypt request ID
-- `result`: Decrypted principal amount
+- `ciphertext`: Encrypted principal ciphertext handle
+- `result`: Plaintext decrypted principal amount
+- `signature`: ECDSA signature signed by FHE enclave nodes
 
 **Effects:**
-- Retrieves user and loan index from `pendingPrincipalSyncs[requestId]`
-- Updates `userLoans[user][loanIndex].principal = result` if result > 0
-- Sets `userLoans[user][loanIndex].active = true` if result > 0
-- Clears pending sync mapping
+- Verifies enclave signature via `TaskManager.verifyDecryptResultSafe`
+- Retrieves loan details associated with the ciphertext handle
+- Updates `userLoans[user][loanIndex].principal = result`
+- Sets `userLoans[user][loanIndex].active = true`
+- Clears pending sync mappings
 
 **Events:**
 - `LoanPrincipalSynced(user, loanIndex, principal, openedAt)`
 
 **Multi-Loan Context:**
 - Each loan sync is independent
-- Loan index tracked in pending sync mapping
-- Multiple loans can have pending syncs simultaneously
+- Active loan tracking and index mapping safely isolated per loan
 
-#### onLoanRepayDecrypted
+#### syncLoanRepay
 
 ```solidity
-function onLoanRepayDecrypted(uint256 requestId, uint128 result) external onlyCoFHE
+function syncLoanRepay(euint128 ciphertext, uint128 result, bytes calldata signature) external
 ```
 
-Callback after repay state signal is decrypted.
+Synchronizes repay state after a repayment operation.
 
 **Parameters:**
-- `requestId`: Decrypt request ID
-- `result`: Signal (1 = full repayment, 0 = insufficient)
+- `ciphertext`: Encrypted repay signal ciphertext handle
+- `result`: Decryption signal (1 = full repayment, 0 = insufficient)
+- `signature`: ECDSA signature signed by FHE enclave nodes
 
 **Effects:**
-- Retrieves user and loan index from `pendingRepaySyncs[requestId]`
+- Verifies enclave signature via `TaskManager.verifyDecryptResultSafe`
 - If result == 1:
   - Sets `userLoans[user][loanIndex].active = false`
   - Clears `userLoans[user][loanIndex].principal = 0`
@@ -629,63 +632,60 @@ Callback after repay state signal is decrypted.
 - `LoanRepayFailed(user, loanIndex)` (if result == 0)
 - `LoanStateCleared(user, loanIndex)` (if result == 1)
 
-**Multi-Loan Context:**
-- Only affects the specific loan being repaid
-- Other loans remain unaffected
-- Loan index tracked in pending sync mapping
-
-#### onTotalBorrowedDecrypted
+#### syncTotalBorrowed
 
 ```solidity
-function onTotalBorrowedDecrypted(uint256 requestId, uint128 result) external onlyCoFHE
+function syncTotalBorrowed(euint128 ciphertext, uint128 result, bytes calldata signature) external
 ```
 
-Callback after total borrowed aggregate is decrypted.
+Synchronizes global total borrowed cache.
 
 **Parameters:**
-- `requestId`: Decrypt request ID
-- `result`: Decrypted total borrowed amount
+- `ciphertext`: Encrypted total borrowed ciphertext handle
+- `result`: Plaintext total borrowed amount
+- `signature`: ECDSA signature signed by FHE enclave nodes
 
 **Effects:**
-- Updates `totalBorrowed` cache if version is current
-- Uses versioning to prevent stale updates
+- Verifies enclave signature via `TaskManager.verifyDecryptResultSafe`
+- Updates `totalBorrowed` cache on-chain if version check matches
 
 **Events:**
 - `TotalBorrowedCacheUpdated(totalBorrowed, version)`
 
-#### onGuardCheckDecrypted
+#### syncPositionGuardCheck
 
 ```solidity
-function onGuardCheckDecrypted(uint256 requestId, uint128 result) external onlyCoFHE
+function syncPositionGuardCheck(euint128 ciphertext, uint128 result, bytes calldata signature) external
 ```
 
-Callback after position guard check is decrypted.
+Synchronizes user position health guard state.
 
 **Parameters:**
-- `requestId`: Decrypt request ID
-- `result`: Signal (1 = triggered, 0 = not triggered)
+- `ciphertext`: Encrypted position guard signal handle
+- `result`: Plaintext signal (1 = triggered, 0 = not triggered)
+- `signature`: ECDSA signature signed by FHE enclave nodes
 
 **Effects:**
-- Emits event if result == 1
+- Verifies signature and triggers `PositionGuardTriggered(user)` event if result == 1
 
 **Events:**
 - `PositionGuardTriggered(user)` (if result == 1)
 
-#### onCreditCountDecrypted
+#### syncCreditCount
 
 ```solidity
-function onCreditCountDecrypted(uint256 requestId, uint128 result) external onlyCoFHE
+function syncCreditCount(euint128 ciphertext, uint128 result, bytes calldata signature) external
 ```
 
-Callback after repayment count is decrypted for tier update.
+Synchronizes user repayment count for credit tier progression.
 
 **Parameters:**
-- `requestId`: Decrypt request ID
-- `result`: Decrypted repayment count
+- `ciphertext`: Encrypted repayment count handle
+- `result`: Plaintext decrypted repayment count
+- `signature`: ECDSA signature signed by FHE enclave nodes
 
 **Effects:**
-- Derives tier from count using `_tierFromRepaymentCount()`
-- Updates `creditTier[user]`
+- Verifies signature, derives credit tier, and updates `creditTier[user]`
 
 **Events:**
 - `CreditTierUpdated(user, tier)`
@@ -955,17 +955,27 @@ await walnutLending.deposit(mockUSDCAddress, amount);
 // 1. Encrypt amount client-side
 const encryptedAmount = await cofheClient.encrypt(amount);
 
-// 2. Borrow
-await walnutLending.borrow(encryptedAmount);
+// 2. Initiate Borrow transaction (mints cUSDC and emits BorrowPrincipalSyncRequested event)
+const tx = await walnutLending.borrow(encryptedAmount);
+const receipt = await tx.wait();
 
-// 3. Wait for principal sync callback
-// Listen for BorrowPrincipalSynced event
+// 3. Retrieve requestId from the BorrowPrincipalSyncRequested event
+const event = receipt.events.find(e => e.name === "BorrowPrincipalSyncRequested");
+const { requestId } = event.args;
+
+// 4. Request enclave decryption signature off-chain via CoFHE SDK
+const { decryptedValue, signature } = await cofheClient
+    .decryptForTx(requestId)
+    .execute();
+
+// 5. Submit client-driven sync transaction with enclave signature to finalize the active state
+await walnutLending.syncLoanPrincipal(requestId, decryptedValue, signature);
 ```
 
 ### Repaying
 
 ```typescript
-// 1. Calculate total repayment
+// 1. Calculate total repayment (principal + accrued interest)
 const [totalInterest, protocolFee, lenderPayment] = 
     await walnutLending.calculateInterest(userAddress, principal);
 const totalRepay = principal + totalInterest;
@@ -973,10 +983,23 @@ const totalRepay = principal + totalInterest;
 // 2. Encrypt amount
 const encryptedAmount = await cofheClient.encrypt(totalRepay);
 
-// 3. Repay
-await walnutLending.repay(encryptedAmount);
+// 3. Initiate Repay transaction (burns cUSDC and emits RepaySyncRequested event)
+const tx = await walnutLending.repay(encryptedAmount, loanIndex);
+const receipt = await tx.wait();
 
-// 4. Handle Privara settlement (separate transaction)
+// 4. Retrieve requestId from the RepaySyncRequested event
+const event = receipt.events.find(e => e.name === "RepayStateSyncRequested");
+const { requestId } = event.args;
+
+// 5. Request enclave decryption signature off-chain via CoFHE SDK
+const { decryptedValue, signature } = await cofheClient
+    .decryptForTx(requestId)
+    .execute();
+
+// 6. Submit client-driven sync transaction with enclave signature to finalize loan closure
+await walnutLending.syncLoanRepay(requestId, decryptedValue, signature);
+
+// 7. Handle Privara interest settlement (separate transaction)
 ```
 
 ### Decrypting Values

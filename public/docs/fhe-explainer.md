@@ -55,7 +55,7 @@ When you interact with Walnut:
 1. **Encryption**: Your browser encrypts your input (e.g., deposit amount) using the CoFHE network's public key
 2. **On-Chain Computation**: The smart contract performs calculations on your encrypted data
 3. **Permission-Based Decryption**: Only you can decrypt your data by creating a permit that grants your wallet read access
-4. **Async Callbacks**: When the protocol needs a decrypted value (like for interest settlement), it requests decryption from CoFHE, which calls back with the result
+4. **Client-Driven Decryption Sync**: When the protocol needs a decrypted value (like for interest settlement or principal updates), the client requests decryption off-chain and submits the enclave-signed result back to the contract, which verifies it using `verifyDecryptResultSafe`
 
 This architecture ensures your sensitive financial data never appears in plaintext on the blockchain, while still enabling a fully functional lending protocol.
 
