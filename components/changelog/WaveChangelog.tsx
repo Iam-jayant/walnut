@@ -128,31 +128,31 @@ export function WaveChangelog() {
   return (
     <div
       onClick={handleBackdropClick}
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-[4px] p-4 animate-fade-in"
       style={{
         fontFamily: "monospace"
       }}
     >
       <div
         ref={modalRef}
-        className="w-full max-w-[640px] bg-[#000000] border border-[#1a1a1a] rounded-2xl overflow-hidden flex flex-col shadow-2xl relative"
+        className="w-full max-w-[640px] bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col shadow-2xl relative"
       >
         {/* HEADER */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1a1a1a]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3">
-            <div className="w-5.5 h-5.5 bg-[#22d3c8] rounded-[4px] flex items-center justify-center font-bold text-black text-xs leading-none">
+            <div className="w-5.5 h-5.5 bg-slate-900 rounded-[4px] flex items-center justify-center font-bold text-white text-[10px] leading-none">
               W
             </div>
-            <span className="text-white text-[13px] font-medium tracking-[0.06em] uppercase">
+            <span className="text-slate-800 text-[13px] font-semibold tracking-[0.06em] uppercase">
               Walnut
             </span>
-            <span className="text-black bg-[#22d3c8] text-[10px] font-bold px-2 py-0.5 rounded-[3px] tracking-[0.08em] leading-none uppercase">
+            <span className="text-slate-700 bg-slate-100 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-[4px] tracking-[0.08em] leading-none uppercase">
               v5 — latest
             </span>
           </div>
           <button
             onClick={dismiss}
-            className="w-7 h-7 rounded-full border border-[#2a2a2a] bg-transparent text-[#888888] hover:text-white hover:border-[#444444] transition-all flex items-center justify-center text-lg leading-none cursor-pointer"
+            className="w-7 h-7 rounded-full border border-slate-200 bg-transparent text-slate-400 hover:text-slate-700 hover:border-slate-300 transition-all flex items-center justify-center text-lg leading-none cursor-pointer"
             aria-label="Close"
           >
             ×
@@ -162,7 +162,7 @@ export function WaveChangelog() {
         {/* BODY */}
         <div className="flex flex-col sm:flex-row min-h-[340px]">
           {/* TIMELINE COLUMN */}
-          <div className="w-full sm:w-[160px] border-b sm:border-b-0 sm:border-r border-[#1a1a1a] py-5 px-4 flex flex-row sm:flex-col justify-around sm:justify-start gap-4">
+          <div className="w-full sm:w-[160px] border-b sm:border-b-0 sm:border-r border-slate-150 py-5 px-4 bg-slate-50/60 flex flex-row sm:flex-col justify-around sm:justify-start gap-4">
             {waves.map((wave, index) => {
               const isActiveWave = wave.id === active;
               return (
@@ -173,22 +173,22 @@ export function WaveChangelog() {
                 >
                   {/* VERTICAL LINE (Desktop only) */}
                   {index < waves.length - 1 && (
-                    <div className="hidden sm:block absolute left-[4.5px] top-[14px] bottom-[-24px] w-[1px] bg-[#1a1a1a] z-0" />
+                    <div className="hidden sm:block absolute left-[4.5px] top-[14px] bottom-[-24px] w-[1px] bg-slate-200 z-0" />
                   )}
                   {/* SQUARE DOT */}
                   <div
                     className={`w-[10px] h-[10px] rounded-[2px] border flex-shrink-0 z-10 transition-all duration-150 ${
                       isActiveWave
-                        ? "bg-[#22d3c8] border-[#22d3c8]"
-                        : "bg-[#000000] border-[#2a2a2a] group-hover:border-[#444444]"
+                        ? "bg-slate-900 border-slate-900 shadow-sm"
+                        : "bg-white border-slate-350 group-hover:border-slate-500"
                     }`}
                   />
                   {/* LABEL */}
                   <span
                     className={`text-[12px] transition-colors duration-150 ${
                       isActiveWave
-                        ? "text-[#22d3c8]"
-                        : "text-[#444444] group-hover:text-[#888888]"
+                        ? "text-slate-950 font-bold"
+                        : "text-slate-450 group-hover:text-slate-700"
                     }`}
                   >
                     {wave.label} {isActiveWave && "←"}
@@ -199,13 +199,13 @@ export function WaveChangelog() {
           </div>
 
           {/* CONTENT COLUMN */}
-          <div className="flex-1 p-6 flex flex-col justify-between">
+          <div className="flex-1 p-6 flex flex-col justify-between bg-white">
             {/* Scrollable area */}
             <div
               className="max-h-[340px] overflow-y-auto pr-2 space-y-4"
               style={{
                 scrollbarWidth: "thin",
-                scrollbarColor: "#2a2a2a transparent"
+                scrollbarColor: "#e2e8f0 transparent"
               }}
             >
               {/* Custom Scrollbar Styles for Webkit */}
@@ -217,26 +217,26 @@ export function WaveChangelog() {
                   background: transparent;
                 }
                 .max-h-\\[340px\\]::-webkit-scrollbar-thumb {
-                  background: #2a2a2a;
+                  background: #cbd5e1;
                   border-radius: 2px;
                 }
               `}</style>
 
               <div>
-                <div className="text-[#22d3c8] text-[10px] uppercase tracking-[0.1em] mb-2 font-bold">
+                <div className="text-slate-500 text-[10px] font-mono uppercase tracking-[0.12em] mb-2 font-semibold">
                   {currentWave.tag}
                 </div>
-                <h3 className="text-white text-[16px] font-semibold leading-snug mb-3">
+                <h3 className="text-slate-900 text-[16px] font-bold leading-snug mb-3">
                   {currentWave.heading}
                 </h3>
-                <p className="text-[#888888] text-[12px] leading-relaxed font-sans mb-4">
+                <p className="text-slate-600 text-[12px] leading-relaxed font-sans mb-4">
                   {currentWave.body}
                 </p>
                 <ul className="space-y-2">
                   {currentWave.features.map((feature, i) => (
                     <li
                       key={i}
-                      className="text-[#888888] text-[12px] pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-[#22d3c8] font-sans"
+                      className="text-slate-600 text-[12px] pl-4 relative before:content-['—'] before:absolute before:left-0 before:text-slate-400 font-sans"
                     >
                       {feature}
                     </li>
@@ -246,8 +246,8 @@ export function WaveChangelog() {
 
               {/* Wave 5 Closing Quote */}
               {active === 5 && (
-                <div className="pt-4 border-t border-[#1a1a1a] mt-4">
-                  <p className="text-[#333333] text-[11px] italic font-sans">
+                <div className="pt-4 border-t border-slate-100 mt-4">
+                  <p className="text-slate-400 text-[11px] italic font-sans">
                     "Aave proved lending works on-chain. Walnut proves it works without anyone seeing anything."
                   </p>
                 </div>
@@ -257,18 +257,18 @@ export function WaveChangelog() {
         </div>
 
         {/* FOOTER */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t border-[#1a1a1a] bg-[#000000]">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t border-slate-200 bg-slate-50/50">
           <div className="flex flex-col sm:flex-row items-center gap-4">
-            <span className="text-[#333333] text-[11px] font-mono whitespace-nowrap">
+            <span className="text-slate-400 text-[11px] font-mono whitespace-nowrap">
               Arbitrum Sepolia · Fhenix CoFHE
             </span>
             {/* DO NOT SHOW AGAIN TOGGLE */}
-            <label className="flex items-center gap-2 text-[11px] cursor-pointer text-[#888888] select-none hover:text-white transition-colors">
+            <label className="flex items-center gap-2 text-[11px] cursor-pointer text-slate-500 select-none hover:text-slate-800 transition-colors">
               <input
                 type="checkbox"
                 checked={dontShowAgain}
                 onChange={(e) => setDontShowAgain(e.target.checked)}
-                className="w-3.5 h-3.5 accent-[#22d3c8] bg-black border border-[#2a2a2a] rounded cursor-pointer"
+                className="w-3.5 h-3.5 accent-slate-900 bg-white border border-slate-300 rounded cursor-pointer"
               />
               Do not show again
             </label>
@@ -276,7 +276,7 @@ export function WaveChangelog() {
 
           <button
             onClick={handleUseApp}
-            className="w-full sm:w-auto bg-[#22d3c8] text-[#000000] hover:opacity-85 font-medium px-4 py-1.5 rounded-[5px] text-[12px] tracking-[0.04em] transition-opacity cursor-pointer whitespace-nowrap text-center"
+            className="w-full sm:w-auto bg-slate-950 hover:bg-slate-800 text-white font-medium px-4 py-1.5 rounded-[5px] text-[12px] tracking-[0.04em] transition-all cursor-pointer whitespace-nowrap text-center"
           >
             Open app →
           </button>
