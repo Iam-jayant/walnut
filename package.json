@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --webpack",
-    "build": "next build --webpack",
+    "build": "npx hardhat compile && next build --webpack",
     "start": "next start",
     "test": "vitest",
     "test:ui": "vitest --ui",
