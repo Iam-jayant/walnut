@@ -86,7 +86,7 @@ export function SidebarNav() {
     <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-[#EFEFEF] bg-[#FAFAFA]/50 backdrop-blur-xl">
       <div className="flex h-16 shrink-0 items-center px-6">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/walnut logo.png" alt="Walnut" className="h-6 w-auto" />
+          <img src="/svg logo of walnut.svg" alt="Walnut" className="h-13 w-auto" />
           <div className="flex flex-col">
             <span className="text-[10px] uppercase tracking-wider text-black/60 font-medium">
             </span>

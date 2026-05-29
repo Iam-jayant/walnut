@@ -264,11 +264,11 @@ export default function VisionPage() {
                     </h2>
                   </div>
                   <Image
-                    src="/walnut logo.png"
+                    src="/svg logo of walnut.svg"
                     alt="Walnut"
-                    width={128}
-                    height={48}
-                    className="h-8 w-auto opacity-90"
+                    width={160}
+                    height={90}
+                    className="h-16.5 w-auto opacity-90"
                   />
                 </div>
 
@@ -633,11 +633,11 @@ export default function VisionPage() {
                 <div className="absolute h-[10rem] w-[10rem] rounded-full border border-[#0ABFC2]/30 opacity-90" />
                 <div className="relative rounded-[1.75rem] border border-black/10 bg-white/86 p-6 text-center shadow-[0_24px_50px_rgba(0,0,0,0.06)]">
                   <Image
-                    src="/walnut logo.png"
+                    src="/svg logo of walnut.svg"
                     alt="Walnut Protocol"
-                    width={168}
-                    height={64}
-                    className="mx-auto h-10 w-auto"
+                    width={160}
+                    height={90}
+                    className="mx-auto h-[52px] w-auto"
                   />
                   <p className="mt-5 text-[11px] font-mono uppercase tracking-[0.18em] text-black/42">
                     Private lending on Fhenix

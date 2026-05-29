@@ -87,11 +87,11 @@ export function Navigation() {
         {/* LOGO */}
         <Link href="/" className="group flex items-center no-underline">
           <Image 
-            src="/walnut logo.png" 
+            src="/svg logo of walnut.svg" 
             alt="Walnut" 
-            width={250} 
-            height={100}
-            className="h-8 w-auto"
+            width={160} 
+            height={90}
+            className="h-16.5 w-auto"
             priority
           />
         </Link>

@@ -61,9 +61,9 @@ export function DisconnectedState() {
                 {/* Logo */}
                 <div className="flex items-center gap-3">
                   <img 
-                    src="/walnut logo.png" 
+                    src="/svg logo of walnut.svg" 
                     alt="Walnut Protocol" 
-                    className="w-25 h-25 object-contain"
+                    className="h-[72px] w-auto object-contain"
                   />
                 </div>
 
