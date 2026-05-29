@@ -62,6 +62,7 @@ export default function WalnutDashboardPage() {
   const [skipPermit, setSkipPermit] = useState(false);
   const [isCreatingPermit, setIsCreatingPermit] = useState(false);
   const [showFaqModal, setShowFaqModal] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const protocol = useWalnutProtocol();
   const tokenBalances = useTokenBalances();
   
@@ -289,6 +290,22 @@ export default function WalnutDashboardPage() {
     }
   }
 
+  async function handleRefresh() {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        tokenBalances.refreshBalances(),
+        protocol.refreshBalances(),
+        showDecrypted ? protocol.fetchHealthFactor() : Promise.resolve(),
+      ]);
+    } catch (error) {
+      console.error("Failed to refresh balances:", error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
   // Helper function to format token amounts
   function formatTokenAmount(amount: bigint, decimals: number): string {
     const divisor = BigInt(10 ** decimals);
@@ -378,10 +395,8 @@ export default function WalnutDashboardPage() {
             size="sm"
             variant="outline"
             className="text-xs h-9 px-4 rounded-full border-black/15 bg-white hover:bg-black/5 hover:border-black/25 transition-all font-medium"
-            onClick={() => {
-              void protocol.refreshBalances();
-              if (showDecrypted) void protocol.fetchHealthFactor();
-            }}
+            onClick={handleRefresh}
+            isLoading={isRefreshing}
           >
             Refresh
           </Button>
