@@ -26,25 +26,25 @@ const flows: Flow[] = [
       { 
         icon: Lock,
         title: "Client-Side Encryption", 
-        description: "Your deposit amount is encrypted using FHE on the client before leaving your wallet.",
+        description: "Your deposit amount is encrypted using FHE in your browser before leaving your wallet.",
         phase: "PHASE 01"
       },
       { 
         icon: Send,
         title: "Submit Transaction", 
-        description: "Encrypted collateral (InEuint128) is submitted to WalnutV1.deposit() function.",
+        description: "Encrypted collateral calldata is submitted to WalnutLending.deposit() function.",
         phase: "PHASE 02"
       },
       { 
         icon: CheckCircle,
-        title: "Update Encrypted State", 
-        description: "Contract increments your encrypted collateral balance and totalPoolCollateral using FHE.add.",
+        title: "Oracle Valuation", 
+        description: "Contract queries Chainlink oracle and adds USD value privately using FHE.asEuint128().",
         phase: "PHASE 03"
       },
       { 
         icon: CheckCircle,
-        title: "Grant Permission", 
-        description: "FHE.allowThis() is called to grant contract permission to operate on encrypted values.",
+        title: "Update Encrypted State", 
+        description: "Contract increments _collateral[user] and grants read permissions to user wallet via FHE.allow().",
         phase: "PHASE 04"
       }
     ]
@@ -56,25 +56,25 @@ const flows: Flow[] = [
       { 
         icon: Lock,
         title: "Encrypt Borrow Amount", 
-        description: "Loan amount is encrypted client-side. Your borrowing activity stays private.",
+        description: "Borrow amount is encrypted client-side. Your debt exposure and borrowing habits stay private.",
         phase: "PHASE 01"
       },
       { 
         icon: Send,
         title: "Submit Borrow Request", 
-        description: "Encrypted amount submitted to WalnutV1.borrow(). Contract verifies LTV limits using encrypted operations.",
+        description: "Encrypted amount submitted to WalnutLending.borrow(). Contract verifies LTV limits via FHE arithmetic.",
         phase: "PHASE 02"
       },
       { 
         icon: CheckCircle,
-        title: "Update Debt Balance", 
-        description: "Contract increments your encrypted debt balance and totalPoolDebt using FHE.add.",
+        title: "Create Pending Loan", 
+        description: "cUSDC is minted, mapped _debt is updated, and a pending Loan record is created on-chain.",
         phase: "PHASE 03"
       },
       { 
         icon: CheckCircle,
-        title: "Loan Disbursed", 
-        description: "Funds transferred to your wallet. All position data remains encrypted on-chain.",
+        title: "Enclave Principal Sync", 
+        description: "syncLoanPrincipal() verifies enclave signature via TaskManager on-chain, activating the loan.",
         phase: "PHASE 04"
       }
     ]
@@ -85,26 +85,26 @@ const flows: Flow[] = [
     steps: [
       { 
         icon: FileText,
-        title: "Enter Repayment Amount", 
-        description: "Specify amount to repay. Value is encrypted client-side before request.",
+        title: "Select Loan & Encrypt", 
+        description: "Target a specific loan index and encrypt the required repayment amount in your browser.",
         phase: "PHASE 01"
       },
       { 
         icon: Send,
-        title: "Submit Repay Transaction", 
-        description: "Encrypted amount submitted to WalnutV1.repay(). Contract decrements encrypted debt using FHE.sub.",
+        title: "Submit Repayment", 
+        description: "Encrypted repay amount submitted to WalnutLending.repay(). cUSDC is burned, and FHE.sub reduces debt.",
         phase: "PHASE 02"
       },
       { 
         icon: TrendingUp,
-        title: "Update Repayment Count", 
-        description: "Contract increments your encrypted repaymentCount (euint128) for credit scoring.",
+        title: "Decryption Repay Sync", 
+        description: "syncLoanRepay() verifies enclave signature on-chain to mark the loan inactive and increment FHE repayment count.",
         phase: "PHASE 03"
       },
       { 
         icon: CheckCircle,
         title: "Privara Settlement", 
-        description: "Private interest settlement executed via Reineira SDK. Settlement tx hash recorded separately.",
+        description: "Interest settlement is executed privately using Privara to transfer fees to lenders and protocol.",
         phase: "PHASE 04"
       }
     ]
@@ -116,7 +116,7 @@ const flows: Flow[] = [
       { 
         icon: FileText,
         title: "Post Encrypted Offer", 
-        description: "Lender encrypts APR, size, and tenor client-side. Terms submitted to WalnutV1.postOffer().",
+        description: "Lender encrypts APR, size, and tenor client-side. Terms submitted to postOffer() function.",
         phase: "PHASE 01"
       },
       { 
@@ -128,7 +128,7 @@ const flows: Flow[] = [
       { 
         icon: Users,
         title: "Match Offer", 
-        description: "Borrower calls WalnutV1.matchOffer(). Contract marks offer inactive and records borrower address.",
+        description: "Borrower calls matchOffer(). Contract marks offer inactive and records borrower address.",
         phase: "PHASE 03"
       },
       { 
@@ -151,38 +151,38 @@ const flows: Flow[] = [
     steps: [
       { 
         icon: FileText,
-        title: "Request Liquidation Check", 
-        description: "Liquidator calls WalnutV1.requestLiquidationCheck(). Contract computes encrypted health factor.",
+        title: "Check Position Guard", 
+        description: "Any user or keeper calls checkPositionGuard(user). Contract computes encrypted health factor.",
         phase: "PHASE 01"
       },
       { 
         icon: Send,
-        title: "FHE.requestDecrypt", 
-        description: "Contract calls FHE.requestDecrypt() on health factor. Request ID stored and mapped to user.",
+        title: "FHE.allowPublic", 
+        description: "Contract calls FHE.allowPublic() on the trigger signal, allowing public enclaves to decrypt.",
         phase: "PHASE 02"
       },
       { 
         icon: CheckCircle,
-        title: "CoFHE Callback", 
-        description: "onLiquidationResult() callback executed by CoFHE. If health < 1.05, liquidatable flag set to true.",
+        title: "Decryption Guard Sync", 
+        description: "syncPositionGuardCheck() verified on-chain via verifyDecryptResultSafe. If signal == 1, position is flagged as liquidatable.",
         phase: "PHASE 03"
       },
       { 
         icon: Gavel,
         title: "Sealed-Bid Auction", 
-        description: "Liquidators submit encrypted bids via WalnutV1.submitBid(). All bids remain encrypted.",
+        description: "Liquidators submit encrypted bids via the auction contract. Bids remain encrypted to protect from front-running.",
         phase: "PHASE 04"
       },
       { 
         icon: Send,
-        title: "Select Winner", 
-        description: "WalnutV1.selectWinningBid() uses FHE.select to find minimum bid in ciphertext. Requests decrypt of winner index.",
+        title: "FHE Comparison", 
+        description: "The contract selects the winning bid using FHE.select in ciphertext, keeping all bid sizes private.",
         phase: "PHASE 05"
       },
       { 
         icon: CheckCircle,
-        title: "Winner Callback", 
-        description: "onWinnerSelected() reveals only winner address. Bid amounts stay encrypted forever.",
+        title: "Select Winner Sync", 
+        description: "syncWinnerSelected() verifies the enclave signature on-chain to reveal only the winner address, settling securely.",
         phase: "PHASE 06"
       }
     ]
@@ -194,25 +194,25 @@ const flows: Flow[] = [
       { 
         icon: FileText,
         title: "Request Tier Update", 
-        description: "User or protocol calls WalnutV1.requestCreditTierUpdate(). Initiates tier evaluation.",
+        description: "User calls requestCreditTierUpdate(user). Contract initiates repayment count evaluation.",
         phase: "PHASE 01"
       },
       { 
         icon: Send,
-        title: "Decrypt Repayment Count", 
-        description: "Contract calls FHE.requestDecrypt() on encrypted repaymentCount. Request ID mapped to user.",
+        title: "FHE.allowPublic", 
+        description: "Contract calls FHE.allowPublic() on the encrypted repaymentCount, granting decryption rights.",
         phase: "PHASE 02"
       },
       { 
         icon: TrendingUp,
-        title: "CoFHE Callback", 
-        description: "onCreditCountDecrypted() receives count. Maps to tier: 0-1→T0, 2-3→T1, 4-6→T2, 7-9→T3, 10+→T4.",
+        title: "Decryption Sync", 
+        description: "syncCreditCount() verified on-chain via verifyDecryptResultSafe, receiving the count and deriving the user's tier.",
         phase: "PHASE 03"
       },
       { 
         icon: CheckCircle,
         title: "Update LTV Limit", 
-        description: "Public creditTier updated. TIER_LTV determines new borrowing capacity: T0=70%, T1=75%, T2=80%, T3=85%, T4=90%.",
+        description: "Public creditTier updated. Tier determines LTV: Tier 0=70%, Tier 1=75%, Tier 2=80%, Tier 3=85%, Tier 4=90%.",
         phase: "PHASE 04"
       }
     ]
@@ -238,7 +238,7 @@ export function HowItWorksSection() {
             Protocol Flow
           </h2>
           <p className="text-gray-600 max-w-2xl mx-auto">
-            Client-side encryption to CoFHE callbacks, every step documented with technical precision.
+            Client-side encryption to enclave-signed decryption synchronization, every step documented with technical precision.
           </p>
         </div>
 

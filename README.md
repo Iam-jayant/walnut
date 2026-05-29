@@ -557,10 +557,10 @@ Users progress through tiers based on encrypted repayment count:
 // Encrypted repayment count (private)
 mapping(address => euint128) private _repaymentCount;
 
-// Public tier (derived from count via CoFHE callback)
+// Public tier (derived from count via client-driven FHE sync)
 mapping(address => uint8) public creditTier;
 
-// Tier derivation (in callback after decryption)
+// Tier derivation (in syncCreditCount after decryption)
 function _tierFromRepaymentCount(uint128 count) internal pure returns (uint8) {
     if (count >= 50) return 4;
     if (count >= 25) return 3;

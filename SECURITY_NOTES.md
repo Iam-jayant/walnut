@@ -66,7 +66,7 @@ mapping(address => address[]) public linkedWallets;
 
 ### 2. Access Control
 - `onlyOwner` modifier for admin functions
-- `onlyCoFHE` modifier for callback functions
+- On-chain enclave signature verification (`verifyDecryptResultSafe`) for decryption sync
 - Wallet linking validation (no self-linking, no double-linking)
 
 ### 3. Reentrancy Protection
@@ -82,7 +82,7 @@ mapping(address => address[]) public linkedWallets;
 
 ### 5. Encrypted Data Privacy
 - All sensitive values remain encrypted on-chain
-- CoFHE handles decryption securely
+- Client-driven FHE Decryption Sync verifies enclave signatures securely
 - Only authorized parties can decrypt
 
 ## Audit Recommendations

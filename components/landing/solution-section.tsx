@@ -91,7 +91,7 @@ export function SolutionSection() {
                   FHE.select
                 </span>
                 <span className="px-3 py-1.5 bg-black/5 border border-black/20 rounded-md text-[10px] font-mono text-black font-medium">
-                  onlyCoFHE
+                  verifyDecryptResultSafe
                 </span>
               </div>
               </div>
@@ -113,7 +113,7 @@ export function SolutionSection() {
                 </h3>
               </div>
               <p className="text-[13px] text-gray-700 mb-4 leading-relaxed">
-                Health factor calculations run on <span className="font-semibold">encrypted collateral and debt</span> using <span className="font-semibold">FHE arithmetic</span>. Liquidation checks execute privately through <span className="font-semibold">CoFHE callbacks</span> without exposing user positions on-chain.
+                Health factor calculations run on <span className="font-semibold">encrypted collateral and debt</span> using <span className="font-semibold">FHE arithmetic</span>. Liquidation checks execute privately through <span className="font-semibold">syncPositionGuardCheck</span> using enclave signatures without exposing user positions on-chain.
               </p>
               <p className="text-[13px] text-gray-700 mb-4 leading-relaxed">
                 No plaintext values are stored or emitted.
@@ -123,7 +123,7 @@ export function SolutionSection() {
                   FHE.div
                 </span>
                 <span className="px-3 py-1.5 bg-black/5 border border-black/20 rounded-md text-[10px] font-mono text-black font-medium">
-                  FHE.requestDecrypt
+                  FHE.allowPublic
                 </span>
               </div>
               </div>
@@ -232,18 +232,18 @@ export function SolutionSection() {
               <div className="flex items-center gap-3 mb-3">
                 <Lock className="w-8 h-8 text-black flex-shrink-0" strokeWidth={1.5} />
                 <h3 className="font-sans text-base font-semibold text-black leading-tight">
-                  Async CoFHE Callback Architecture
+                  Client-Driven Enclave Decryption Sync
                 </h3>
               </div>
               <p className="text-[13px] text-gray-700 mb-4 leading-relaxed">
-                Sensitive protocol actions execute through <span className="font-semibold">CoFHE-gated callbacks</span> using encrypted computation and selective decryption. Plaintext values exist only during callback execution and are <span className="font-semibold">never stored on-chain</span>.
+                Sensitive protocol actions utilize <span className="font-semibold">Client-Driven Decryption Sync</span>. Enclave nodes decrypt variables off-chain, producing secure ECDSA signatures verified on-chain via <span className="font-semibold">verifyDecryptResultSafe</span>. Plaintext values exist only during transaction execution.
               </p>
               <div className="flex gap-2 flex-wrap">
                 <span className="px-3 py-1.5 bg-black/5 border border-black/20 rounded-md text-[10px] font-mono text-black font-medium">
-                  FHE.requestDecrypt
+                  FHE.allowPublic
                 </span>
                 <span className="px-3 py-1.5 bg-black/5 border border-black/20 rounded-md text-[10px] font-mono text-black font-medium">
-                  onlyCoFHE
+                  verifyDecryptResultSafe
                 </span>
                 <span className="px-3 py-1.5 bg-black/5 border border-black/20 rounded-md text-[10px] font-mono text-black font-medium">
                   FHE.select
