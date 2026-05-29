@@ -27,10 +27,10 @@ export function TechnicalSpecs() {
     { label: "FHE Provider", value: "Fhenix CoFHE" },
     { label: "Encrypted Type", value: "euint128" },
     { label: "Network", value: "Arbitrum Sepolia (Testnet)" },
-    { label: "Callback System", value: "Async CoFHE Decryption" },
+    { label: "Verification System", value: "Client-Driven Decryption Sync" },
     { label: "Access Control", value: "Permit-based (FHE.allow)" },
     { label: "Storage Model", value: "Encrypted-by-default" },
-    { label: "Plaintext Exposure", value: "Callback-scoped only" }
+    { label: "Plaintext Exposure", value: "Transaction-execution scope only" }
   ];
 
   const resources = [

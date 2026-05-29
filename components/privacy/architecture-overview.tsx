@@ -38,9 +38,9 @@ export function ArchitectureOverview() {
     },
     {
       icon: Lock,
-      title: "CoFHE Coprocessor",
-      description: "Selective decryption through secure callbacks for protocol-critical decisions",
-      tech: ["FHE.requestDecrypt", "onlyCoFHE", "Async Callbacks"],
+      title: "Client-Driven Decryption Sync",
+      description: "Selective decryption verified via secure enclave ECDSA signatures",
+      tech: ["verifyDecryptResultSafe", "Enclave Signatures", "Off-chain Sync"],
       color: "blue" as const
     }
   ];

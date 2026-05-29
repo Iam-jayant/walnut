@@ -24,21 +24,21 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 function getToastStyles(variant: ToastVariant) {
   if (variant === "success") {
     return {
-      container: "border-emerald-500/20 bg-slate-900/90 text-slate-100 shadow-[0_8px_32px_rgba(16,185,129,0.12)]",
+      container: "border-white/10 bg-black/82 text-white shadow-[0_8px_32px_rgba(0,0,0,0.36)] shadow-emerald-500/5",
       iconColor: "text-emerald-400",
       Icon: CheckCircle2,
     };
   }
   if (variant === "error") {
     return {
-      container: "border-red-500/20 bg-slate-900/90 text-slate-100 shadow-[0_8px_32px_rgba(239,68,68,0.12)]",
+      container: "border-white/10 bg-black/82 text-white shadow-[0_8px_32px_rgba(0,0,0,0.36)] shadow-red-500/5",
       iconColor: "text-red-400",
       Icon: AlertTriangle,
     };
   }
   return {
-    container: "border-amber-500/20 bg-slate-900/90 text-slate-100 shadow-[0_8px_32px_rgba(245,158,11,0.12)]",
-    iconColor: "text-amber-400",
+    container: "border-white/10 bg-black/82 text-white shadow-[0_8px_32px_rgba(0,0,0,0.36)] shadow-cyan-500/5",
+    iconColor: "text-[#0AD9DC]",
     Icon: Loader2,
   };
 }
@@ -105,12 +105,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             >
               <div className="flex items-start gap-3 flex-1 min-w-0">
                 <ToastIcon className={cn("h-4 w-4 flex-shrink-0 mt-0.5", styles.iconColor, toast.variant === "pending" && "animate-spin")} />
-                <p className="leading-snug text-slate-200 font-medium break-words">{toast.message}</p>
+                <p className="leading-snug text-white/90 font-medium break-words">{toast.message}</p>
               </div>
               <button
                 type="button"
                 onClick={() => removeToast(toast.id)}
-                className="rounded-full p-1 text-slate-400 hover:text-slate-200 hover:bg-white/5 transition flex-shrink-0"
+                className="rounded-full p-1 text-white/40 hover:text-white hover:bg-white/10 transition flex-shrink-0"
                 aria-label="Dismiss notification"
               >
                 <X className="h-4 w-4" />

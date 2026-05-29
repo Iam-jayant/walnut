@@ -23,57 +23,65 @@ export function CallbackSystem() {
 
   const callbacks = [
     {
-      name: "onLiquidationResult",
+      name: "syncPositionGuardCheck",
       trigger: "Health factor decryption",
       purpose: "Set liquidatable flag based on decrypted health factor",
-      code: `function onLiquidationResult(
-  uint256 requestId,
-  uint128 decryptedHealth
-) public onlyCoFHE {
-  address user = requestIdToUser[requestId];
+      code: `function syncPositionGuardCheck(
+  euint128 ciphertext,
+  uint128 result,
+  bytes calldata signature
+) external {
+  require(
+    FHE.verifyDecryptResultSafe(ciphertext, result, signature),
+    "Invalid signature"
+  );
   
-  if (decryptedHealth < LIQUIDATION_THRESHOLD) {
+  address user = ciphertextToUser[ciphertext];
+  if (result == 1) {
     isLiquidatable[user] = true;
     emit LiquidationEligible(user);
   }
-  
-  // Plaintext exists only in execution scope
-  // Never stored, never emitted
 }`
     },
     {
-      name: "onWinnerSelected",
+      name: "syncWinnerSelected",
       trigger: "Minimum bid index decryption",
       purpose: "Reveal winning liquidator without exposing bid amounts",
-      code: `function onWinnerSelected(
-  uint256 requestId,
-  uint128 winnerIndex
-) public onlyCoFHE {
-  address user = auctionUser[requestId];
+      code: `function syncWinnerSelected(
+  euint128 ciphertext,
+  uint128 winnerIndex,
+  bytes calldata signature
+) external {
+  require(
+    FHE.verifyDecryptResultSafe(ciphertext, winnerIndex, signature),
+    "Invalid signature"
+  );
+  
+  address user = auctionUser[ciphertext];
   address winner = bidders[user][winnerIndex];
   
   // Execute liquidation with winner
   _executeLiquidation(user, winner);
-  
-  // Bid amounts stay encrypted forever
-  emit AuctionSettled(user, winner);
 }`
     },
     {
-      name: "onCreditCountDecrypted",
+      name: "syncCreditCount",
       trigger: "Repayment count decryption",
       purpose: "Map encrypted count to public credit tier",
-      code: `function onCreditCountDecrypted(
-  uint256 requestId,
-  uint128 count
-) public onlyCoFHE {
-  address user = requestIdToUser[requestId];
+      code: `function syncCreditCount(
+  euint128 ciphertext,
+  uint128 count,
+  bytes calldata signature
+) external {
+  require(
+    FHE.verifyDecryptResultSafe(ciphertext, count, signature),
+    "Invalid signature"
+  );
   
-  // Map count to tier
+  address user = ciphertextToUser[ciphertext];
   uint8 tier = _computeTier(count);
   creditTier[user] = tier;
   
-  // Update LTV based on tier
   emit CreditTierUpdated(user, tier);
 }`
     }
@@ -98,18 +106,18 @@ export function CallbackSystem() {
           className="mb-20"
         >
           <div className="inline-block px-3 py-1 mb-6 text-xs font-mono uppercase tracking-wider text-[#0AD9DC] border border-[#0AD9DC]/20 rounded-full">
-            CoFHE Callbacks
+            Client-Driven Decryption Sync
           </div>
           <h2 className="text-5xl lg:text-6xl font-bold mb-6 leading-tight">
             Selective Decryption
             <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0AD9DC] to-[#00B8BB]">
-              Through Secure Callbacks
+              Through Enclave Verification
             </span>
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl leading-relaxed">
-            When protocol logic requires a plaintext value, Walnut uses CoFHE's async callback system.
-            Decrypted values exist only during callback execution — never stored, never emitted.
+            When protocol logic requires a plaintext value, Walnut coordinates decryption off-chain and validates ECDSA enclave signatures on-chain.
+            Decrypted values exist only during transaction execution — never stored, never emitted in logs.
           </p>
         </motion.div>
 
@@ -158,7 +166,7 @@ export function CallbackSystem() {
                             accentColor === "orange" ? "text-[#0AD9DC]" :
                             accentColor === "green" ? "text-green-500" :
                             "text-purple-500"
-                          }`}>onlyCoFHE</span>
+                          }`}>signature-verified</span>
                         </div>
                       </div>
                       
@@ -176,14 +184,14 @@ export function CallbackSystem() {
                           accentColor === "green" ? "bg-green-500/50 border-green-500" :
                           "bg-purple-500/50 border-purple-500"
                         }`}></div>
-                        <span className="text-[10px] text-gray-600 font-mono">WalnutCallbacks.sol</span>
+                        <span className="text-[10px] text-gray-600 font-mono">WalnutLending.sol</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded-md border text-[9px] font-bold uppercase ${
                         accentColor === "orange" ? "bg-cyan-50 text-[#0AD9DC] border-cyan-200" :
                         accentColor === "green" ? "bg-green-100 text-green-500 border-green-200" :
                         "bg-purple-100 text-purple-500 border-purple-200"
                       }`}>
-                        CoFHE
+                        ECDSA Verify
                       </span>
                     </div>
                     
@@ -205,17 +213,16 @@ export function CallbackSystem() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: isVisible ? 1 : 0, y: isVisible ? 0 : 20 }}
           transition={{ duration: 0.6, delay: 0.5 }}
-          className="mt-12 p-8 border-2 border-cyan-500/30 rounded-2xl bg-gradient-to-br from-orange-500/10 to-transparent backdrop-blur-sm"
+          className="mt-12 p-8 border-2 border-[#0AD9DC]/30 rounded-2xl bg-gradient-to-br from-[#0AD9DC]/5 to-transparent backdrop-blur-sm"
         >
           <div className="flex items-start gap-4">
-            <div className="flex-shrink-0 w-2 h-2 mt-2 rounded-full bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.5)]" />
+            <div className="flex-shrink-0 w-2 h-2 mt-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(10,217,220,0.5)]" />
             <div>
-              <h4 className="text-lg font-bold text-gray-900 mb-2">Zero Plaintext Storage Principle</h4>
+              <h4 className="text-lg font-bold text-gray-900 mb-2">ECDSA Enclave Verification Principle</h4>
               <p className="text-gray-700 leading-relaxed">
-                All CoFHE callbacks are gated by the <code className="font-mono text-[#0AD9DC] bg-cyan-50 px-1.5 py-0.5 rounded">onlyCoFHE</code> modifier,
-                ensuring only the TASK_MANAGER_ADDRESS can invoke them. Decrypted values exist solely in callback
-                execution scope and are never persisted to storage or emitted in events. This architectural constraint
-                guarantees that sensitive data cannot leak through logs, storage reads, or event indexing.
+                All client-driven sync actions are verified using the <code className="font-mono text-[#0AD9DC] bg-cyan-50 px-1.5 py-0.5 rounded">verifyDecryptResultSafe</code> function on-chain,
+                which validates that the decrypted value matches a valid ECDSA signature signed directly by FHE enclave nodes.
+                Decrypted values exist solely in transaction execution scope and are never persisted to storage or emitted in events, ensuring maximum security and zero leak potential through indexers or chain history.
               </p>
             </div>
           </div>

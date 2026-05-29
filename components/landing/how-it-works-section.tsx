@@ -225,7 +225,7 @@ export function HowItWorksSection() {
   const currentFlow = flows.find(f => f.id === selectedFlow) || flows[0];
 
   return (
-    <section className="relative bg-gray-50 py-24 text-black">
+    <section className="relative bg-transparent py-24 text-black">
       <div className="mx-auto max-w-7xl px-6">
         {/* Header */}
         <div className="mb-16 text-center">

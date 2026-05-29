@@ -68,12 +68,12 @@ export function FHEPrimitives() {
 );`
     },
     {
-      name: "FHE.requestDecrypt",
-      description: "Async decryption via CoFHE callback",
-      useCase: "Reveal liquidation eligibility",
-      code: `uint256 requestId = FHE.requestDecrypt(
-  healthFactor,
-  this.onLiquidationResult.selector
+      name: "FHE.allowPublic",
+      description: "Grant decryption permissions to public enclaves",
+      useCase: "Authorize secure client-driven decryption",
+      code: `FHE.allowPublic(mintedAmount);
+uint256 ctHash = uint256(
+  euint128.unwrap(mintedAmount)
 );`
     }
   ];

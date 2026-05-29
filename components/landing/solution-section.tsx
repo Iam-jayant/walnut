@@ -34,7 +34,7 @@ export function SolutionSection() {
     <section 
       ref={sectionRef}
       onMouseMove={handleMouseMove}
-      className="relative bg-white py-24 px-6 overflow-hidden"
+      className="relative bg-transparent py-24 px-6 overflow-hidden"
     >
       {/* Global Cyan Glow */}
       <div 

@@ -28,7 +28,7 @@ export function UseCases() {
       problem: "Traditional DeFi: liquidation bids are public, enabling MEV extraction and unfair outcomes",
       solution: "Walnut: liquidators submit encrypted bids. FHE.select finds minimum in ciphertext. Only winner revealed.",
       privacy: ["Bid amounts encrypted forever", "No MEV visibility", "Borrowers get best outcome"],
-      tech: ["FHE.select", "Encrypted auction", "CoFHE winner callback"]
+      tech: ["FHE.select", "Encrypted auction", "Enclave-signed sync"]
     },
     {
       icon: TrendingUp,
