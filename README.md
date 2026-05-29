@@ -1,6 +1,6 @@
 <div align="center">
 
-```
+<pre>
 ██╗    ██╗ █████╗ ██╗     ███╗   ██╗██╗   ██╗████████╗
 ██║    ██║██╔══██╗██║     ████╗  ██║██║   ██║╚══██╔══╝
 ██║ █╗ ██║███████║██║     ██╔██╗ ██║██║   ██║   ██║   
@@ -9,7 +9,7 @@
  ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   
                                                         
     Confidential Lending Protocol • Powered by FHE
-```
+</pre>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.25-blue)](https://soliditylang.org/)
@@ -771,38 +771,38 @@ The confidential DeFi lending market does not exist yet. Walnut is the earliest 
 
 ### Roadmap
 
-#### **Phase 1 — Mainnet Launch** _(Q3 2025)_
+#### **Phase 1 — Mainnet Launch**
 - Deploy on Arbitrum One with real USDC after independent security audit
 - Replace MockUSDC with Circle's production contract (address swap, zero code changes)
 - Switch to Chainlink mainnet price feeds
 - Multisig ownership for all admin functions
 - Bug bounty program
 
-#### **Phase 2 — Token Expansion** _(Q3–Q4 2025)_
+#### **Phase 2 — Token Expansion**
 - Add WBTC, WETH, DAI, USDT as supported collateral
 - Integrate additional Chainlink feeds as they become available on mainnet
 - Tiered collateral factors per token (ETH: 80% LTV, BTC: 75%, stablecoins: 90%)
 - Isolated lending markets per collateral type
 
-#### **Phase 3 — Multichain** _(Q4 2025)_
+#### **Phase 3 — Multichain**
 - Deploy on Base, Optimism, and Polygon as CoFHE coprocessor expands
 - Unified position management across chains
 - Cross-chain collateral bridging (encrypted balances portable across deployments)
 
-#### **Phase 4 — Lender Yield and Protocol Economics** _(Q1 2026)_
+#### **Phase 4 — Lender Yield and Protocol Economics**
 - Lender deposit pools go live — suppliers earn 6% base APY (currently only borrow side exists)
 - Liquidity mining: early depositors earn protocol fee share for bootstrapping TVL
 - Referral system: users who bring verified borrowers earn a cut of their interest — on-chain, privately tracked via encrypted counters
 - Sealed yield distribution: lender earnings settled privately via Privara, same as borrower interest today
 - Protocol treasury accumulates 2% spread between borrow APR (8%) and supply APY (6%)
 
-#### **Phase 5 — Institutional Rails** _(Q2 2026)_
+#### **Phase 5 — Institutional Rails** 
 - Permissioned pools for institutional depositors with KYC gating
 - Auditor permits for compliance teams (pool solvency visible, individual positions never)
 - Private credit lines for DAOs and protocols
 - Whitelist-based under-collateralized lending for verified institutional borrowers
 
-#### **Phase 6 — Full Privacy Stack** _(Q3 2026)_
+#### **Phase 6 — Full Privacy Stack** 
 - Client-side amount encryption for true collateral confidentiality (removes trivial encryption constraint)
 - Private liquidation notifications — borrowers receive encrypted alerts before health factor breach
 - Zero-knowledge identity layer for credit scoring without wallet linking
