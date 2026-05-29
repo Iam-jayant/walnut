@@ -11,6 +11,6 @@ export const cofheConfig = createCofheConfig({
     autogeneratePermits: true,
     shareablePermits: false,
     position: "bottom-right",
-    initialTheme: "dark",
+    initialTheme: "light",
   },
 });
