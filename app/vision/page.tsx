@@ -98,25 +98,83 @@ const momentumPoints = [
   "Each successful use case strengthens the broader case for private financial infrastructure.",
 ];
 
-const roadmapBands = [
+const roadmapPhases = [
   {
-    label: "Now",
-    title: "Prove the private lending loop",
-    body:
-      "Show that encrypted collateral, private debt tracking, and usable borrowing flows can work together in a live product experience.",
+    phase: "Phase 1",
+    title: "Mainnet launch",
+    timeline: "Q3 2025",
+    items: [
+      "Deploy on Arbitrum One with real USDC after independent security audit",
+      "Replace MockUSDC with Circle's production contract (address swap, zero code changes)",
+      "Switch to Chainlink mainnet price feeds",
+      "Multisig ownership for all admin functions",
+      "Bug bounty program"
+    ]
   },
   {
-    label: "Next",
-    title: "Turn protocol credibility into ecosystem pull",
-    body:
-      "Package Walnut as infrastructure that other teams can integrate into wallets, treasuries, private credit desks, and consumer-facing apps.",
+    phase: "Phase 2",
+    title: "Token expansion",
+    timeline: "Q3–Q4 2025",
+    items: [
+      "Add WBTC, WETH, DAI, USDT as supported collateral",
+      "Integrate additional Chainlink feeds as they become available on mainnet",
+      "Tiered collateral factors per token (ETH: 80% LTV, BTC: 75%, stablecoins: 90%)",
+      "Isolated lending markets per collateral type"
+    ]
   },
   {
-    label: "Later",
-    title: "Make private credit feel inevitable",
-    body:
-      "As more financial workflows move onchain, Walnut can become the place where users expect privacy, not a niche feature they have to ask for.",
+    phase: "Phase 3",
+    title: "Multichain",
+    timeline: "Q4 2025",
+    items: [
+      "Deploy on Base, Optimism, and Polygon as CoFHE coprocessor expands",
+      "Unified position management across chains",
+      "Cross-chain collateral bridging (encrypted balances portable across deployments)"
+    ]
   },
+  {
+    phase: "Phase 4",
+    title: "Lender yield and protocol economics",
+    timeline: "Q1 2026",
+    items: [
+      "Lender deposit pools go live — suppliers earn 6% base APY (currently only borrow side exists)",
+      "Liquidity mining: early depositors earn protocol fee share for bootstrapping TVL",
+      "Referral system: users who bring verified borrowers earn a cut of their interest — privately tracked on-chain via encrypted counters",
+      "Sealed yield distribution: lender earnings settled privately via Privara, same as borrower interest today",
+      "Protocol treasury accumulates 2% spread between borrow APR (8%) and supply APY (6%)"
+    ]
+  },
+  {
+    phase: "Phase 5",
+    title: "Institutional rails",
+    timeline: "Q2 2026",
+    items: [
+      "Permissioned pools for institutional depositors with KYC gating",
+      "Auditor permits for compliance teams (pool solvency visible, individual positions never)",
+      "Private credit lines for DAOs and protocols",
+      "Whitelist-based under-collateralized lending for verified institutional borrowers"
+    ]
+  },
+  {
+    phase: "Phase 6",
+    title: "Full privacy stack",
+    timeline: "Q3 2026",
+    items: [
+      "Client-side amount encryption for true collateral confidentiality (removes trivial encryption constraint)",
+      "Private liquidation notifications — borrowers receive encrypted alerts before health factor breach",
+      "Zero-knowledge identity layer for credit scoring without wallet linking"
+    ]
+  }
+];
+
+const budgetItems = [
+  { area: "Security audit", amount: 80000, suffix: "", description: "Independent audit by Trail of Bits or Spearbit — mandatory before mainnet" },
+  { area: "Legal and compliance", amount: 60000, suffix: "", description: "Protocol structure, jurisdiction, regulatory clarity for lending products" },
+  { area: "Core team", amount: 300000, suffix: " / yr", description: "2 engineers + 1 business co-founder salaries (18-month runway)" },
+  { area: "User acquisition", amount: 120000, suffix: "", description: "Liquidity mining, referral rewards, community building" },
+  { area: "Infrastructure", amount: 30000, suffix: " / yr", description: "RPC nodes, monitoring, DevOps, Vercel Pro" },
+  { area: "Marketing and BD", amount: 80000, suffix: "", description: "Protocol partnerships, DeFi integrations, ecosystem presence" },
+  { area: "Bug bounty", amount: 30000, suffix: "", description: "Immunefi program to surface vulnerabilities before they are exploited" },
 ];
 
 export default function VisionPage() {
@@ -310,47 +368,221 @@ export default function VisionPage() {
           </div>
         </section>
 
-        <section className="relative mx-auto max-w-7xl px-6 py-8 lg:px-10">
-          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-            <div className="rounded-[2rem] border border-black/10 bg-black p-8 text-white shadow-[0_28px_70px_rgba(0,0,0,0.16)]">
-              <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-white/50">
-                Traction thesis
-              </p>
-              <h2 className="mt-3 max-w-xl text-3xl font-semibold tracking-tight">
-                Walnut can attract users because it changes what onchain borrowing feels like.
-              </h2>
+        <section className="relative mx-auto max-w-7xl px-6 py-12 lg:px-10">
+          <div className="rounded-[2rem] border border-black/10 bg-white/82 p-8 shadow-[0_24px_60px_rgba(0,0,0,0.06)] backdrop-blur-sm lg:p-12">
+            <div className="grid gap-10 lg:grid-cols-[1fr_400px]">
+              <div>
+                <span className="inline-flex items-center gap-3 rounded-full border border-[#0ABFC2]/30 bg-[#0AD9DC]/10 px-4 py-2 text-[11px] font-mono uppercase tracking-[0.18em] text-[#067f83] font-semibold">
+                  Walnut Beyond the Buildathon
+                </span>
+                <h2 className="mt-6 text-[clamp(2rem,5vw,3.5rem)] font-semibold leading-[1.05] tracking-tight text-black">
+                  From protocol experiment <span className="block text-[#0ABFC2]">to durable infrastructure</span>
+                </h2>
+                <p className="mt-6 text-lg leading-8 text-black/62">
+                  Walnut started as a protocol experiment. It is becoming infrastructure.
+                  The confidential DeFi lending market does not exist yet. Walnut is the earliest
+                  production-grade attempt to build it on FHE. What follows is the roadmap to
+                  turn that head start into a durable protocol.
+                </p>
+              </div>
+              <div className="flex flex-col justify-center rounded-2xl border border-black/10 bg-[#f8f8f6] p-6">
+                <p className="text-xs font-mono uppercase tracking-wider text-black/45 mb-4">Core Partners</p>
+                <div className="space-y-4">
+                  {[
+                    "Built entirely on Fhenix CoFHE",
+                    "Private settlement via Privara",
+                    "Supported by key ecosystem infrastructure partners"
+                  ].map((item, idx) => (
+                    <div key={idx} className="flex items-start gap-3">
+                      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#0AD9DC] shrink-0" />
+                      <span className="text-sm font-medium text-black/70">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-              <div className="mt-8 space-y-4">
-                {momentumPoints.map((point) => (
-                  <div
-                    key={point}
-                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"
-                  >
-                    <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[#0AD9DC]" />
-                    <p className="text-base leading-7 text-white/74">{point}</p>
-                  </div>
-                ))}
+        <section className="relative mx-auto max-w-7xl px-6 py-8 lg:px-10">
+          <div className="mb-10">
+            <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-black/42">
+              Future Milestones
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-black">
+              The Roadmap
+            </h2>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {roadmapPhases.map((phase) => (
+              <div
+                key={phase.phase}
+                className="rounded-2xl border border-black/10 bg-white/78 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.04)] backdrop-blur-sm relative group hover:border-[#0ABFC2]/50 hover:shadow-[0_20px_50px_rgba(10,217,220,0.06)] transition-all duration-300 flex flex-col"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <span className="inline-flex rounded-full border border-[#0ABFC2]/30 bg-[#0AD9DC]/10 px-3 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-[#067f83] font-semibold">
+                    {phase.phase}
+                  </span>
+                  <span className="text-[11px] font-mono text-black/45 font-semibold">
+                    {phase.timeline}
+                  </span>
+                </div>
+                <h3 className="text-xl font-semibold tracking-tight text-black mb-4">
+                  {phase.title}
+                </h3>
+                <ul className="space-y-3 flex-1">
+                  {phase.items.map((item, idx) => (
+                    <li key={idx} className="text-sm leading-6 text-black/58 flex items-start gap-2.5">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#0AD9DC] shrink-0" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="relative mx-auto max-w-7xl px-6 py-12 lg:px-10">
+          <div className="grid gap-8 lg:grid-cols-[1fr_minmax(0,1.8fr)] lg:items-start">
+            <div>
+              <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-black/42">
+                Capital Allocation
+              </p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-black">
+                Investment Required
+              </h2>
+              <p className="mt-4 text-base leading-7 text-black/60">
+                To realize this vision and achieve our first major milestones, we are seeking a seed round.
+                This capital funds our primary operational, security, and growth runways.
+              </p>
+              <div className="mt-8 rounded-2xl border border-black/10 bg-[#f8f8f6] p-6">
+                <h4 className="text-sm font-semibold text-black mb-2">Seed Funding Goal</h4>
+                <p className="text-4xl font-bold tracking-tight text-[#067f83]">$700,000</p>
+                <p className="mt-3 text-xs leading-5 text-black/54">
+                  Provides an 18-month operational runway to Arbitrum mainnet launch, security certification, and first $10M TVL milestone.
+                </p>
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-black/10 bg-white/82 p-8 shadow-[0_22px_56px_rgba(0,0,0,0.05)] backdrop-blur-sm">
-              <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-black/42">
-                Direction of travel
-              </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-black">
-                The roadmap is really a momentum engine.
-              </h2>
+            <div className="overflow-hidden rounded-2xl border border-black/10 bg-white/82 shadow-[0_24px_60px_rgba(0,0,0,0.04)] backdrop-blur-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-black/10 bg-[#f8f8f6]/50">
+                      <th className="px-6 py-4 text-xs font-mono uppercase tracking-wider text-black/45 font-bold">Area</th>
+                      <th className="px-6 py-4 text-xs font-mono uppercase tracking-wider text-black/45 font-bold text-right">Amount (USD)</th>
+                      <th className="px-6 py-4 text-xs font-mono uppercase tracking-wider text-black/45 font-bold">What it funds</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5">
+                    {budgetItems.map((item) => (
+                      <tr key={item.area} className="hover:bg-[#f8f8f6]/30 transition-colors">
+                        <td className="px-6 py-4 text-sm font-semibold text-black">{item.area}</td>
+                        <td className="px-6 py-4 text-sm font-mono text-black font-semibold text-right whitespace-nowrap">
+                          ${item.amount.toLocaleString()}{item.suffix || ""}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-black/60">{item.description}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gradient-to-r from-[#0AD9DC]/5 to-[#0ABFC2]/5 font-semibold">
+                      <td className="px-6 py-5 text-base font-bold text-black">Total seed ask</td>
+                      <td className="px-6 py-5 text-base font-mono text-black font-bold text-right">$700,000</td>
+                      <td className="px-6 py-5 text-sm text-[#067f83] font-medium">18 months to mainnet + first $10M TVL milestone</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
 
-              <div className="mt-8 space-y-5">
-                {roadmapBands.map((item) => (
-                  <div key={item.label} className="rounded-2xl border border-black/10 bg-[#f8f8f6] p-5">
-                    <div className="inline-flex rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-black/55">
-                      {item.label}
+        <section className="relative mx-auto max-w-7xl px-6 py-12 lg:px-10">
+          <div className="rounded-[2.25rem] border border-black/10 bg-black p-8 text-white shadow-[0_30px_80px_rgba(0,0,0,0.16)] lg:p-12 relative overflow-hidden">
+            <div className="absolute right-[-10rem] top-[-10rem] h-[30rem] w-[30rem] rounded-full bg-[#0AD9DC]/10 blur-[120px] pointer-events-none" />
+            <div className="relative z-10">
+              <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-[#0AD9DC] mb-6">
+                For Investors
+              </span>
+              
+              <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+                <div>
+                  <h2 className="text-3xl font-semibold tracking-tight text-white lg:text-4xl">
+                    Addressing a $50 billion opaque market
+                  </h2>
+                  <p className="mt-6 text-base leading-7 text-white/70">
+                    The DeFi lending market holds $50 billion in TVL today — all of it on transparent rails that leak position data to MEV bots and block institutional participation. Walnut addresses both.
+                  </p>
+                  <p className="mt-4 text-base leading-7 text-white/70">
+                    A 1% capture of the existing lending market puts protocol TVL at $500 million. At a 2% annualized spread, that is $10 million in annual protocol revenue — profitable from the day TVL crosses $50 million, which is achievable within 12 months of mainnet launch with the right liquidity incentives.
+                  </p>
+                  <p className="mt-6 text-sm text-[#0AD9DC] font-semibold">
+                    The first $700K gets Walnut through audit, onto mainnet, and to the point where the protocol earns more than it costs to run. Every dollar after that is growth.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                  {[
+                    { label: "DeFi Lending TVL", value: "$50B", text: "Transparent rails leak positions" },
+                    { label: "1% Target Capture", value: "$500M", text: "Confidential institutional TVL" },
+                    { label: "Annualized Spread", value: "2%", text: "Spread between borrow and supply" },
+                    { label: "Annual Revenue Goal", value: "$10M", text: "At $500M TVL milestone" }
+                  ].map((stat, idx) => (
+                    <div key={idx} className="rounded-xl border border-white/10 bg-white/5 p-5">
+                      <p className="text-xs font-mono uppercase tracking-wider text-white/40">{stat.label}</p>
+                      <p className="mt-1 text-2xl font-bold tracking-tight text-[#0AD9DC]">{stat.value}</p>
+                      <p className="text-xs text-white/60 mt-1">{stat.text}</p>
                     </div>
-                    <h3 className="mt-4 text-xl font-semibold tracking-tight text-black">{item.title}</h3>
-                    <p className="mt-2 text-sm leading-7 text-black/60">{item.body}</p>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="relative mx-auto max-w-7xl px-6 py-12 lg:px-10">
+          <div className="rounded-[2rem] border border-black/10 bg-white/82 p-8 shadow-[0_22px_56px_rgba(0,0,0,0.05)] backdrop-blur-sm lg:p-12 text-center relative overflow-hidden">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#0AD9DC]/5 rounded-full blur-[100px] pointer-events-none" />
+            <div className="relative z-10 max-w-3xl mx-auto">
+              <span className="inline-flex rounded-full border border-[#0ABFC2]/30 bg-[#0AD9DC]/10 px-3 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-[#067f83] font-semibold mb-6">
+                Join the Team
+              </span>
+              <h2 className="text-3xl font-semibold tracking-tight text-black lg:text-4xl">
+                Co-founder Wanted
+              </h2>
+              <p className="mt-6 text-base leading-7 text-black/60">
+                This protocol was designed and built solely by one developer. The technical foundation is complete.
+                What it needs now is someone who understands go-to-market, institutional BD, and can turn a working protocol into a funded company.
+              </p>
+              <p className="mt-4 text-base leading-7 text-black/60">
+                If you have experience in DeFi growth, protocol economics, or fintech sales and believe private on-chain lending is the next category — let's talk.
+              </p>
+              <p className="mt-8 text-xl font-bold text-[#067f83] bg-[#0AD9DC]/8 border border-[#0AD9DC]/20 px-6 py-3 rounded-2xl inline-block">
+                $700K in seed funding and the right co-founder makes Walnut unstoppable.
+              </p>
+              
+              <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <Button
+                  asChild
+                  size="lg"
+                  className="h-12 rounded-full bg-black px-7 text-sm font-semibold text-white hover:bg-black/90 w-full sm:w-auto"
+                >
+                  <a href="mailto:partners@walnut.finance">
+                    Reach out via Email
+                    <ArrowRight className="h-4 w-4" />
+                  </a>
+                </Button>
+                <Button
+                  asChild
+                  size="lg"
+                  variant="outline"
+                  className="h-12 rounded-full border-black/12 bg-white px-7 text-sm font-semibold hover:bg-white w-full sm:w-auto"
+                >
+                  <a href="https://twitter.com/walnut_fi" target="_blank" rel="noopener noreferrer">
+                    Twitter @walnut_fi
+                  </a>
+                </Button>
               </div>
             </div>
           </div>

@@ -278,6 +278,7 @@ export default function DepositPage() {
         assertSuccessReceipt(receipt);
       }
       setDepositStep('deposit_confirmed');
+      addToast({ variant: 'success', message: `Successfully deposited ${amount} ${tokenInfo?.symbol ?? 'USDC'} as collateral.` });
       await refreshBalances();
       await protocol.refreshBalances();
       setAmount('');

@@ -77,7 +77,7 @@ export function HeroSection() {
   };
 
   return (
-    <section className="relative flex min-h-screen flex-col justify-center overflow-visible pt-10 pb-0 bg-white">
+    <section className="relative flex min-h-screen flex-col justify-center overflow-visible pt-10 pb-0 bg-transparent">
       {/* Interactive Grid Background - Extended far down */}
       <div className="absolute inset-0 bottom-[-600px] z-0 overflow-hidden pointer-events-none">
         <HeroGridContent />
@@ -390,7 +390,7 @@ export function IntroPanel() {
   };
 
   return (
-    <section ref={sectionRef} className="relative py-5 overflow-visible bg-white">
+    <section ref={sectionRef} className="relative py-5 overflow-visible bg-transparent">
       {/* Continue grid from hero */}
       <div className="absolute inset-0 top-[-400px] z-0 overflow-hidden pointer-events-none">
         <HeroGridContent />
@@ -496,7 +496,6 @@ const HeroGridContent = () => {
 
   return (
     <>
-      {/* Global faint background grid */}
       <motion.div
         className="absolute inset-0 opacity-30 pointer-events-none"
         animate={{ backgroundPosition: ['0px 0px', '64px 64px'] }}

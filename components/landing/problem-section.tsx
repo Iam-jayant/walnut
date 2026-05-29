@@ -92,7 +92,7 @@ const PlatformIcon = ({ type, className }: { type: string; className?: string })
 
 export function ProblemSection() {
   return (
-    <section id="product" className="relative pt-12 pb-24 overflow-hidden bg-[#f5f5f7]">
+    <section id="product" className="relative pt-12 pb-24 overflow-hidden bg-transparent">
       <div className="relative z-10 mx-auto w-full max-w-7xl px-5 lg:px-10">
         {/* Section Header */}
         <div className="mb-16 text-center">
