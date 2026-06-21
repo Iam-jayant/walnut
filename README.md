@@ -8,7 +8,7 @@
 ╚███╔███╔╝██║  ██║███████╗██║ ╚████║╚██████╔╝   ██║   
  ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   
                                                         
-    Confidential Lending Protocol • Powered by FHE
+Confidential Lending Protocol • Powered by FHENIX
 </pre>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -17,7 +17,7 @@
 [![Tests](https://img.shields.io/badge/Tests-55%2B%20Passing-brightgreen)](./test)
 [![Network](https://img.shields.io/badge/Network-Arbitrum%20Sepolia-blue)](https://sepolia.arbiscan.io/)
 
-**[Live Demo](https://walnut-protocol.vercel.app)** • **[Documentation](./docs)** • **[Architecture](./docs/architecture.md)** • **[Security](./docs/security.md)**
+**[Live Product](https://walnut-finance.vercel.app/)** • **[Video](https://youtu.be/zb2FVYq8C58?si=kjZE6NKMwfgBMBkN)** • **[Documentation](./docs)** • **[Architecture](./docs/architecture.md)** • **[Security](./docs/security.md)** 
 
 ---
 
@@ -241,7 +241,7 @@ NEXT_PUBLIC_RPC_URL_PRIMARY=https://sepolia-rollup.arbitrum.io/rpc
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id_here
 
 # Contract Addresses (Already Deployed)
-NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0x7D2624efEEe1640d347fbE4632d352c8648A26f5
+NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0x59C1b5E91FE8eF7F054663199E0F4524b96e54cd
 NEXT_PUBLIC_FHERC20_ADDRESS=0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef
 NEXT_PUBLIC_ORACLE_ADDRESS=0x5Ca597609292912a9422EB6a954236564331911F
 NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x2956690C57012afF7086dB71bC9d4b08715d920F
@@ -923,7 +923,7 @@ In no event shall the authors or copyright holders be liable for any claim, dama
 
 **Walnut Protocol** • Confidential Lending for Everyone
 
-[Get Started](https://walnut-protocol.vercel.app) • [Read Docs](./docs) • [View Contracts](https://sepolia.arbiscan.io/address/0x7D2624efEEe1640d347fbE4632d352c8648A26f5)
+[Get Started](https://walnut-finance.vercel.app/) • [Read Docs](./docs) • [View Contracts](https://sepolia.arbiscan.io/address/0x7D2624efEEe1640d347fbE4632d352c8648A26f5)
 
 ---
 
