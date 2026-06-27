@@ -113,13 +113,15 @@ contract WalnutFHERC20 {
         _burnInternal(from, amount);
     }
 
-    function burnInternal(address from, euint128 amount) external onlyMinter {
+    function burnInternal(address from, euint128 amount) external onlyMinter returns (ebool) {
         require(from != address(0), "Burn from zero address");
         FHE.allowThis(amount);
-        _burnInternal(from, amount);
+        ebool success = _burnInternal(from, amount);
+        FHE.allow(success, msg.sender);
+        return success;
     }
 
-    function _burnInternal(address from, euint128 amount) private {
+    function _burnInternal(address from, euint128 amount) private returns (ebool) {
         euint128 currentBalance = _safeBalance(from);
         ebool hasSufficientBalance = FHE.gte(currentBalance, amount);
         euint128 newBalance = FHE.select(
@@ -144,6 +146,7 @@ contract WalnutFHERC20 {
         FHE.allow(balances[from], address(this));
 
         emit Transfer(from, address(0));
+        return hasSufficientBalance;
     }
 
     // ─── Transfer ────────────────────────────────────────────────────────────
