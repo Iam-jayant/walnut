@@ -7,7 +7,7 @@ require("dotenv").config({ override: true });
  * Usage: TARGET_ADDRESS=0x... MINT_AMOUNT=1000 npx hardhat run scripts/mint-to-address.js --network arbitrumSepolia
  */
 
-const MOCK_USDC_ADDRESS = "0x8B7Af5BB6afc6A087fd94A97f53Bf13dFD63E1E2";
+const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS || "0x0358278567f9310303539344171D31c93BE537E2";
 
 async function main() {
   // Get target address and amount from environment variables
