@@ -86,7 +86,7 @@ async function decrypt(encryptedValue) {
 /**
  * Decrypt collateral for a specific user
  * 
- * @param {Object} contract - The WalnutWave2 contract instance
+ * @param {Object} contract - The WalnutLending contract instance
  * @param {string} userAddress - The user's address
  * @returns {Promise<bigint>} Decrypted collateral value
  * 
@@ -102,7 +102,7 @@ async function decryptCollateral(contract, userAddress) {
 /**
  * Decrypt debt for a specific user
  * 
- * @param {Object} contract - The WalnutWave2 contract instance
+ * @param {Object} contract - The WalnutLending contract instance
  * @param {string} userAddress - The user's address
  * @returns {Promise<bigint>} Decrypted debt value
  * 
@@ -118,7 +118,7 @@ async function decryptDebt(contract, userAddress) {
 /**
  * Decrypt health factor for a specific user
  * 
- * @param {Object} contract - The WalnutWave2 contract instance
+ * @param {Object} contract - The WalnutLending contract instance
  * @param {string} userAddress - The user's address
  * @returns {Promise<bigint>} Decrypted health factor value (scaled by 10000)
  * 

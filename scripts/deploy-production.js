@@ -53,8 +53,8 @@ async function main() {
   // Step 5: Deploy WalnutLending
   console.log("\n5. Deploying WalnutLending...");
   const treasuryAddress = deployer.address; // Using deployer as treasury for testnet
-  const WalnutLending = await hre.ethers.getContractFactory("WalnutLending");
-  const lending = await WalnutLending.deploy(
+  const WalnutLendingV2 = await hre.ethers.getContractFactory("WalnutLendingV2");
+  const lending = await WalnutLendingV2.deploy(
     fherc20Address,
     oracleAddress,
     treasuryAddress
