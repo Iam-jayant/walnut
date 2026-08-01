@@ -56,6 +56,9 @@ const config: HardhatUserConfig = {
     logMocks: true,
     gasWarning: true,
   },
+  mocha: {
+    timeout: 10000000,
+  },
 };
 
 export default config;

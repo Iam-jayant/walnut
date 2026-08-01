@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/.pnp
+.pnp.js
 
 # next.js
 /.next/
@@ -33,6 +35,9 @@ yarn-error.log*
 # editor/local workspace
 .vscode/
 .cursor/
+.idea/
+*.swp
+*.swo
 
 # Kiro AI assistant
 .kiro/
@@ -45,6 +50,8 @@ next-env.d.ts
 cache/
 artifacts/
 typechain-types/
+typechain/
+ignition/deployments/
 
 # test artifacts
 test/_archive/

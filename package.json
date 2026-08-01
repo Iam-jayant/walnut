@@ -11,8 +11,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "deploy:arbitrum-sepolia": "hardhat run scripts/deploy-sepolia.js --network arbitrumSepolia",
-    "deploy:wave2:arbitrum-sepolia": "hardhat run scripts/deploy-wave2-sepolia.js --network arbitrumSepolia"
+    "deploy:arbitrum-sepolia": "hardhat run scripts/deploy-arbitrum-sepolia.js --network arbitrumSepolia"
   },
   "dependencies": {
     "@cofhe/abi": "^0.5.0",
