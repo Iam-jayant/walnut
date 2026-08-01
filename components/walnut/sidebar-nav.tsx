@@ -7,12 +7,14 @@ import { useAccountModal, useConnectModal } from "@rainbow-me/rainbowkit";
 import { useAccount } from "wagmi";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 
 type NavItem = {
   label: string;
   href?: string;
   icon: any;
   subItems?: { label: string; href: string }[];
+  comingSoon?: boolean;
 };
 
 const navigationItems: NavItem[] = [
@@ -33,9 +35,9 @@ const navigationItems: NavItem[] = [
       { label: "Repay", href: "/app/repay" }
     ]
   },
-  { label: "Liquidation", href: "/app/liquidation", icon: ShieldCheck },
-  { label: "P2P", href: "/app/p2p", icon: Users },
-  { label: "ENS Aggregation", href: "/app/ens", icon: Wallet },
+  { label: "Liquidation", href: "/app/liquidation", icon: ShieldCheck, comingSoon: true },
+  { label: "P2P", href: "/app/p2p", icon: Users, comingSoon: true },
+  { label: "ENS Aggregation", href: "/app/ens", icon: Wallet, comingSoon: true },
   { label: "History", href: "/app/history", icon: Clock },
   { label: "Settings", href: "/app/settings", icon: Settings },
 ];
@@ -45,6 +47,7 @@ export function SidebarNav() {
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { openAccountModal } = useAccountModal();
+  const protocol = useWalnutProtocol();
   
   // Track open state for dropdowns
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
@@ -52,8 +55,18 @@ export function SidebarNav() {
     Loans: true
   });
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
-  const [creditTier] = useState("Tier 3");
-  const [systemStatus] = useState("All Operational");
+
+  const creditTier = protocol.creditTier !== undefined ? `Tier ${protocol.creditTier.toString()}` : "Tier 0";
+  
+  const systemStatus = !protocol.isWalletReady 
+    ? "All Operational"
+    : !protocol.isOnTargetChain
+    ? "Wrong Network"
+    : protocol.hasDecryptError
+    ? "Degraded"
+    : !protocol.permit.hasPermit
+    ? "Permit Pending"
+    : "All Operational";
 
   const toggleGroup = (label: string) => {
     setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
@@ -86,7 +99,7 @@ export function SidebarNav() {
     <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-[#EFEFEF] bg-[#FAFAFA]/50 backdrop-blur-xl">
       <div className="flex h-16 shrink-0 items-center px-6">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/svg logo of walnut.svg" alt="Walnut" className="h-13 w-auto" />
+          <img src="/walnut-logo.svg" alt="Walnut" className="h-13 w-auto" />
           <div className="flex flex-col">
             <span className="text-[10px] uppercase tracking-wider text-black/60 font-medium">
             </span>
@@ -160,20 +173,27 @@ export function SidebarNav() {
               key={item.label}
               href={item.href!}
               className={cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 isActive
                   ? "bg-white text-black shadow-sm ring-1 ring-black/5"
                   : "text-muted-foreground hover:bg-black/5 hover:text-foreground"
               )}
             >
-              <item.icon
-                size={16}
-                className={cn(
-                  "transition-colors",
-                  isActive ? "text-black" : "text-muted-foreground group-hover:text-foreground"
-                )}
-              />
-              {item.label}
+              <div className="flex items-center gap-3">
+                <item.icon
+                  size={16}
+                  className={cn(
+                    "transition-colors",
+                    isActive ? "text-black" : "text-muted-foreground group-hover:text-foreground"
+                  )}
+                />
+                {item.label}
+              </div>
+              {item.comingSoon && (
+                <span className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500 uppercase tracking-wide font-mono">
+                  Soon
+                </span>
+              )}
             </Link>
           );
         })}
@@ -220,26 +240,26 @@ export function SidebarNav() {
         <div className={cn(
           "mt-4 flex items-center justify-between rounded-md px-3 py-2",
           systemStatus === "All Operational" ? "bg-emerald-50 border border-emerald-200" :
-          systemStatus === "Degraded" ? "bg-amber-50 border border-amber-200" :
+          systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "bg-amber-50 border border-amber-200" :
           "bg-red-50 border border-red-200"
         )}>
           <span className={cn(
             "text-xs font-medium",
             systemStatus === "All Operational" ? "text-emerald-700" :
-            systemStatus === "Degraded" ? "text-amber-700" :
+            systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "text-amber-700" :
             "text-red-700"
           )}>System Status</span>
           <div className="flex items-center gap-1.5">
             <div className={cn(
               "h-1.5 w-1.5 rounded-full",
               systemStatus === "All Operational" ? "bg-emerald-500" :
-              systemStatus === "Degraded" ? "bg-amber-500" :
+              systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "bg-amber-500" :
               "bg-red-500"
             )} />
             <span className={cn(
               "text-[10px]",
               systemStatus === "All Operational" ? "text-emerald-700" :
-              systemStatus === "Degraded" ? "text-amber-700" :
+              systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "text-amber-700" :
               "text-red-700"
             )}>{systemStatus}</span>
           </div>

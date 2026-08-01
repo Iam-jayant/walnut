@@ -74,7 +74,7 @@ const flows: Flow[] = [
       { 
         icon: CheckCircle,
         title: "Enclave Principal Sync", 
-        description: "syncLoanPrincipal() verifies enclave signature via TaskManager on-chain, activating the loan.",
+        description: "syncBorrowActive() verifies enclave signature via TaskManager on-chain, activating the loan (0/1 LTV gate signal only).",
         phase: "PHASE 04"
       }
     ]
@@ -212,7 +212,7 @@ const flows: Flow[] = [
       { 
         icon: CheckCircle,
         title: "Update LTV Limit", 
-        description: "Public creditTier updated. Tier determines LTV: Tier 0=70%, Tier 1=75%, Tier 2=80%, Tier 3=85%, Tier 4=90%.",
+        description: "Credit tier LTV applied homomorphically at borrow from encrypted repayment count. Tier 0=70% through Tier 4=90% — never stored publicly.",
         phase: "PHASE 04"
       }
     ]

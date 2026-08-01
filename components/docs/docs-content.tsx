@@ -7,6 +7,12 @@ import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
 import { Check, Copy, ExternalLink, Share2 } from "lucide-react";
 import mermaid from "mermaid";
+import {
+  walnutContractAddress,
+  walnutFherc20Address,
+  walnutOracleAddress,
+  walnutMockUsdcAddress,
+} from "@/lib/walnut-contract";
 
 interface DocsContentProps {
   activeDoc: string;
@@ -61,10 +67,10 @@ Walnut is a confidential lending protocol built with Fully Homomorphic Encryptio
 
 | Contract | Address |
 |----------|---------|
-| WalnutLending | \`0x7D2624efEEe1640d347fbE4632d352c8648A26f5\` |
-| WalnutFHERC20 (cUSDC) | \`0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef\` |
-| WalnutPriceOracle | \`0x5Ca597609292912a9422EB6a954236564331911F\` |
-| MockUSDC | \`0x2956690C57012afF7086dB71bC9d4b08715d920F\` |
+| WalnutLending | \`${walnutContractAddress}\` |
+| WalnutFHERC20 (cUSDC) | \`${walnutFherc20Address}\` |
+| WalnutPriceOracle | \`${walnutOracleAddress}\` |
+| MockUSDC | \`${walnutMockUsdcAddress}\` |
 
 ## Next Steps
 

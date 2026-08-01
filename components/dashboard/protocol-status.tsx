@@ -5,29 +5,42 @@ import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { walnutChainId } from "@/lib/walnut-contract";
 
 export function ProtocolStatus() {
-  const { address, isConnected, chain } = useAccount();
+  const { isConnected, chain } = useAccount();
   const { data: blockNumber } = useBlockNumber({ watch: true });
   const protocol = useWalnutProtocol();
 
   const walletStatus = isConnected ? "connected" : "disconnected";
   const networkStatus = chain?.id === walnutChainId ? "correct" : "wrong";
   const permitStatus = protocol.permit.hasPermit ? "ready" : protocol.permit.isPermitInitializing ? "loading" : "none";
-  const oracleStatus = "operational"; // TODO: Add oracle health check
-  const encryptionStatus = "operational"; // TODO: Add CoFHE health check
+  
+  const isHealthy = isConnected && chain?.id === walnutChainId;
+  const oracleStatus = !isHealthy 
+    ? "operational" 
+    : protocol.currentBorrowRate === 0n && protocol.utilizationRate === 0n && !protocol.currentBorrowRateLoading
+    ? "degraded"
+    : "operational";
+
+  const encryptionStatus = !isHealthy 
+    ? "operational" 
+    : protocol.hasDecryptError 
+    ? "degraded" 
+    : "operational";
+
+  const showSidebar = isConnected && protocol.permit.hasPermit;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-walnut-card border-t border-walnut-border px-4 py-2 z-40">
+    <div className={`fixed bottom-0 ${showSidebar ? 'left-64' : 'left-0'} right-0 bg-[#FAFAFA]/95 backdrop-blur-md border-t border-[#EFEFEF] px-6 py-2.5 z-40 transition-all duration-300`}>
       <div className="max-w-7xl mx-auto flex items-center justify-between text-xs">
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-6">
           <StatusItem
             label="Wallet"
             status={walletStatus === "connected" ? "good" : "bad"}
-            value={address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Not connected"}
+            value={protocol.account.address ? `${protocol.account.address.slice(0, 6)}...${protocol.account.address.slice(-4)}` : "Disconnected"}
           />
           <StatusItem
             label="Network"
             status={networkStatus === "correct" ? "good" : "bad"}
-            value={chain?.name || "Unknown"}
+            value={chain?.name || "Unsupported Network"}
           />
           <StatusItem
             label="Private Access"
@@ -36,18 +49,18 @@ export function ProtocolStatus() {
           />
           <StatusItem
             label="Oracle"
-            status={oracleStatus === "operational" ? "good" : "bad"}
-            value="Chainlink"
+            status={oracleStatus === "operational" ? "good" : "warn"}
+            value={oracleStatus === "operational" ? "Chainlink (Live)" : "Chainlink (Degraded)"}
           />
           <StatusItem
             label="Encryption"
-            status={encryptionStatus === "operational" ? "good" : "bad"}
-            value="CoFHE"
+            status={encryptionStatus === "operational" ? "good" : "warn"}
+            value={encryptionStatus === "operational" ? "CoFHE (Active)" : "CoFHE (Stalled)"}
           />
         </div>
         {blockNumber && (
-          <div className="text-walnut-muted">
-            Block: {blockNumber.toString()}
+          <div className="text-slate-400 font-mono text-[10px] hidden sm:block">
+            Block: #{blockNumber.toString()}
           </div>
         )}
       </div>
@@ -64,16 +77,16 @@ interface StatusItemProps {
 function StatusItem({ label, status, value }: StatusItemProps) {
   const dotColor =
     status === "good"
-      ? "bg-green-500"
+      ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
       : status === "warn"
-      ? "bg-amber-500"
-      : "bg-red-500";
+      ? "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)]"
+      : "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.5)]";
 
   return (
     <div className="flex items-center gap-2">
-      <div className={`w-2 h-2 rounded-full ${dotColor}`} />
-      <span className="text-walnut-muted">{label}:</span>
-      <span className="text-walnut-text font-medium">{value}</span>
+      <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+      <span className="text-slate-500 font-medium">{label}:</span>
+      <span className="text-slate-800 font-semibold">{value}</span>
     </div>
   );
 }
