@@ -1,0 +1,26 @@
+const hre = require("hardhat");
+
+async function main() {
+  const contractAddress = "0xB2C6de7D1f3F39007F11F67A18461B60C9A16C69";
+  const mockUSDCAddress = "0xc1376c05E9c75d3Ce05FAf992b61c848A91c0785";
+  const [signer] = await hre.ethers.getSigners();
+
+  console.log("Simulating deposit call from signer:", signer.address);
+
+  // The calldata from the failed tx
+  const calldata = "0x339105ed000000000000000000000000c1376c05e9c75d3ce05faf992b61c848a91c07850000000000000000000000000000000000000000000000000000000000000040530f27b331b28e4d007d9541a31dd029ce93daaa76ad9426abe11cb754c3a28d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000041c4c2f198d6e41b6c1315331cb0303138564c8a1d87f36ffebdd1e027fbb1e10a3d56eeda925722b388ca9d80a0d8289a2d74f102911bfc15ba20c4862bf3f8ae1c00000000000000000000000000000000000000000000000000000000000000";
+
+  try {
+    const res = await hre.ethers.provider.call({
+      from: signer.address,
+      to: contractAddress,
+      data: calldata,
+    });
+    console.log("Call output:", res);
+  } catch (err) {
+    console.error("Simulation error details:");
+    console.error(err);
+  }
+}
+
+main().catch(console.error);
