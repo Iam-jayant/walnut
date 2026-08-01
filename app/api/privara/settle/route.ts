@@ -33,8 +33,39 @@ function envOrThrow(key: string): string {
   return value;
 }
 
+const ipCache = new Map<string, { count: number; resetTime: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute window
+  const maxRequests = 20;
+
+  const record = ipCache.get(ip);
+  if (!record) {
+    ipCache.set(ip, { count: 1, resetTime: now + windowMs });
+    return false;
+  }
+
+  if (now > record.resetTime) {
+    record.count = 1;
+    record.resetTime = now + windowMs;
+    return false;
+  }
+
+  record.count += 1;
+  return record.count > maxRequests;
+}
+
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || "127.0.0.1";
+    if (isRateLimited(ip)) {
+      return NextResponse.json(
+        { ok: false, message: "Too many requests. Please try again in a minute." },
+        { status: 429 }
+      );
+    }
+
     const body = (await request.json()) as SettleRequest;
 
     // Validate required fields
