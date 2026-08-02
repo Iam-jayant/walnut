@@ -6,18 +6,32 @@ import { arbitrumSepolia } from "viem/chains";
 export const runtime = "nodejs";
 
 const syncAbi = parseAbi([
-  "function syncLoanPrincipal(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncBorrowActive(bytes32 ciphertext, uint128 result, bytes signature) external",
   "function syncLoanRepay(bytes32 ciphertext, uint128 result, bytes signature) external",
   "function syncTotalBorrowed(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncDepositTransfer(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncWithdrawTransfer(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncWinnerSelected(address borrower, bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncPositionGuardCheck(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncLiquidationResult(bytes32 ciphertext, uint128 result, bytes signature) external",
 ]);
 
-type SyncFunction = "syncLoanPrincipal" | "syncLoanRepay" | "syncTotalBorrowed";
+type SyncFunction =
+  | "syncBorrowActive"
+  | "syncLoanRepay"
+  | "syncTotalBorrowed"
+  | "syncDepositTransfer"
+  | "syncWithdrawTransfer"
+  | "syncWinnerSelected"
+  | "syncPositionGuardCheck"
+  | "syncLiquidationResult";
 
 type SyncDecryptRequest = {
   syncFunction?: SyncFunction;
   requestId?: string;
   result?: string;
   signature?: `0x${string}`;
+  borrower?: `0x${string}`;
 };
 
 function envOrThrow(key: string): string {
@@ -33,7 +47,17 @@ function normalizePrivateKey(privateKey: string): `0x${string}` {
 }
 
 function isSyncFunction(value: unknown): value is SyncFunction {
-  return value === "syncLoanPrincipal" || value === "syncLoanRepay" || value === "syncTotalBorrowed";
+  return (
+    value === "syncBorrowActive" ||
+    value === "syncLoanPrincipal" ||
+    value === "syncLoanRepay" ||
+    value === "syncTotalBorrowed" ||
+    value === "syncDepositTransfer" ||
+    value === "syncWithdrawTransfer" ||
+    value === "syncWinnerSelected" ||
+    value === "syncPositionGuardCheck" ||
+    value === "syncLiquidationResult"
+  );
 }
 
 function formatError(error: unknown): string {
@@ -41,13 +65,51 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
+const ipCache = new Map<string, { count: number; resetTime: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute window
+  const maxRequests = 20;
+
+  const record = ipCache.get(ip);
+  if (!record) {
+    ipCache.set(ip, { count: 1, resetTime: now + windowMs });
+    return false;
+  }
+
+  if (now > record.resetTime) {
+    record.count = 1;
+    record.resetTime = now + windowMs;
+    return false;
+  }
+
+  record.count += 1;
+  return record.count > maxRequests;
+}
+
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || "127.0.0.1";
+    if (isRateLimited(ip)) {
+      return NextResponse.json(
+        { ok: false, message: "Too many requests. Please try again in a minute." },
+        { status: 429 }
+      );
+    }
+
     const body = (await request.json()) as SyncDecryptRequest;
 
     if (!isSyncFunction(body.syncFunction) || !body.requestId || !body.result || !body.signature) {
       return NextResponse.json(
         { ok: false, message: "Missing required fields: syncFunction, requestId, result, signature" },
+        { status: 400 }
+      );
+    }
+
+    if (body.syncFunction === "syncWinnerSelected" && !body.borrower) {
+      return NextResponse.json(
+        { ok: false, message: "Missing borrower address for syncWinnerSelected" },
         { status: 400 }
       );
     }
@@ -63,7 +125,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "Invalid decrypt result bounds" }, { status: 400 });
     }
 
-    const ciphertextHex = ('0x' + requestId.toString(16).padStart(64, '0')) as `0x${string}`;
+    const ciphertextHex = ("0x" + requestId.toString(16).padStart(64, "0")) as `0x${string}`;
 
     const contractAddress = envOrThrow("NEXT_PUBLIC_WALNUT_LENDING_ADDRESS") as `0x${string}`;
     const rpcUrl =
@@ -88,7 +150,9 @@ export async function POST(request: Request) {
       address: contractAddress,
       abi: syncAbi,
       functionName: body.syncFunction,
-      args: [ciphertextHex, result, body.signature],
+      args: body.syncFunction === "syncWinnerSelected"
+        ? [body.borrower as `0x${string}`, ciphertextHex, result, body.signature] as const
+        : [ciphertextHex, result, body.signature] as const,
     });
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
