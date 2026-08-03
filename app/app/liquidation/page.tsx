@@ -46,7 +46,7 @@ export default function LiquidationPage() {
   const publicClient = usePublicClient();
   const { addToast } = useToast();
   const { writeContractAsync } = useWriteContract();
-  const { permit } = useWalnutPermit();
+  const { permitHash } = useWalnutPermit();
   const cofheClient = useCofheClient();
 
   const [targetBorrower, setTargetBorrower] = useState<string>("");
@@ -127,7 +127,7 @@ export default function LiquidationPage() {
             .setChainId(Number(process.env.NEXT_PUBLIC_CHAIN_ID || 421614))
             .setAccount(address!);
           
-          const withPermit = permit.permitHash ? builder.withPermit(permit.permitHash) : builder.withPermit();
+          const withPermit = permitHash ? builder.withPermit(permitHash) : builder.withPermit();
           decryptResult = await withPermit.execute();
           break;
         } catch (err: any) {
