@@ -1,6 +1,6 @@
 import type { Abi, Address } from "viem";
 
-import walnutLendingArtifact from "../artifacts/contracts/WalnutLending.sol/WalnutLending.json";
+import walnutLendingAbiRaw from "../abis/WalnutLending.deployed.json";
 
 function requirePublicEnv(key: string, value: string | undefined) {
   if (!value) {
@@ -46,7 +46,7 @@ export const walnutMockUsdcAddress = requirePublicEnv(
   process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS
 ) as Address;
 
-export const walnutLendingAbi = walnutLendingArtifact.abi as Abi;
+export const walnutLendingAbi = walnutLendingAbiRaw as unknown as Abi;
 
 export async function getGasFeeOverrides(publicClient: any) {
   try {

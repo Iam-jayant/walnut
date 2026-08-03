@@ -8,13 +8,15 @@ import { FheTypes } from "@cofhe/sdk";
 import { useWalnutPermit } from "@/components/walnut/permit-provider";
 import { debugError } from "@/lib/debug";
 
-// Contract addresses from environment
-const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as Address;
-const FHERC20_ADDRESS = process.env.NEXT_PUBLIC_FHERC20_ADDRESS as Address;
-const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
-const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
-const WETH_ADDRESS = process.env.NEXT_PUBLIC_WETH_ADDRESS as Address;
-const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID ?? "421614");
+import {
+  walnutChainId as CHAIN_ID,
+  walnutContractAddress as WALNUT_LENDING_ADDRESS,
+  walnutFherc20Address as FHERC20_ADDRESS,
+  walnutMockUsdcAddress as MOCK_USDC_ADDRESS,
+} from "@/lib/walnut-contract";
+
+// WETH is not currently exported from walnut-contract, so read it safely
+const WETH_ADDRESS = (process.env.NEXT_PUBLIC_WETH_ADDRESS || "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73") as Address;
 
 // Standard ERC20 ABI (minimal)
 const ERC20_ABI = [
@@ -66,25 +68,6 @@ const FHERC20_ABI = [
   },
 ] as const;
 
-// WalnutLending ABI (minimal)
-const WALNUT_LENDING_ABI = [
-  {
-    inputs: [{ name: "user", type: "address" }],
-    name: "getVaults",
-    outputs: [
-      {
-        name: "",
-        type: "tuple[]",
-        components: [
-          { name: "token", type: "address" },
-          { name: "amount", type: "uint256" },
-        ],
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-] as const;
 
 // Supported collateral tokens
 const SUPPORTED_TOKENS = [
@@ -277,78 +260,10 @@ export function useTokenBalances() {
     };
   }, [isWalletReady, account.address, publicClient, refreshTrigger]);
 
-  // Fetch vault holdings
+  // Per-token vault ledger removed for privacy — collateral is encrypted USD only.
   useEffect(() => {
-    if (!isWalletReady || !account.address || !publicClient) {
-      setVaultHoldings([]);
-      return;
-    }
-
-    let active = true;
-
-    const fetchVaultHoldings = async () => {
-      try {
-        // Use getVaults to fetch all vault holdings at once
-        const vaultData = await publicClient.readContract({
-          address: WALNUT_LENDING_ADDRESS,
-          abi: WALNUT_LENDING_ABI,
-          functionName: "getVaults",
-          args: [account.address!],
-        });
-
-        // Aggregate amounts by token address
-        const amountsByToken = new Map<string, bigint>();
-        for (const vault of vaultData) {
-          const tokenKey = vault.token.toLowerCase();
-          amountsByToken.set(tokenKey, (amountsByToken.get(tokenKey) ?? 0n) + vault.amount);
-        }
-
-        // Build holdings array with token info and USD values
-        const holdings = await Promise.all(
-          SUPPORTED_TOKENS.map(async (tokenInfo) => {
-            const tokenKey = tokenInfo.address.toLowerCase();
-            const amount = amountsByToken.get(tokenKey) ?? 0n;
-            if (amount <= 0n) return null;
-
-            let usdValue: bigint | undefined;
-            try {
-              usdValue = await publicClient.readContract({
-                address: ORACLE_ADDRESS,
-                abi: ORACLE_ABI,
-                functionName: "getUSDValue",
-                args: [tokenInfo.address, amount],
-              });
-            } catch (error) {
-              debugError(`Failed to fetch USD value for vault holding:`, error);
-            }
-
-            return {
-              token: tokenInfo.address,
-              amount,
-              symbol: tokenInfo.symbol,
-              decimals: tokenInfo.decimals,
-              usdValue,
-            } satisfies VaultHolding;
-          })
-        );
-
-        if (active) {
-          setVaultHoldings(holdings.filter((holding): holding is VaultHolding => holding !== null));
-        }
-      } catch (error) {
-        debugError("Failed to fetch vault holdings:", error);
-        if (active) {
-          setVaultHoldings([]);
-        }
-      }
-    };
-
-    void fetchVaultHoldings();
-
-    return () => {
-      active = false;
-    };
-  }, [isWalletReady, account.address, publicClient, refreshTrigger]);
+    setVaultHoldings([]);
+  }, [account.address, refreshTrigger]);
 
   // Auto-refresh balances
   useEffect(() => {
