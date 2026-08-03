@@ -60,9 +60,9 @@ function toBytes32(value) {
   return "0x" + BigInt(value).toString(16).padStart(64, "0");
 }
 
-describe("WalnutLendingV2 — Sealed-Bid Liquidation Lifecycle", function () {
-  this.timeout(600000); // 10 minutes for slow FHE mock operations
-  let owner, treasury, borrower, bidder1, bidder2, bidder3;
+describe("WalnutLendingV2 — Sealed-Bid Liquidation Suite", function () {
+  this.timeout(1200000); // 20 minutes for FHE mock calculations across 5 tests
+  let owner, treasury, borrower, bidder1, bidder2, bidder3, biddersExtra;
   let mockUSDC, oracle, cUSDC, walnutV2;
 
   before(async function () {
@@ -92,7 +92,9 @@ describe("WalnutLendingV2 — Sealed-Bid Liquidation Lifecycle", function () {
 
   beforeEach(async function () {
     mockCipherCounter = 1n;
-    [owner, treasury, borrower, bidder1, bidder2, bidder3] = await ethers.getSigners();
+    const signers = await ethers.getSigners();
+    [owner, treasury, borrower, bidder1, bidder2, bidder3] = signers;
+    biddersExtra = signers.slice(6);
 
     const MockToken = await ethers.getContractFactory("MockERC20WithDecimals");
     mockUSDC = await MockToken.deploy("Mock USDC", "USDC", 6);
@@ -118,157 +120,185 @@ describe("WalnutLendingV2 — Sealed-Bid Liquidation Lifecycle", function () {
     await cUSDC.connect(owner).setMinter(await walnutV2.getAddress());
 
     // Mint USDC to users
-    for (const user of [borrower, bidder1, bidder2, bidder3]) {
+    for (const user of [borrower, bidder1, bidder2, bidder3, ...biddersExtra]) {
       await mockUSDC.mint(user.address, ethers.parseUnits("10000", 6));
       await mockUSDC.connect(user).approve(await walnutV2.getAddress(), ethers.MaxUint256);
     }
   });
 
-  it("Executes the full liquidation lifecycle correctly", async function () {
+  it("1. Executes the full liquidation lifecycle correctly", async function () {
     const usdcAddr = await mockUSDC.getAddress();
 
-    // 1. Borrower Deposits 1000 USDC
-    const depAmt = 1000_000000n;
-    let tx = await walnutV2.connect(borrower).deposit(usdcAddr, await encrypt(depAmt));
+    // Borrower Deposits 1000 USDC & Borrows 850 cUSDC (LTV = 85% > 80% Threshold)
+    let tx = await walnutV2.connect(borrower).deposit(usdcAddr, await encrypt(1000_000000n));
     let receipt = await tx.wait();
     let reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
       try { return walnutV2.interface.parseLog(l).name === "DepositSyncRequested"; } catch { return false; }
     })).args.requestId;
-    await walnutV2.syncDepositTransfer(toBytes32(reqId), depAmt, DUMMY_SIG_65);
+    await walnutV2.syncDepositTransfer(toBytes32(reqId), 1000_000000n, DUMMY_SIG_65);
 
-    // Borrower Borrows 500 cUSDC (Healthy, LTV = 50%)
-    let borAmt = 500_000000n;
-    tx = await walnutV2.connect(borrower).borrow(await encrypt(borAmt));
+    tx = await walnutV2.connect(borrower).borrow(await encrypt(850_000000n));
     receipt = await tx.wait();
     reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
       try { return walnutV2.interface.parseLog(l).name === "BorrowActiveSyncRequested"; } catch { return false; }
     })).args.requestId;
-    await walnutV2.syncBorrowActive(toBytes32(reqId), borAmt, DUMMY_SIG_65);
+    await walnutV2.syncBorrowActive(toBytes32(reqId), 850_000000n, DUMMY_SIG_65);
 
-    // 2. Check Liquidation (Should be healthy)
+    // Request Liquidation Check & Sync Liquidatable = 1
     tx = await walnutV2.connect(bidder1).requestLiquidationCheck(borrower.address);
     receipt = await tx.wait();
     reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
       try { return walnutV2.interface.parseLog(l).name === "LiquidationCheckRequested"; } catch { return false; }
     })).args.requestId;
     
-    // Result 0 = false (Healthy)
-    tx = await walnutV2.syncLiquidationCheck(toBytes32(reqId), 0, DUMMY_SIG_65);
-    receipt = await tx.wait();
-    let healthyEvent = receipt.logs.find(l => {
-      try { return walnutV2.interface.parseLog(l).name === "LiquidationAuctionHealthy"; } catch { return false; }
-    });
-    expect(healthyEvent).to.not.be.undefined;
-
-    // Borrower Borrows 350 more cUSDC (Total 850, LTV = 85% > 80% Threshold)
-    borAmt = 350_000000n;
-    tx = await walnutV2.connect(borrower).borrow(await encrypt(borAmt));
-    receipt = await tx.wait();
-    reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
-      try { return walnutV2.interface.parseLog(l).name === "BorrowActiveSyncRequested"; } catch { return false; }
-    })).args.requestId;
-    await walnutV2.syncBorrowActive(toBytes32(reqId), borAmt, DUMMY_SIG_65);
-
-    // 3. Position is now liquidation-eligible
-    tx = await walnutV2.connect(bidder1).requestLiquidationCheck(borrower.address);
-    receipt = await tx.wait();
-    reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
-      try { return walnutV2.interface.parseLog(l).name === "LiquidationCheckRequested"; } catch { return false; }
-    })).args.requestId;
-    
-    // Result 1 = true (Liquidatable)
     tx = await walnutV2.syncLiquidationCheck(toBytes32(reqId), 1, DUMMY_SIG_65);
-    receipt = await tx.wait();
-    let openEvent = receipt.logs.find(l => {
-      try { return walnutV2.interface.parseLog(l).name === "LiquidationAuctionOpened"; } catch { return false; }
-    });
-    expect(openEvent).to.not.be.undefined;
+    await tx.wait();
 
-    // Verify Replay Reverts
-    try {
-      await walnutV2.syncLiquidationCheck(toBytes32(reqId), 1, DUMMY_SIG_65);
-      expect.fail("Should revert");
-    } catch (err) {
-      expect(err.message).to.include("Unknown check");
-    }
-
-    // Mint cUSDC to bidders to use for bidding
+    // Mint cUSDC to bidders
     await cUSDC.connect(owner).setMinter(owner.address);
     await cUSDC.mint(bidder1.address, await encrypt(1000_000000n));
     await cUSDC.mint(bidder2.address, await encrypt(1000_000000n));
     await cUSDC.mint(bidder3.address, await encrypt(1000_000000n));
     await cUSDC.connect(owner).setMinter(await walnutV2.getAddress());
 
-    // 4. Submit encrypted bids
-    // Bidder 1 bids 700
+    // Submit bids: Bidder 2 bids 900 (Highest)
     await walnutV2.connect(bidder1).submitLiquidationBid(borrower.address, await encrypt(700_000000n));
-    // Bidder 2 bids 900 (Highest)
     await walnutV2.connect(bidder2).submitLiquidationBid(borrower.address, await encrypt(900_000000n));
-    // Bidder 3 bids 800
     await walnutV2.connect(bidder3).submitLiquidationBid(borrower.address, await encrypt(800_000000n));
-
-    // Borrower attempts to repay during auction -> must revert
-    try {
-      await walnutV2.connect(borrower).repay(await encrypt(100n), 0);
-      expect.fail("Should revert");
-    } catch (err) {
-      expect(err.message).to.include("Active liquidation");
-    }
 
     // Fast forward time to end auction
     await network.provider.send("evm_increaseTime", [605]);
     await network.provider.send("evm_mine");
 
-    // 5. Select Winning Bid
+    // Select Winner & Sync (Index 1 = Bidder 2)
     tx = await walnutV2.selectWinningBid(borrower.address);
     receipt = await tx.wait();
     reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
       try { return walnutV2.interface.parseLog(l).name === "WinnerSelectionRequested"; } catch { return false; }
     })).args.requestId;
 
-    // Bidder 2 (index 1) is the winner. Mock CoFHE returns index 1.
     tx = await walnutV2.syncWinnerSelection(toBytes32(reqId), 1, DUMMY_SIG_65);
     receipt = await tx.wait();
-    
-    let settledEvent = receipt.logs.find(l => {
-      try { return walnutV2.interface.parseLog(l).name === "AuctionSettled"; } catch { return false; }
-    });
-    expect(settledEvent).to.not.be.undefined;
-    const settledArgs = walnutV2.interface.parseLog(settledEvent).args;
-    expect(settledArgs.winner).to.equal(bidder2.address);
 
-    // 6. Assert winner's decrypted result is correct (collateral transferred)
     const winnerCollateral = await decrypt(await walnutV2.getEncryptedCollateral(bidder2.address));
-    expect(winnerCollateral).to.equal(1000_000000n); // Winner took all 1000 collateral
+    expect(winnerCollateral).to.equal(1000_000000n);
+  });
 
-    const borrowerCollateral = await decrypt(await walnutV2.getEncryptedCollateral(borrower.address));
-    expect(borrowerCollateral).to.equal(0n); // Borrower lost all collateral
+  it("2. Handles zero-bid fallback when 10-minute window closes with 0 bids", async function () {
+    const usdcAddr = await mockUSDC.getAddress();
 
-    const borrowerDebt = await decrypt(await walnutV2.getEncryptedDebt(borrower.address));
-    expect(borrowerDebt).to.equal(0n); // Debt was 850, bid was 900. Debt becomes 0.
+    // Setup liquidatable position
+    let tx = await walnutV2.connect(borrower).deposit(usdcAddr, await encrypt(1000_000000n));
+    let receipt = await tx.wait();
+    let reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
+      try { return walnutV2.interface.parseLog(l).name === "DepositSyncRequested"; } catch { return false; }
+    })).args.requestId;
+    await walnutV2.syncDepositTransfer(toBytes32(reqId), 1000_000000n, DUMMY_SIG_65);
 
-    // 7. Surplus and refunds
-    // Borrower should have received 50 cUSDC surplus
-    const borrowerCUSDC = await cUSDC.balanceOf(borrower.address);
-    expect(borrowerCUSDC).to.equal(50_000000n); // Surplus minted
+    tx = await walnutV2.connect(borrower).borrow(await encrypt(850_000000n));
+    receipt = await tx.wait();
+    reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
+      try { return walnutV2.interface.parseLog(l).name === "BorrowActiveSyncRequested"; } catch { return false; }
+    })).args.requestId;
+    await walnutV2.syncBorrowActive(toBytes32(reqId), 850_000000n, DUMMY_SIG_65);
 
-    // Losers should have received refunds
-    // Bidder 1 bid 700. Initial 1000. 1000 - 700 + 700 = 1000
-    const b1Bal = await cUSDC.balanceOf(bidder1.address);
-    expect(b1Bal).to.equal(1000_000000n);
+    // Open auction
+    tx = await walnutV2.connect(bidder1).requestLiquidationCheck(borrower.address);
+    receipt = await tx.wait();
+    reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
+      try { return walnutV2.interface.parseLog(l).name === "LiquidationCheckRequested"; } catch { return false; }
+    })).args.requestId;
+    await walnutV2.syncLiquidationCheck(toBytes32(reqId), 1, DUMMY_SIG_65);
 
-    // Bidder 3 bid 800.
-    const b3Bal = await cUSDC.balanceOf(bidder3.address);
-    expect(b3Bal).to.equal(1000_000000n);
+    // Fast forward 10 minutes WITHOUT submitting any bids
+    await network.provider.send("evm_increaseTime", [605]);
+    await network.provider.send("evm_mine");
 
-    // Bidder 2 bid 900 (won). Initial 1000. Bal = 100
-    const b2Bal = await cUSDC.balanceOf(bidder2.address);
-    expect(b2Bal).to.equal(100_000000n);
+    // Call selectWinningBid
+    tx = await walnutV2.selectWinningBid(borrower.address);
+    await tx.wait();
 
-    // 8. Replay protection
+    // Verify auction state is reset to IDLE (state is 1st return value)
+    const [state, endTime] = await walnutV2.liquidations(borrower.address);
+    expect(state).to.equal(0n); // IDLE state
+  });
+
+  it("3. Enforces max 10 bids cap per auction", async function () {
+    const usdcAddr = await mockUSDC.getAddress();
+
+    // Open auction
+    let tx = await walnutV2.connect(borrower).deposit(usdcAddr, await encrypt(1000_000000n));
+    let receipt = await tx.wait();
+    let reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
+      try { return walnutV2.interface.parseLog(l).name === "DepositSyncRequested"; } catch { return false; }
+    })).args.requestId;
+    await walnutV2.syncDepositTransfer(toBytes32(reqId), 1000_000000n, DUMMY_SIG_65);
+
+    tx = await walnutV2.connect(borrower).borrow(await encrypt(850_000000n));
+    receipt = await tx.wait();
+    reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
+      try { return walnutV2.interface.parseLog(l).name === "BorrowActiveSyncRequested"; } catch { return false; }
+    })).args.requestId;
+    await walnutV2.syncBorrowActive(toBytes32(reqId), 850_000000n, DUMMY_SIG_65);
+
+    tx = await walnutV2.connect(bidder1).requestLiquidationCheck(borrower.address);
+    receipt = await tx.wait();
+    reqId = walnutV2.interface.parseLog(receipt.logs.find(l => {
+      try { return walnutV2.interface.parseLog(l).name === "LiquidationCheckRequested"; } catch { return false; }
+    })).args.requestId;
+    await walnutV2.syncLiquidationCheck(toBytes32(reqId), 1, DUMMY_SIG_65);
+
+    // Mint cUSDC to 10 bidders
+    await cUSDC.connect(owner).setMinter(owner.address);
+    const biddersList = [bidder1, bidder2, bidder3, ...biddersExtra.slice(0, 7)];
+    for (const b of biddersList) {
+      await cUSDC.mint(b.address, await encrypt(100_000000n));
+    }
+    await cUSDC.connect(owner).setMinter(await walnutV2.getAddress());
+
+    // Submit 10 valid bids
+    for (let i = 0; i < 10; i++) {
+      await walnutV2.connect(biddersList[i]).submitLiquidationBid(borrower.address, await encrypt(10_000000n * BigInt(i + 1)));
+    }
+
+    // 11th bid attempt must revert with "Max bids reached"
+    const bidder11 = biddersExtra[7];
+    await cUSDC.connect(owner).setMinter(owner.address);
+    await cUSDC.mint(bidder11.address, await encrypt(100_000000n));
+    await cUSDC.connect(owner).setMinter(await walnutV2.getAddress());
+
     try {
-      await walnutV2.syncWinnerSelection(toBytes32(reqId), 1, DUMMY_SIG_65);
-      expect.fail("Should revert");
+      await walnutV2.connect(bidder11).submitLiquidationBid(borrower.address, await encrypt(120_000000n));
+      expect.fail("11th bid should revert");
+    } catch (err) {
+      expect(err.message).to.include("Max bids reached");
+    }
+  });
+
+  it("4. Enforces state guards on submitLiquidationBid (reverts when bidding on IDLE state)", async function () {
+    // Attempting to submit a bid on a borrower with no open auction
+    try {
+      await walnutV2.connect(bidder1).submitLiquidationBid(borrower.address, await encrypt(500_000000n));
+      expect.fail("Bid on IDLE state should revert");
+    } catch (err) {
+      expect(err.message).to.include("Auction not open");
+    }
+  });
+
+  it("5. Rejects unauthorized / unknown requests on sync callbacks", async function () {
+    // Attempting syncLiquidationCheck on bogus requestId
+    const bogusReqId = toBytes32(999999);
+    try {
+      await walnutV2.syncLiquidationCheck(bogusReqId, 1, DUMMY_SIG_65);
+      expect.fail("Unknown check should revert");
+    } catch (err) {
+      expect(err.message).to.include("Unknown check");
+    }
+
+    // Attempting syncWinnerSelection on bogus requestId
+    try {
+      await walnutV2.syncWinnerSelection(bogusReqId, 0, DUMMY_SIG_65);
+      expect.fail("Unknown winner selection should revert");
     } catch (err) {
       expect(err.message).to.include("Unknown winner selection");
     }

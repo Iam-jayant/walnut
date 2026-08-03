@@ -1,0 +1,1 @@
+const hre = require("hardhat"); async function main() { const token = await hre.ethers.getContractAt("WalnutFHERC20", "0x471D0Cc3127295de11A8021C3C4AcC63bA4967d6"); console.log("MINTER IS:", await token.minter()); } main().catch(console.error);

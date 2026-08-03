@@ -69,6 +69,25 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "winner",
+        "type": "address"
+      }
+    ],
+    "name": "AuctionSettled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "user",
         "type": "address"
       },
@@ -187,6 +206,76 @@
       }
     ],
     "name": "Deposited",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      }
+    ],
+    "name": "LiquidationAuctionHealthy",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "endTime",
+        "type": "uint256"
+      }
+    ],
+    "name": "LiquidationAuctionOpened",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "bidder",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      }
+    ],
+    "name": "LiquidationBidSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "requestId",
+        "type": "uint256"
+      }
+    ],
+    "name": "LiquidationCheckRequested",
     "type": "event"
   },
   {
@@ -408,6 +497,25 @@
       }
     ],
     "name": "Unpaused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "requestId",
+        "type": "uint256"
+      }
+    ],
+    "name": "WinnerSelectionRequested",
     "type": "event"
   },
   {
@@ -833,6 +941,30 @@
         "type": "address"
       }
     ],
+    "name": "liquidations",
+    "outputs": [
+      {
+        "internalType": "enum WalnutLendingV2.AuctionState",
+        "name": "state",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "endTime",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
     "name": "loanCounter",
     "outputs": [
       {
@@ -898,12 +1030,50 @@
         "type": "uint256"
       }
     ],
+    "name": "pendingLiquidationChecks",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
     "name": "pendingTotalBorrowedSyncVersions",
     "outputs": [
       {
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "pendingWinnerSelections",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -965,6 +1135,32 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      }
+    ],
+    "name": "requestLiquidationCheck",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      }
+    ],
+    "name": "selectWinningBid",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint256",
         "name": "tier",
         "type": "uint256"
@@ -991,6 +1187,46 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "ctHash",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint8",
+            "name": "securityZone",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "utype",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes",
+            "name": "signature",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct InEuint128",
+        "name": "encryptedAmount",
+        "type": "tuple"
+      }
+    ],
+    "name": "submitLiquidationBid",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1080,6 +1316,29 @@
         "type": "bytes"
       }
     ],
+    "name": "syncLiquidationCheck",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "ciphertext",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint128",
+        "name": "result",
+        "type": "uint128"
+      },
+      {
+        "internalType": "bytes",
+        "name": "signature",
+        "type": "bytes"
+      }
+    ],
     "name": "syncLoanRepay",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -1104,6 +1363,29 @@
       }
     ],
     "name": "syncTotalBorrowed",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "ciphertext",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint128",
+        "name": "result",
+        "type": "uint128"
+      },
+      {
+        "internalType": "bytes",
+        "name": "signature",
+        "type": "bytes"
+      }
+    ],
+    "name": "syncWinnerSelection",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

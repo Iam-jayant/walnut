@@ -88,6 +88,23 @@ contract WalnutLendingV2 is ReentrancyGuard {
     mapping(uint256 => PendingDeposit) private _pendingDeposits;
     mapping(uint256 => PendingSync) private _pendingBorrowSyncs;
     mapping(uint256 => PendingSync) private _pendingRepaySyncs;
+    // ─── Liquidation State ────────────────────────────────────────────────────
+    enum AuctionState { IDLE, OPEN, SELECTION_PENDING }
+
+    struct LiquidationBid {
+        address bidder;
+        euint128 amount;
+    }
+
+    struct Auction {
+        AuctionState state;
+        uint256 endTime;
+        LiquidationBid[] bids;
+    }
+
+    mapping(address => Auction) public liquidations;
+    mapping(uint256 => address) public pendingLiquidationChecks;
+    mapping(uint256 => address) public pendingWinnerSelections;
 
     // ─── Vault / deposit tracking (private) ───────────────────────────────────
     struct VaultHolding {
@@ -136,6 +153,14 @@ contract WalnutLendingV2 is ReentrancyGuard {
     event WithdrawSyncRequested(address indexed user, uint256 requestId);
     event TotalBorrowedSyncRequested(uint256 requestId, uint256 version);
     event TotalBorrowedCacheUpdated(uint256 totalBorrowed, uint256 version);
+
+    // Liquidation Events
+    event LiquidationCheckRequested(address indexed borrower, uint256 requestId);
+    event LiquidationAuctionOpened(address indexed borrower, uint256 endTime);
+    event LiquidationAuctionHealthy(address indexed borrower);
+    event LiquidationBidSubmitted(address indexed bidder, address indexed borrower);
+    event WinnerSelectionRequested(address indexed borrower, uint256 requestId);
+    event AuctionSettled(address indexed borrower, address indexed winner);
 
     event CreditTierUpdated(address indexed user, uint8 newTier);
     event Paused(address indexed by);
@@ -256,6 +281,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
 
     /// @notice Borrow cUSDC. Amount is encrypted.
     function borrow(InEuint128 calldata encryptedAmount) external nonReentrant whenNotPaused {
+        require(liquidations[msg.sender].state == AuctionState.IDLE, "Active liquidation");
         euint128 amount = FHE.asEuint128(encryptedAmount);
         FHE.allowThis(amount);
 
@@ -326,6 +352,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
 
     /// @notice Repay a loan. Amount is encrypted.
     function repay(InEuint128 calldata encryptedAmount, uint256 loanIndex) external nonReentrant whenNotPaused {
+        require(liquidations[msg.sender].state == AuctionState.IDLE, "Active liquidation");
         require(loanIndex < _loans[msg.sender].length, "Invalid loan index");
         Loan storage loan = _loans[msg.sender][loanIndex];
         require(loan.active, "Loan not active");
@@ -404,6 +431,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
 
     /// @notice Withdraw collateral. Amount is encrypted.
     function withdraw(address token, InEuint128 calldata encryptedAmount) external nonReentrant whenNotPaused {
+        require(liquidations[msg.sender].state == AuctionState.IDLE, "Active liquidation");
         require(token != address(0), "Invalid token");
 
         euint128 amount = FHE.asEuint128(encryptedAmount);
@@ -458,6 +486,187 @@ contract WalnutLendingV2 is ReentrancyGuard {
         } else {
             emit WithdrawFinalized(user, token, false);
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SEALED-BID LIQUIDATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// @notice Request a liquidation check on a borrower.
+    function requestLiquidationCheck(address borrower) external whenNotPaused {
+        Auction storage auc = liquidations[borrower];
+        require(auc.state == AuctionState.IDLE, "Auction not idle");
+        
+        euint128 debt = _safeEncrypted(_debt[borrower]);
+        euint128 collateral = _safeEncrypted(_collateral[borrower]);
+        
+        // debt * 10000 >= collateral * LIQUIDATION_THRESHOLD
+        euint128 const10000 = FHE.asEuint128(10000);
+        euint128 constThreshold = FHE.asEuint128(LIQUIDATION_THRESHOLD);
+        euint128 debtScaled = FHE.mul(debt, const10000);
+        euint128 collateralScaled = FHE.mul(collateral, constThreshold);
+        ebool isLiquidatable = FHE.gte(debtScaled, collateralScaled);
+        
+        FHE.allowThis(isLiquidatable);
+        euint128 isLiq128 = FHE.asEuint128(isLiquidatable);
+        
+        uint256 reqId = _requestDecrypt(isLiq128);
+        pendingLiquidationChecks[reqId] = borrower;
+        emit LiquidationCheckRequested(borrower, reqId);
+    }
+
+    /// @notice CoFHE callback for liquidation check.
+    function syncLiquidationCheck(
+        bytes32 ciphertext,
+        uint128 result,
+        bytes calldata signature
+    ) external {
+        uint256 reqId = uint256(ciphertext);
+        address borrower = pendingLiquidationChecks[reqId];
+        require(borrower != address(0), "Unknown check");
+        delete pendingLiquidationChecks[reqId];
+
+        ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
+
+        if (result == 1) {
+            liquidations[borrower].state = AuctionState.OPEN;
+            liquidations[borrower].endTime = block.timestamp + 10 minutes;
+            delete liquidations[borrower].bids;
+            emit LiquidationAuctionOpened(borrower, liquidations[borrower].endTime);
+        } else {
+            emit LiquidationAuctionHealthy(borrower);
+        }
+    }
+
+    /// @notice Submit an encrypted liquidation bid.
+    function submitLiquidationBid(address borrower, InEuint128 calldata encryptedAmount) external nonReentrant whenNotPaused {
+        Auction storage auc = liquidations[borrower];
+        require(auc.state == AuctionState.OPEN, "Auction not open");
+        require(block.timestamp <= auc.endTime, "Auction ended");
+        require(auc.bids.length < 10, "Max bids reached");
+
+        euint128 amount = FHE.asEuint128(encryptedAmount);
+        FHE.allowThis(amount);
+        
+        // Escrow funds by burning from bidder
+        FHE.allow(amount, address(stablecoin));
+        ebool burnSuccess = stablecoin.burnInternal(msg.sender, amount);
+        FHE.allowThis(burnSuccess);
+        
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+        euint128 validAmount = FHE.select(burnSuccess, amount, zero);
+        FHE.allowThis(validAmount);
+        
+        auc.bids.push(LiquidationBid({
+            bidder: msg.sender,
+            amount: validAmount
+        }));
+        
+        emit LiquidationBidSubmitted(msg.sender, borrower);
+    }
+
+    /// @notice Request winner selection after auction ends.
+    function selectWinningBid(address borrower) external {
+        Auction storage auc = liquidations[borrower];
+        require(auc.state == AuctionState.OPEN, "Auction not open");
+        require(block.timestamp > auc.endTime || auc.bids.length >= 10, "Auction still running");
+
+        auc.state = AuctionState.SELECTION_PENDING;
+
+        if (auc.bids.length == 0) {
+            auc.state = AuctionState.IDLE;
+            return;
+        }
+
+        euint128 maxBid = FHE.asEuint128(0);
+        euint128 winnerIdx = FHE.asEuint128(0);
+        FHE.allowThis(maxBid);
+        FHE.allowThis(winnerIdx);
+
+        for (uint8 i = 0; i < auc.bids.length; i++) {
+            euint128 iEnc = FHE.asEuint128(i);
+            FHE.allowThis(iEnc);
+            ebool isNewMax = FHE.gt(auc.bids[i].amount, maxBid);
+            maxBid = FHE.select(isNewMax, auc.bids[i].amount, maxBid);
+            winnerIdx = FHE.select(isNewMax, iEnc, winnerIdx);
+            FHE.allowThis(maxBid);
+            FHE.allowThis(winnerIdx);
+        }
+
+        uint256 reqId = _requestDecrypt(winnerIdx);
+        pendingWinnerSelections[reqId] = borrower;
+        emit WinnerSelectionRequested(borrower, reqId);
+    }
+
+    /// @notice CoFHE callback to finalize winner selection and apply state changes.
+    function syncWinnerSelection(
+        bytes32 ciphertext,
+        uint128 result,
+        bytes calldata signature
+    ) external nonReentrant {
+        uint256 reqId = uint256(ciphertext);
+        address borrower = pendingWinnerSelections[reqId];
+        require(borrower != address(0), "Unknown winner selection");
+        delete pendingWinnerSelections[reqId];
+
+        ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
+
+        Auction storage auc = liquidations[borrower];
+        uint256 winnerIdx = uint256(result);
+        
+        address winner = address(0);
+        if (winnerIdx < auc.bids.length) {
+            winner = auc.bids[winnerIdx].bidder;
+            euint128 winningBidAmt = auc.bids[winnerIdx].amount;
+
+            // 1. Reduce Debt (Bad Debt Handling)
+            euint128 currentDebt = _safeEncrypted(_debt[borrower]);
+            ebool isBidGreaterThanDebt = FHE.gt(winningBidAmt, currentDebt);
+            
+            euint128 zero = FHE.asEuint128(0);
+            FHE.allowThis(zero);
+            euint128 debtReduction = FHE.select(isBidGreaterThanDebt, currentDebt, winningBidAmt);
+            FHE.allowThis(debtReduction);
+            
+            euint128 newDebt = FHE.sub(currentDebt, debtReduction);
+            FHE.allowThis(newDebt);
+            FHE.allow(newDebt, borrower);
+            _debt[borrower] = newDebt;
+
+            // Surplus Handling
+            euint128 surplus = FHE.sub(winningBidAmt, debtReduction);
+            FHE.allowThis(surplus);
+            // stablecoin.mintInternal uses FHE internally
+            FHE.allow(surplus, address(stablecoin));
+            stablecoin.mintInternal(borrower, surplus);
+
+            // 2. Seize Collateral
+            euint128 currentCollateral = _safeEncrypted(_collateral[borrower]);
+            euint128 winnerCollateral = _safeEncrypted(_collateral[winner]);
+            
+            euint128 newWinnerCollateral = FHE.add(winnerCollateral, currentCollateral);
+            FHE.allowThis(newWinnerCollateral);
+            FHE.allow(newWinnerCollateral, winner);
+            _collateral[winner] = newWinnerCollateral;
+
+            // Zero out borrower's collateral
+            FHE.allow(zero, borrower);
+            _collateral[borrower] = zero;
+        }
+
+        // 3. Refund Losers
+        for (uint256 i = 0; i < auc.bids.length; i++) {
+            if (i != winnerIdx) {
+                // Refund bid amount
+                euint128 refundAmt = auc.bids[i].amount;
+                FHE.allow(refundAmt, address(stablecoin));
+                stablecoin.mintInternal(auc.bids[i].bidder, refundAmt);
+            }
+        }
+
+        auc.state = AuctionState.IDLE;
+        emit AuctionSettled(borrower, winner);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
