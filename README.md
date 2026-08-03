@@ -191,10 +191,10 @@ User Input (Plain) → Browser Encryption → InEuint128 (Ciphertext)
 
 | Contract | Address | Arbiscan |
 |----------|---------|----------|
-| **WalnutLending** | `0x7D2624efEEe1640d347fbE4632d352c8648A26f5` | [View →](https://sepolia.arbiscan.io/address/0x7D2624efEEe1640d347fbE4632d352c8648A26f5) |
-| **cUSDC (WalnutFHERC20)** | `0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef` | [View →](https://sepolia.arbiscan.io/address/0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef) |
-| **WalnutPriceOracle** | `0x5Ca597609292912a9422EB6a954236564331911F` | [View →](https://sepolia.arbiscan.io/address/0x5Ca597609292912a9422EB6a954236564331911F) |
-| **MockUSDC** | `0x2956690C57012afF7086dB71bC9d4b08715d920F` | [View →](https://sepolia.arbiscan.io/address/0x2956690C57012afF7086dB71bC9d4b08715d920F) |
+| **WalnutLending** | `0xA99C28678ca4C19741995B0874155e6abAad76CA` | [View →](https://sepolia.arbiscan.io/address/0xA99C28678ca4C19741995B0874155e6abAad76CA) |
+| **cUSDC (WalnutFHERC20)** | `0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343` | [View →](https://sepolia.arbiscan.io/address/0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343) |
+| **WalnutPriceOracle** | `0xFaB46543812Fc34b080b668f62864e46064D9ba1` | [View →](https://sepolia.arbiscan.io/address/0xFaB46543812Fc34b080b668f62864e46064D9ba1) |
+| **MockUSDC** | `0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd` | [View →](https://sepolia.arbiscan.io/address/0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd) |
 | **MockUSDCPriceFeed** | `0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1` | [View →](https://sepolia.arbiscan.io/address/0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1) |
 
 All contracts are **verified** on Arbiscan with source code available.
@@ -241,10 +241,10 @@ NEXT_PUBLIC_RPC_URL_PRIMARY=https://sepolia-rollup.arbitrum.io/rpc
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id_here
 
 # Contract Addresses (Already Deployed)
-NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0x59C1b5E91FE8eF7F054663199E0F4524b96e54cd
-NEXT_PUBLIC_FHERC20_ADDRESS=0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef
-NEXT_PUBLIC_ORACLE_ADDRESS=0x5Ca597609292912a9422EB6a954236564331911F
-NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x2956690C57012afF7086dB71bC9d4b08715d920F
+NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0xA99C28678ca4C19741995B0874155e6abAad76CA
+NEXT_PUBLIC_FHERC20_ADDRESS=0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343
+NEXT_PUBLIC_ORACLE_ADDRESS=0xFaB46543812Fc34b080b668f62864e46064D9ba1
+NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd
 ```
 
 ### Run the Application
@@ -397,11 +397,8 @@ walnut-protocol/
 │   ├── ui/                 # Reusable UI components
 │   └── walnut/             # Protocol-specific components
 ├── contracts/               # Solidity smart contracts
-│   ├── WalnutLending.sol          # Main lending protocol
-│   ├── WalnutFHERC20.sol          # Encrypted cUSDC token
-│   ├── WalnutPriceOracle.sol      # Chainlink oracle wrapper
-│   ├── MockUSDC.sol               # Testnet USDC
-│   └── MockUSDCPriceFeed.sol      # Mock price feed
+│   ├── WalnutLendingV2.sol        # Main lending protocol (privacy-hardened)
+│   └── common/                    # Tokens, price oracle, and mock contracts
 ├── docs/                    # Documentation
 │   ├── architecture.md     # System architecture
 │   ├── contracts.md        # Contract documentation
@@ -415,7 +412,7 @@ walnut-protocol/
 │   ├── walnut-contract.ts  # Contract ABIs and config
 │   └── cofhe-client.ts     # CoFHE SDK wrapper
 ├── scripts/                 # Deployment scripts
-│   └── deploy-wave4-arbitrum-sepolia.js
+│   └── deploy-arbitrum-sepolia.js
 ├── test/                    # Contract tests
 │   ├── unit/               # Unit tests
 │   └── integration/        # Integration tests
