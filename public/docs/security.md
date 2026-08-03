@@ -5,7 +5,8 @@
 Walnut Protocol is designed to protect user privacy while maintaining protocol integrity. Our threat model considers:
 
 **Protected Against:**
-- Public visibility of individual user positions (collateral, debt, health factor)
+- Public on-chain storage of individual user position amounts (collateral USD, debt, loan principal)
+- Public credit-tier mapping derived from repayment history
 - Front-running of liquidation bids (via sealed-bid auctions in future versions)
 - Manipulation of debt accounting through user-supplied calldata
 - Unauthorized access to encrypted user data
@@ -19,6 +20,9 @@ Walnut Protocol is designed to protect user privacy while maintaining protocol i
 - Arbitrum Sepolia testnet instability
 
 **Honest Limitations:**
+- ERC-20 `Transfer`/`Approval` events reveal token movements (standard blockchain visibility)
+- Protocol aggregate caches (`totalDeposited`, `totalBorrowed`) are public dashboard metrics
+- Loan existence and `openedAt` timestamps are observable metadata (not amounts)
 - **Testnet Only**: Deployed on Arbitrum Sepolia for demonstration purposes
 - **No Security Audit**: Contracts have not undergone professional security review
 - **MockUSDC**: Uses mock tokens for deterministic testing, not production-grade stablecoins
@@ -47,10 +51,16 @@ Grants a specific address permission to decrypt a value. Used to give users read
 FHE.allow(encryptedCollateral, msg.sender);
 ```
 
-### `allowGlobal(euint128 value)`
-Makes a value globally decryptable by anyone. **Never used in Walnut** because all user data must remain private.
+### `allowGlobal(euint128 value)` / `FHE.allowPublic(euint128 value)`
+CoFHE marks globally decryptable handles via `FHE.allowPublic()`. **Walnut never calls `allowPublic()` on user position data** (collateral, debt, loan principal, repayment count).
 
-**Security Principle**: Walnut never calls `allowGlobal()`. All encrypted user data is protected by `allow()` grants to specific addresses only.
+**Permitted `allowPublic()` uses (non-sensitive signals only):**
+- Borrow/repay activation sync (0/1 success signal — not amounts)
+- Pool `totalBorrowed` aggregate cache sync
+- Position guard / liquidation binary triggers
+- Sealed-bid auction winner index
+
+**Security Principle**: User financial amounts stay encrypted on-chain. Users decrypt their own data via `FHE.allow(user)` + wallet permits (`decryptForView`). Public sync paths never publish principal, collateral, or credit-tier values.
 
 ## Cryptographic Enclave Verification Explained
 
@@ -66,16 +76,15 @@ function verifyDecryptResultSafe(
 
 **Purpose**: Validates that the decrypted value is authentic and has been cryptographically signed directly by decentralized CoFHE enclave nodes.
 
-**Why It Matters**: Because anyone can submit a decryption result back to the contract via public `syncXxx` functions (e.g. `syncLoanPrincipal`, `syncLoanRepay`, `syncCreditCount`), Walnut verifies the ECDSA signature on-chain to prevent malicious actors from providing false plaintext outputs. Without signature verification, an attacker could spoof the result and falsely clear debt or boost their credit tier.
+**Why It Matters**: Because anyone can submit a decryption result back to the contract via public `syncXxx` functions (e.g. `syncBorrowActive`, `syncLoanRepay`), Walnut verifies the ECDSA signature on-chain to prevent malicious actors from providing false plaintext outputs.
 
 **Verification-Guarded Functions**:
-- `syncLoanPrincipal(...)`: Finalizes the active status of a newly opened loan
+- `syncBorrowActive(...)`: Finalizes loan activation from LTV gate (0/1 signal only)
 - `syncLoanRepay(...)`: Validates repay signals and toggles loan active states
 - `syncTotalBorrowed(...)`: Updates the public cache for total protocol debt
 - `syncPositionGuardCheck(...)`: Processes health checks and flags liquidations
-- `syncCreditCount(...)`: Progresses the user's public credit tier on-chain
 
-**Attack Scenario Prevented**: An attacker attempts to call `syncCreditCount` with a spoofed repayment count of `100` to skip directly to credit tier 4. The contract calls `verifyDecryptResultSafe`, identifies that the ECDSA enclave signature is missing or invalid for that specific ciphertext hash, and immediately reverts the transaction.
+**Attack Scenario Prevented**: An attacker attempts to call `syncBorrowActive` with a spoofed success signal. The contract calls `verifyDecryptResultSafe`, identifies that the ECDSA enclave signature is missing or invalid for that ciphertext hash, and immediately reverts the transaction.
 
 ## Oracle Staleness Attack Surface
 

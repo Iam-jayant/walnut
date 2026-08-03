@@ -8,10 +8,10 @@ Complete reference for all smart contracts deployed on Arbitrum Sepolia.
 
 | Contract | Address | Arbiscan |
 |----------|---------|----------|
-| WalnutLending | `0x7D2624efEEe1640d347fbE4632d352c8648A26f5` | [View](https://sepolia.arbiscan.io/address/0x7D2624efEEe1640d347fbE4632d352c8648A26f5) |
-| WalnutFHERC20 (cUSDC) | `0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef` | [View](https://sepolia.arbiscan.io/address/0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef) |
-| WalnutPriceOracle | `0x5Ca597609292912a9422EB6a954236564331911F` | [View](https://sepolia.arbiscan.io/address/0x5Ca597609292912a9422EB6a954236564331911F) |
-| MockUSDC | `0x2956690C57012afF7086dB71bC9d4b08715d920F` | [View](https://sepolia.arbiscan.io/address/0x2956690C57012afF7086dB71bC9d4b08715d920F) |
+| WalnutLending | `0xA99C28678ca4C19741995B0874155e6abAad76CA` | [View](https://sepolia.arbiscan.io/address/0xA99C28678ca4C19741995B0874155e6abAad76CA) |
+| WalnutFHERC20 (cUSDC) | `0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343` | [View](https://sepolia.arbiscan.io/address/0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343) |
+| WalnutPriceOracle | `0xFaB46543812Fc34b080b668f62864e46064D9ba1` | [View](https://sepolia.arbiscan.io/address/0xFaB46543812Fc34b080b668f62864e46064D9ba1) |
+| MockUSDC | `0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd` | [View](https://sepolia.arbiscan.io/address/0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd) |
 | MockUSDCPriceFeed | `0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1` | [View](https://sepolia.arbiscan.io/address/0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1) |
 
 All contracts are verified and source code is available on Arbiscan.
