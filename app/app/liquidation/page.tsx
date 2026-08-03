@@ -27,6 +27,17 @@ import { useCofheClient } from "@cofhe/react";
 const liquidationCheckEvent = parseAbiItem("event LiquidationCheckRequested(address indexed borrower, uint256 requestId)");
 const winnerSelectionEvent = parseAbiItem("event WinnerSelectionRequested(address indexed borrower, uint256 requestId)");
 
+function sanitizeError(err: any, fallback: string): string {
+  const raw = err?.shortMessage || err?.message || "";
+  const lower = raw.toLowerCase();
+  if (lower.includes("user rejected") || lower.includes("user denied")) return "Request cancelled in your wallet.";
+  if (lower.includes("insufficient funds")) return "Not enough gas in your wallet for this transaction.";
+  if (lower.includes("stale price")) return "Price oracle data is temporarily outdated. Please try again shortly.";
+  if (lower.includes("nonce too")) return "A previous transaction is still pending. Please wait and retry.";
+  if (process.env.NODE_ENV === "development") return raw.length > 120 ? raw.slice(0, 117) + "..." : (raw || fallback);
+  return fallback;
+}
+
 enum AuctionState {
   IDLE = 0,
   OPEN = 1,
@@ -196,7 +207,7 @@ export default function LiquidationPage() {
       
       await refetchAuction();
     } catch (err: any) {
-      addToast({ message: err.shortMessage || err.message || "Failed to trigger liquidation check.", variant: "error" });
+      addToast({ message: sanitizeError(err, "Failed to trigger liquidation check."), variant: "error" });
     } finally {
       setIsSubmitting(false);
     }
@@ -240,7 +251,7 @@ export default function LiquidationPage() {
       setBidAmount("");
       await refetchAuction();
     } catch (err: any) {
-      addToast({ message: err.shortMessage || err.message || "Failed to submit encrypted bid.", variant: "error" });
+      addToast({ message: sanitizeError(err, "Failed to submit encrypted bid."), variant: "error" });
     } finally {
       setIsSubmitting(false);
     }
@@ -272,7 +283,7 @@ export default function LiquidationPage() {
       
       await refetchAuction();
     } catch (err: any) {
-      addToast({ message: err.shortMessage || err.message || "Failed to initiate winner selection.", variant: "error" });
+      addToast({ message: sanitizeError(err, "Failed to initiate winner selection."), variant: "error" });
     } finally {
       setIsSubmitting(false);
     }
@@ -296,7 +307,7 @@ export default function LiquidationPage() {
       addToast({ message: `Liquidation Settled: Collateral transferred to winner & debt cleared. Tx: ${hash.slice(0, 10)}...`, variant: "success" });
       await refetchAuction();
     } catch (err: any) {
-      addToast({ message: err.shortMessage || err.message || "Failed to settle liquidation.", variant: "error" });
+      addToast({ message: sanitizeError(err, "Failed to settle liquidation."), variant: "error" });
     } finally {
       setIsSubmitting(false);
     }

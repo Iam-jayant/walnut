@@ -262,10 +262,24 @@ function formatFriendlyError(error: unknown, action?: WalnutAction): string {
     return "The repayment amount was not enough to close this loan. Please refresh and try again.";
   }
 
-  if (lower.includes("transaction reverted")) {
+  if (lower.includes("stale price") || lower.includes("staleness")) {
+    return "The price oracle data is temporarily outdated. Please try again in a few moments.";
+  }
+
+  if (lower.includes("nonce too") || lower.includes("replacement underpriced")) {
+    return "A previous transaction is still pending. Please wait for it to confirm and try again.";
+  }
+
+  if (lower.includes("execution reverted")) {
+    // Extract the revert reason if present (e.g. "execution reverted: Some Reason")
+    const revertMatch = raw.match(/execution reverted:\s*(.+?)(?:\s*Contract Call:|$)/i);
+    const reason = revertMatch?.[1]?.trim();
+    if (reason && reason.length < 80) {
+      return `Transaction failed: ${reason}`;
+    }
     return action === "repay"
       ? "Repayment could not be completed. Please refresh and check the loan status."
-      : "Transaction could not be completed. Please check your amount and try again.";
+      : "Transaction could not be completed. Please check your inputs and try again.";
   }
 
   if (lower.includes("cofhe decrypt timed out") || lower.includes("loan status will refresh")) {
@@ -278,7 +292,14 @@ function formatFriendlyError(error: unknown, action?: WalnutAction): string {
       : "Transaction confirmed, but the result is still syncing. Please refresh in a moment.";
   }
 
-  return raw || "Something went wrong. Please try again.";
+  // Production: show a clean generic message. Dev: log the raw error for debugging.
+  if (process.env.NODE_ENV !== "development") {
+    console.error("[Walnut] Unhandled error:", raw);
+    return "Something went wrong. Please try again.";
+  }
+
+  // Dev mode: show the raw error but cap length
+  return raw.length > 120 ? raw.slice(0, 117) + "..." : (raw || "Something went wrong. Please try again.");
 }
 
 function normalizeLoanRecord(
