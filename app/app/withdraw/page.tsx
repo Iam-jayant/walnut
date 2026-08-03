@@ -6,20 +6,22 @@ import type { Address } from "viem";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
+import { useCofheEncrypt } from "@cofhe/react";
+import { Encryptable } from "@cofhe/sdk";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
-import { useTokenBalances } from "@/hooks/use-token-balances";
 import { useToast } from "@/components/walnut/toast-provider";
 import { wagmiConfig } from "@/lib/web3-config";
-import { walnutChainId } from "@/lib/walnut-contract";
+import {
+  walnutChainId,
+  walnutLendingAbi,
+  walnutContractAddress as WALNUT_LENDING_ADDRESS,
+  walnutMockUsdcAddress as MOCK_USDC_ADDRESS,
+  walnutOracleAddress as ORACLE_ADDRESS,
+} from "@/lib/walnut-contract";
 
 const targetChainName =
   wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
   `Chain ${walnutChainId}`;
-
-// Contract addresses from environment
-const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as Address;
-const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
-const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 
 // Supported tokens on Arbitrum Sepolia
 const SUPPORTED_TOKENS = [
@@ -121,27 +123,6 @@ function TokenDropdown({ value, onChange, className }: { value: Address; onChang
   );
 }
 
-// WalnutV2 ABI (minimal)
-const WALNUT_V2_ABI = [
-  {
-    inputs: [
-      { name: "token", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    name: "withdraw",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "user", type: "address" }],
-    name: "borrowTimestamp",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-] as const;
-
 // Oracle ABI (minimal)
 const ORACLE_ABI = [
   {
@@ -169,7 +150,7 @@ export default function WithdrawPage() {
   const publicClient = usePublicClient();
   const { addToast } = useToast();
   const protocol = useWalnutProtocol();
-  const { vaultHoldings, refreshBalances } = useTokenBalances();
+  const encryptor = useCofheEncrypt();
 
   const [selectedToken, setSelectedToken] = useState<Address>(MOCK_USDC_ADDRESS);
   const [amount, setAmount] = useState("");
@@ -177,39 +158,19 @@ export default function WithdrawPage() {
   const [withdrawTxHash, setWithdrawTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Check for active loan
-  const { data: borrowTimestamp } = useReadContract({
-    address: WALNUT_LENDING_ADDRESS,
-    abi: WALNUT_V2_ABI,
-    functionName: "borrowTimestamp",
-    args: account.address ? [account.address] : undefined,
-    query: {
-      enabled: !!account.address,
-    },
-  });
+  const hasActiveLoan = protocol.hasActiveLoan;
 
-  const hasActiveLoan = useMemo(() => {
-    return borrowTimestamp !== undefined && borrowTimestamp > 0n;
-  }, [borrowTimestamp]);
-
-  // Get vault holding for selected token
-  const vaultHolding = useMemo(() => {
-    return vaultHoldings.find((h) => h.token.toLowerCase() === selectedToken.toLowerCase());
-  }, [vaultHoldings, selectedToken]);
-
-  // Get token info
   const tokenInfo = useMemo(() => {
     const fromSupported = SUPPORTED_TOKENS.find((t) => t.address.toLowerCase() === selectedToken.toLowerCase());
-    if (fromSupported) {
-      return {
-        token: fromSupported.address,
-        symbol: fromSupported.symbol,
-        decimals: fromSupported.decimals,
-        vaultBalance: vaultHolding?.amount ?? 0n,
-      };
-    }
-    return undefined;
-  }, [selectedToken, vaultHolding]);
+    if (!fromSupported) return undefined;
+    return {
+      token: fromSupported.address,
+      symbol: fromSupported.symbol,
+      decimals: fromSupported.decimals,
+    };
+  }, [selectedToken]);
+
+  const collateralUsd = protocol.collateral.decrypted.data ?? 0n;
 
   // Parse amount to bigint
   const parsedAmount = useMemo(() => {
@@ -243,11 +204,10 @@ export default function WithdrawPage() {
     return `$${value.toFixed(2)}`;
   }, [usdValue]);
 
-  // Check if amount exceeds vault balance
-  const exceedsVaultBalance = useMemo(() => {
-    if (!tokenInfo) return false;
-    return parsedAmount > tokenInfo.vaultBalance;
-  }, [parsedAmount, tokenInfo]);
+  const exceedsCollateral = useMemo(() => {
+    if (!usdValue || usdValue === 0n) return false;
+    return usdValue > collateralUsd;
+  }, [collateralUsd, usdValue]);
 
   // Withdraw contract
   const { writeContractAsync: withdrawAsync } = useWriteContract();
@@ -257,24 +217,36 @@ export default function WithdrawPage() {
 
   // Handle withdraw
   const handleWithdraw = async () => {
-    if (!account.address || parsedAmount === 0n || exceedsVaultBalance) return;
+    if (!account.address || parsedAmount === 0n || exceedsCollateral || !usdValue) return;
 
     try {
       setWithdrawStep("withdraw_pending");
       setErrorMessage(null);
 
-      // Get current gas price from network
+      let encryptedAmountVal;
+      try {
+        const [encAmount] = await encryptor.encryptInputsAsync({
+          items: [Encryptable.uint128(parsedAmount)],
+          account: account.address,
+          chainId: walnutChainId,
+        });
+        encryptedAmountVal = encAmount;
+      } catch (err) {
+        console.error("FHE Encryption failed", err);
+        throw new Error("Withdrawal encryption failed. Please make sure your wallet supports FHE encryption.");
+      }
+
       const gasPrice = await publicClient?.getGasPrice();
-      const maxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined; // 50% buffer
-      const maxPriorityFeePerGas = gasPrice ? (gasPrice * 10n) / 100n : undefined; // 10% of base as tip
+      const maxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined;
+      const maxPriorityFeePerGas = gasPrice ? (gasPrice * 10n) / 100n : undefined;
 
       const hash = await withdrawAsync({
         address: WALNUT_LENDING_ADDRESS,
-        abi: WALNUT_V2_ABI,
+        abi: walnutLendingAbi,
         functionName: "withdraw",
-        args: [selectedToken, parsedAmount],
+        args: [selectedToken, encryptedAmountVal as any],
         maxFeePerGas,
-        maxPriorityFeePerGas
+        maxPriorityFeePerGas,
       });
 
       setWithdrawTxHash(hash);
@@ -284,13 +256,13 @@ export default function WithdrawPage() {
       if (publicClient) {
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         assertSuccessReceipt(receipt);
+        // Sync decryption to execute ERC20 transfer and update collateral on-chain
+        await protocol.syncDecryptResultsFromReceipt("withdraw", receipt as any);
       }
 
       setWithdrawStep("withdraw_confirmed");
       addToast({ variant: "success", message: "Withdraw request submitted. CoFHE settlement pending." });
 
-      // Refresh balances
-      await refreshBalances();
       await protocol.refreshBalances();
 
       // Reset form
@@ -318,7 +290,12 @@ export default function WithdrawPage() {
 
   // Determine button state
   const isProcessing = withdrawStep === "withdraw_pending" || isWithdrawConfirming;
-  const canSubmit = parsedAmount > 0n && !isProcessing && withdrawStep !== "withdraw_confirmed" && !exceedsVaultBalance && !hasActiveLoan;
+  const canSubmit =
+    parsedAmount > 0n &&
+    !isProcessing &&
+    withdrawStep !== "withdraw_confirmed" &&
+    !exceedsCollateral &&
+    !hasActiveLoan;
 
   return (
     <div className="p-6 space-y-6">
@@ -329,7 +306,7 @@ export default function WithdrawPage() {
 
       <div className="border rounded-lg p-4">
         <div className="mb-3 text-sm font-medium">
-          Status: {withdrawStep === "idle" ? (parsedAmount > 0n ? (exceedsVaultBalance ? "Amount exceeds vault balance" : "Ready to withdraw") : "Enter amount to continue") : withdrawStep === "withdraw_pending" ? "Submitting withdrawal request..." : withdrawStep === "withdraw_confirmed" ? "Withdrawal request submitted" : "Transaction failed"} — {targetChainName}
+          Status: {withdrawStep === "idle" ? (parsedAmount > 0n ? (exceedsCollateral ? "Amount exceeds encrypted collateral" : "Ready to withdraw") : "Enter amount to continue") : withdrawStep === "withdraw_pending" ? "Submitting withdrawal request..." : withdrawStep === "withdraw_confirmed" ? "Withdrawal request submitted" : "Transaction failed"} — {targetChainName}
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
@@ -369,16 +346,16 @@ export default function WithdrawPage() {
                 disabled={isProcessing}
               />
               <div className="text-xs text-muted-foreground mt-1">
-                Vault: {tokenInfo ? (Number(tokenInfo.vaultBalance) / 10 ** tokenInfo.decimals).toFixed(6) : "0.00"} {tokenInfo?.symbol}
+                Encrypted collateral: ${(Number(collateralUsd) / 1e6).toFixed(2)} USD
               </div>
             </div>
 
             <div className="flex gap-2 flex-wrap">
               {[
-                { label: "25%", value: tokenInfo ? (tokenInfo.vaultBalance * 25n) / 100n : 0n },
-                { label: "50%", value: tokenInfo ? (tokenInfo.vaultBalance * 50n) / 100n : 0n },
-                { label: "75%", value: tokenInfo ? (tokenInfo.vaultBalance * 75n) / 100n : 0n },
-                { label: "Max", value: tokenInfo ? tokenInfo.vaultBalance : 0n },
+                { label: "25%", value: parsedAmount > 0n ? parsedAmount / 4n : 0n },
+                { label: "50%", value: parsedAmount > 0n ? parsedAmount / 2n : 0n },
+                { label: "75%", value: parsedAmount > 0n ? (parsedAmount * 3n) / 4n : 0n },
+                { label: "Max", value: parsedAmount },
               ].map((option) => {
                 const displayValue = tokenInfo && option.value > 0n
                   ? (Number(option.value) / 10 ** tokenInfo.decimals).toFixed(6)
@@ -397,9 +374,9 @@ export default function WithdrawPage() {
               })}
             </div>
 
-            {exceedsVaultBalance && (
+            {exceedsCollateral && withdrawStep === "idle" && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                <p className="text-sm text-red-700">Amount exceeds vault balance. Enter a lower value.</p>
+                <p className="text-sm text-red-700">Amount exceeds your encrypted collateral. Enter a lower value.</p>
               </div>
             )}
 
@@ -463,18 +440,18 @@ export default function WithdrawPage() {
             </div>
 
             <div className="p-3 border rounded">
-              <div className="text-xs font-mono uppercase text-muted-foreground">Vault Balance</div>
+              <div className="text-xs font-mono uppercase text-muted-foreground">Collateral (decrypt to view)</div>
               <div className="font-mono text-lg font-semibold mt-2">
-                {tokenInfo ? (Number(tokenInfo.vaultBalance) / 10 ** tokenInfo.decimals).toFixed(6) : "0.00"}
+                ${(Number(collateralUsd) / 1e6).toFixed(2)}
               </div>
             </div>
 
             <div className="p-3 border rounded">
               <div className="text-xs font-mono uppercase text-muted-foreground">Status</div>
               <div className="mt-2 text-sm">
-                {withdrawStep === "idle" && parsedAmount > 0n && !exceedsVaultBalance && "Ready to withdraw"}
+                {withdrawStep === "idle" && parsedAmount > 0n && !exceedsCollateral && "Ready to withdraw"}
                 {withdrawStep === "idle" && parsedAmount === 0n && "Enter amount to continue"}
-                {withdrawStep === "idle" && exceedsVaultBalance && "Amount exceeds vault balance"}
+                {withdrawStep === "idle" && exceedsCollateral && "Amount exceeds encrypted collateral"}
                 {withdrawStep === "withdraw_pending" && "Submitting withdrawal request..."}
                 {withdrawStep === "withdraw_confirmed" && "Withdrawal request submitted"}
                 {withdrawStep === "error" && "Transaction failed"}

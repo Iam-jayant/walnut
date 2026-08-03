@@ -11,9 +11,9 @@ const syncAbi = parseAbi([
   "function syncTotalBorrowed(bytes32 ciphertext, uint128 result, bytes signature) external",
   "function syncDepositTransfer(bytes32 ciphertext, uint128 result, bytes signature) external",
   "function syncWithdrawTransfer(bytes32 ciphertext, uint128 result, bytes signature) external",
-  "function syncWinnerSelected(address borrower, bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncWinnerSelection(bytes32 ciphertext, uint128 result, bytes signature) external",
   "function syncPositionGuardCheck(bytes32 ciphertext, uint128 result, bytes signature) external",
-  "function syncLiquidationResult(bytes32 ciphertext, uint128 result, bytes signature) external",
+  "function syncLiquidationCheck(bytes32 ciphertext, uint128 result, bytes signature) external",
 ]);
 
 type SyncFunction =
@@ -22,9 +22,9 @@ type SyncFunction =
   | "syncTotalBorrowed"
   | "syncDepositTransfer"
   | "syncWithdrawTransfer"
-  | "syncWinnerSelected"
+  | "syncWinnerSelection"
   | "syncPositionGuardCheck"
-  | "syncLiquidationResult";
+  | "syncLiquidationCheck";
 
 type SyncDecryptRequest = {
   syncFunction?: SyncFunction;
@@ -54,9 +54,9 @@ function isSyncFunction(value: unknown): value is SyncFunction {
     value === "syncTotalBorrowed" ||
     value === "syncDepositTransfer" ||
     value === "syncWithdrawTransfer" ||
-    value === "syncWinnerSelected" ||
+    value === "syncWinnerSelection" ||
     value === "syncPositionGuardCheck" ||
-    value === "syncLiquidationResult"
+    value === "syncLiquidationCheck"
   );
 }
 

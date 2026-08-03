@@ -1,552 +1,569 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Gavel, Clock, TrendingDown, AlertTriangle, CheckCircle, Info } from "lucide-react";
-import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { parseAbi } from "viem";
-
-import { Button } from "@/components/ui/button";
-import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
+import { useState, useEffect, useCallback } from "react";
+import { 
+  Gavel, 
+  Clock, 
+  ShieldCheck, 
+  HelpCircle, 
+  Search, 
+  AlertTriangle, 
+  CheckCircle2, 
+  Lock, 
+  Coins, 
+  ArrowRight,
+  RefreshCw,
+  Zap
+} from "lucide-react";
+import { useAccount, useReadContract, useWriteContract, usePublicClient } from "wagmi";
+import { useCofheEncrypt } from "@cofhe/react";
+import { Encryptable, FheTypes } from "@cofhe/sdk";
+import { parseUnits, formatUnits, isAddress, parseAbiItem, decodeEventLog } from "viem";
+import { walnutContractAddress, walnutLendingAbi, getGasFeeOverrides } from "@/lib/walnut-contract";
 import { useToast } from "@/components/walnut/toast-provider";
-import { Encryptable } from "@cofhe/sdk";
-import { walnutChainId, walnutLendingAbi, getGasFeeOverrides } from "@/lib/walnut-contract";
+import { useWalnutPermit } from "@/components/walnut/permit-provider";
+import { useCofheClient } from "@cofhe/react";
 
-const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as `0x${string}`;
+const liquidationCheckEvent = parseAbiItem("event LiquidationCheckRequested(address indexed borrower, uint256 requestId)");
+const winnerSelectionEvent = parseAbiItem("event WinnerSelectionRequested(address indexed borrower, uint256 requestId)");
 
-type LiquidatablePosition = {
-  borrower: string;
-  healthFactor: string;
-  collateral: string;
-  debt: string;
-};
+enum AuctionState {
+  IDLE = 0,
+  OPEN = 1,
+  SELECTION_PENDING = 2,
+  SETTLED = 3,
+}
 
-type AuctionStatus = {
-  borrower: string;
-  endTime: number;
-  bidCount: number;
-  settled: boolean;
-  active: boolean;
+const AUCTION_STATE_LABELS: Record<AuctionState, { label: string; color: string }> = {
+  [AuctionState.IDLE]: { label: "No Active Auction", color: "bg-slate-100 text-slate-700 border-slate-200" },
+  [AuctionState.OPEN]: { label: "Bidding Open", color: "bg-emerald-50 text-emerald-700 border-emerald-200 animate-pulse" },
+  [AuctionState.SELECTION_PENDING]: { label: "Winner Selection Pending", color: "bg-amber-50 text-amber-700 border-amber-200" },
+  [AuctionState.SETTLED]: { label: "Liquidation Settled", color: "bg-blue-50 text-blue-700 border-blue-200" },
 };
 
 export default function LiquidationPage() {
-  const protocol = useWalnutProtocol();
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
-  const { data: walletClient } = useWalletClient();
   const { addToast } = useToast();
+  const { writeContractAsync } = useWriteContract();
+  const { permit } = useWalnutPermit();
+  const cofheClient = useCofheClient();
 
-  const [liquidatablePositions, setLiquidatablePositions] = useState<LiquidatablePosition[]>([]);
-  const [activeAuctions, setActiveAuctions] = useState<AuctionStatus[]>([]);
-  const [myBids, setMyBids] = useState<{ borrower: string; timestamp: number }[]>([]);
-  const [selectedBorrower, setSelectedBorrower] = useState<string>("");
-  const [bidAmount, setBidAmount] = useState("");
-  const [isOpeningAuction, setIsOpeningAuction] = useState(false);
-  const [isSubmittingBid, setIsSubmittingBid] = useState(false);
-  const [isSelectingWinner, setIsSelectingWinner] = useState(false);
+  const [targetBorrower, setTargetBorrower] = useState<string>("");
+  const [bidAmount, setBidAmount] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<"auctions" | "how-it-works">("auctions");
 
-  // Fetch liquidatable positions from events
+  // Read auction state for target borrower
+  const { data: rawAuctionData, refetch: refetchAuction } = useReadContract({
+    address: walnutContractAddress,
+    abi: walnutLendingAbi,
+    functionName: "liquidations",
+    args: isAddress(targetBorrower) ? [targetBorrower as `0x${string}`] : undefined,
+    query: {
+      enabled: isAddress(targetBorrower),
+      refetchInterval: 10_000,
+    },
+  });
+
+  const auctionData = rawAuctionData ? {
+    startTime: Number((rawAuctionData as any)[0] || 0),
+    biddersCount: Number((rawAuctionData as any)[1] || 0),
+    state: Number((rawAuctionData as any)[2] || 0) as AuctionState,
+    winner: (rawAuctionData as any)[3] as string,
+  } : null;
+
+  // FHE Encryption hook for bids
+  const encryptor = useCofheEncrypt();
+
+  // Calculate time remaining for open auction (10 min duration = 600s)
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
   useEffect(() => {
-    if (!publicClient) return;
+    if (!auctionData || auctionData.state !== AuctionState.OPEN || auctionData.startTime === 0) {
+      setTimeRemaining(0);
+      return;
+    }
 
-    const fetchLiquidatablePositions = async () => {
-      try {
-        const latestBlock = await publicClient.getBlockNumber();
-        const fromBlock = latestBlock > 120_000n ? latestBlock - 120_000n : 0n;
-        const logs = await publicClient.getLogs({
-          address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-          event: parseAbi(["event LiquidationTriggered(address indexed user)"])[0],
-          fromBlock,
-          toBlock: latestBlock,
-        });
+    const interval = setInterval(() => {
+      const elapsed = Math.floor(Date.now() / 1000) - auctionData.startTime;
+      const remaining = Math.max(0, 600 - elapsed);
+      setTimeRemaining(remaining);
+    }, 1000);
 
-        const positions: LiquidatablePosition[] = [];
-        for (const log of logs) {
-          const user = log.args.user as string;
-          
-          // Check if still liquidatable
-          const isLiquidatable = await publicClient.readContract({
-            address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-            abi: walnutLendingAbi,
-            functionName: "liquidatable",
-            args: [user as `0x${string}`],
-          });
-
-          if (isLiquidatable) {
-            positions.push({
-              borrower: user,
-              healthFactor: "< 1.05",
-              collateral: "Encrypted",
-              debt: "Encrypted",
-            });
-          }
-        }
-
-        setLiquidatablePositions(positions);
-      } catch (error) {
-        console.error("Error fetching liquidatable positions:", error);
-      }
-    };
-
-    fetchLiquidatablePositions();
-    const interval = setInterval(fetchLiquidatablePositions, 30000); // Refresh every 30s
     return () => clearInterval(interval);
-  }, [publicClient]);
+  }, [auctionData]);
 
-  // Fetch active auctions
-  useEffect(() => {
-    if (!publicClient) return;
-
-    const fetchActiveAuctions = async () => {
-      try {
-        const latestBlock = await publicClient.getBlockNumber();
-        const fromBlock = latestBlock > 120_000n ? latestBlock - 120_000n : 0n;
-        const logs = await publicClient.getLogs({
-          address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-          event: parseAbi(["event AuctionOpened(address indexed borrower, uint256 endTime)"])[0],
-          fromBlock,
-          toBlock: latestBlock,
-        });
-
-        const auctions: AuctionStatus[] = [];
-        for (const log of logs) {
-          const borrower = log.args.borrower as string;
-          
-          const summary = await publicClient.readContract({
-            address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-            abi: walnutLendingAbi,
-            functionName: "getAuctionSummary",
-            args: [borrower as `0x${string}`],
-          });
-
-          const [, endTime, bidCount, settled, active] = summary as [string, bigint, bigint, boolean, boolean];
-
-          if (active || !settled) {
-            auctions.push({
-              borrower,
-              endTime: Number(endTime),
-              bidCount: Number(bidCount),
-              settled,
-              active,
-            });
-          }
-        }
-
-        setActiveAuctions(auctions);
-      } catch (error) {
-        console.error("Error fetching auctions:", error);
-      }
-    };
-
-    fetchActiveAuctions();
-    const interval = setInterval(fetchActiveAuctions, 15000); // Refresh every 15s
-    return () => clearInterval(interval);
-  }, [publicClient]);
-
-  // Fetch my bids
-  useEffect(() => {
-    if (!publicClient || !address) return;
-
-    const fetchMyBids = async () => {
-      try {
-        const latestBlock = await publicClient.getBlockNumber();
-        const fromBlock = latestBlock > 120_000n ? latestBlock - 120_000n : 0n;
-        const logs = await publicClient.getLogs({
-          address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-          event: parseAbi(["event BidSubmitted(address indexed borrower, address indexed bidder)"])[0],
-          args: {
-            bidder: address,
-          },
-          fromBlock,
-          toBlock: latestBlock,
-        });
-
-        const bids = logs.map((log) => ({
-          borrower: log.args.borrower as string,
-          timestamp: Date.now(), // In production, get from block timestamp
-        }));
-
-        setMyBids(bids);
-      } catch (error) {
-        console.error("Error fetching my bids:", error);
-      }
-    };
-
-    fetchMyBids();
-  }, [publicClient, address]);
-
-  const handleOpenAuction = async (borrower: string) => {
-    if (!walletClient) return;
-
-    setIsOpeningAuction(true);
+  // Sync Relay Helper matching use-walnut-protocol.ts
+  const doSyncDecrypt = async (txHash: `0x${string}`, isWinnerSelection: boolean) => {
     try {
-      addToast({ variant: "pending", message: "Opening private auction..." });
-      const feeOverrides = await getGasFeeOverrides(publicClient);
-      const hash = await walletClient.writeContract({
-        address: WALNUT_LENDING_ADDRESS as `0x${string}`,
-        abi: walnutLendingAbi,
-        functionName: "openAuction",
-        args: [borrower as `0x${string}`],
-        ...feeOverrides,
-      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      const eventAbi = isWinnerSelection ? winnerSelectionEvent : liquidationCheckEvent;
+      const syncFunction = isWinnerSelection ? "syncWinnerSelection" : "syncLiquidationCheck";
+      
+      let requestId: string | null = null;
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: [eventAbi],
+            data: log.data,
+            topics: log.topics,
+          });
+          if (decoded.eventName === (isWinnerSelection ? "WinnerSelectionRequested" : "LiquidationCheckRequested")) {
+            requestId = (decoded.args as any).requestId.toString();
+            break;
+          }
+        } catch (e) {}
+      }
 
-      await publicClient?.waitForTransactionReceipt({ hash });
-      addToast({ variant: "success", message: "Auction opened successfully!" });
-    } catch (error) {
-      console.error("Error opening auction:", error);
-      addToast({ variant: "error", message: "Failed to open auction" });
-    } finally {
-      setIsOpeningAuction(false);
+      if (!requestId) {
+        throw new Error("Could not find Request ID in transaction logs.");
+      }
+
+      let decryptResult: any = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          const builder = cofheClient
+            .decryptForTx(requestId)
+            .setChainId(Number(process.env.NEXT_PUBLIC_CHAIN_ID || 421614))
+            .setAccount(address!);
+          
+          const withPermit = permit.permitHash ? builder.withPermit(permit.permitHash) : builder.withPermit();
+          decryptResult = await withPermit.execute();
+          break;
+        } catch (err: any) {
+          const msg = err?.message?.toLowerCase() || String(err).toLowerCase();
+          const isTransient = msg.includes("404") || msg.includes("not found") || msg.includes("pending") || msg.includes("timeout") || msg.includes("fetch");
+          if (!isTransient) throw err;
+          if (attempt < 7) {
+            await new Promise(r => setTimeout(r, 3000 * Math.pow(1.5, attempt)));
+          }
+        }
+      }
+
+      if (!decryptResult) throw new Error("CoFHE decrypt timed out.");
+
+      const res = await fetch("/api/walnut/sync-decrypt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          syncFunction,
+          requestId,
+          result: decryptResult.decryptedValue.toString(),
+          signature: decryptResult.signature,
+        })
+      });
+      
+      const resData = await res.json();
+      if (!res.ok || !resData.ok) {
+        throw new Error(resData.message || "Failed to sync decrypt result.");
+      }
+      return true;
+    } catch (err: any) {
+      console.error("Sync error:", err);
+      throw err;
     }
   };
 
+  // Handler: Request Liquidation Check
+  const handleTriggerCheck = async () => {
+    if (!isAddress(targetBorrower)) {
+      addToast({ message: "Please enter a valid EVM borrower address.", variant: "error" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const feeOverrides = await getGasFeeOverrides(publicClient);
+      const hash = await writeContractAsync({
+        address: walnutContractAddress,
+        abi: walnutLendingAbi,
+        functionName: "requestLiquidationCheck",
+        args: [targetBorrower as `0x${string}`],
+        ...feeOverrides,
+      });
+
+      addToast({ 
+        message: `Liquidation Check Requested: ${hash.slice(0, 10)}... Fetching FHE calculation & synchronizing on-chain...`,
+        variant: "pending" 
+      });
+      
+      try {
+        await doSyncDecrypt(hash, false);
+        addToast({ message: "Sync successful! Auction is now OPEN.", variant: "success" });
+      } catch (syncErr: any) {
+        addToast({ message: syncErr.message || "Sync failed. Try again.", variant: "error" });
+      }
+      
+      await refetchAuction();
+    } catch (err: any) {
+      addToast({ message: err.shortMessage || err.message || "Failed to trigger liquidation check.", variant: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handler: Submit Sealed Bid
   const handleSubmitBid = async () => {
-    if (!walletClient || !selectedBorrower || !bidAmount) return;
+    if (!isAddress(targetBorrower) || !address) {
+      addToast({ message: "Please specify a valid borrower address and connect wallet.", variant: "error" });
+      return;
+    }
 
-    setIsSubmittingBid(true);
+    const numBid = parseFloat(bidAmount);
+    if (isNaN(numBid) || numBid <= 0) {
+      addToast({ message: "Enter a valid bid amount in cUSDC.", variant: "error" });
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      addToast({ variant: "pending", message: "Encrypting bid & preparing transaction..." });
-      // Encrypt the bid amount (penalty in basis points)
-      const penaltyBps = Math.floor(parseFloat(bidAmount) * 100); // Convert percentage to basis points
-      
-      // Perform dynamic, fully homomorphic encryption of bid in FHE on the Sepolia network.
-      const [encryptedPenalty] = await protocol.encryptor.encryptInputsAsync({
-        items: [Encryptable.uint128(BigInt(penaltyBps))],
-        account: address!,
-        chainId: walnutChainId,
+      const parsedBid = parseUnits(bidAmount, 6);
+      addToast({ message: "Generating FHE ciphertext for confidential submission...", variant: "pending" });
+
+      const [encBid] = await encryptor.encryptInputsAsync({
+        items: [Encryptable.uint128(parsedBid)],
+        account: address,
+        chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID || 421614),
       });
 
-      if (!encryptedPenalty) {
-        throw new Error("FHE encryption failed. Please try again.");
-      }
-
       const feeOverrides = await getGasFeeOverrides(publicClient);
-      const hash = await walletClient.writeContract({
-        address: WALNUT_LENDING_ADDRESS as `0x${string}`,
+
+      const hash = await writeContractAsync({
+        address: walnutContractAddress,
         abi: walnutLendingAbi,
-        functionName: "submitBid",
-        args: [selectedBorrower as `0x${string}`, encryptedPenalty as any],
+        functionName: "submitLiquidationBid",
+        args: [targetBorrower as `0x${string}`, encBid],
         ...feeOverrides,
       });
 
-      addToast({ variant: "pending", message: "Submitting encrypted bid..." });
-      await publicClient?.waitForTransactionReceipt({ hash });
-      addToast({ variant: "success", message: "Bid submitted successfully!" });
-      
+      addToast({ message: `Sealed Bid Submitted: ${bidAmount} cUSDC encrypted and placed on-chain. Tx: ${hash.slice(0, 10)}...`, variant: "success" });
       setBidAmount("");
-      setSelectedBorrower("");
-    } catch (error) {
-      console.error("Error submitting bid:", error);
-      addToast({ variant: "error", message: "Failed to submit bid" });
+      await refetchAuction();
+    } catch (err: any) {
+      addToast({ message: err.shortMessage || err.message || "Failed to submit encrypted bid.", variant: "error" });
     } finally {
-      setIsSubmittingBid(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleSelectWinner = async (borrower: string) => {
-    if (!walletClient) return;
+  // Handler: Resolve Winner Selection
+  const handleSelectWinner = async () => {
+    if (!isAddress(targetBorrower)) return;
 
-    setIsSelectingWinner(true);
+    setIsSubmitting(true);
     try {
-      addToast({ variant: "pending", message: "Initiating winner selection..." });
       const feeOverrides = await getGasFeeOverrides(publicClient);
-      const hash = await walletClient.writeContract({
-        address: WALNUT_LENDING_ADDRESS as `0x${string}`,
+      const hash = await writeContractAsync({
+        address: walnutContractAddress,
         abi: walnutLendingAbi,
         functionName: "selectWinningBid",
-        args: [borrower as `0x${string}`],
+        args: [targetBorrower as `0x${string}`],
         ...feeOverrides,
       });
 
-      await publicClient?.waitForTransactionReceipt({ hash });
-      addToast({ variant: "success", message: "Winner selection initiated! CoFHE processing encrypted bids." });
-    } catch (error) {
-      console.error("Error selecting winner:", error);
-      addToast({ variant: "error", message: "Failed to select winner" });
+      addToast({ message: `Selection Requested: CoFHE computing maximum bid... Synchronizing result on-chain...`, variant: "pending" });
+      
+      try {
+        await doSyncDecrypt(hash, true);
+        addToast({ message: "Sync successful! Winner selected.", variant: "success" });
+      } catch (syncErr: any) {
+        addToast({ message: syncErr.message || "Winner Sync failed.", variant: "error" });
+      }
+      
+      await refetchAuction();
+    } catch (err: any) {
+      addToast({ message: err.shortMessage || err.message || "Failed to initiate winner selection.", variant: "error" });
     } finally {
-      setIsSelectingWinner(false);
+      setIsSubmitting(false);
     }
   };
 
-  const formatTimeRemaining = (endTime: number) => {
-    const now = Math.floor(Date.now() / 1000);
-    const remaining = endTime - now;
-    
-    if (remaining <= 0) return "Ended";
-    
-    const minutes = Math.floor(remaining / 60);
-    const seconds = remaining % 60;
-    return `${minutes}m ${seconds}s`;
+  // Handler: Settle Liquidation
+  const handleSettleLiquidation = async () => {
+    if (!isAddress(targetBorrower)) return;
+
+    setIsSubmitting(true);
+    try {
+      const feeOverrides = await getGasFeeOverrides(publicClient);
+      const hash = await writeContractAsync({
+        address: walnutContractAddress,
+        abi: walnutLendingAbi,
+        functionName: "settleLiquidation",
+        args: [targetBorrower as `0x${string}`],
+        ...feeOverrides,
+      });
+
+      addToast({ message: `Liquidation Settled: Collateral transferred to winner & debt cleared. Tx: ${hash.slice(0, 10)}...`, variant: "success" });
+      await refetchAuction();
+    } catch (err: any) {
+      addToast({ message: err.shortMessage || err.message || "Failed to settle liquidation.", variant: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const formatSeconds = (totalSecs: number) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Private Liquidation System</h1>
-        <p className="text-sm text-muted-foreground">
-          Liquidators submit encrypted penalty bids. CoFHE selects the minimum bid in ciphertext. Only the winner is revealed.
-        </p>
-      </header>
-
-      <div className="border rounded-lg p-4">
-        <div className="mb-3 text-sm font-medium flex items-center gap-1.5 text-slate-800">
-          <CheckCircle className="h-4 w-4 text-green-500" />
-          Status: Live on Testnet
+    <div className="p-6 space-y-6 max-w-5xl mx-auto min-h-screen text-slate-900">
+      {/* Page Header */}
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <Gavel className="h-6 w-6 text-slate-800" />
+            Sealed-Bid Liquidation Engine
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            MEV-resistant confidential auctions using Fhenix Fully Homomorphic Encryption (FHE).
+          </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {/* Main Auction Section */}
-          <section className="md:col-span-2 space-y-4">
-            
-            {/* Liquidatable Positions List */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between border-b pb-2">
-                <h3 className="text-sm font-semibold text-slate-900">Liquidatable Positions</h3>
-                <span className="text-xs text-muted-foreground">{liquidatablePositions.length} positions</span>
-              </div>
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start md:self-auto">
+          <button
+            onClick={() => setActiveTab("auctions")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === "auctions"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            Live Auctions
+          </button>
+          <button
+            onClick={() => setActiveTab("how-it-works")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === "how-it-works"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            Mechanism Architecture
+          </button>
+        </div>
+      </header>
 
-              {liquidatablePositions.length === 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-6 text-center">
-                  <TrendingDown className="mx-auto h-8 w-8 text-slate-400" />
-                  <p className="mt-2 text-xs font-semibold text-slate-700">No liquidatable positions at this time</p>
-                </div>
-              ) : (
-                liquidatablePositions.map((position) => (
-                  <div
-                    key={position.borrower}
-                    className="rounded-lg border border-red-200 bg-red-50/30 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-fade-in"
-                  >
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-red-500" />
-                        <span className="font-mono text-sm font-semibold text-red-950">
-                          {position.borrower.slice(0, 8)}...{position.borrower.slice(-6)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-6 text-xs text-slate-700 pt-1.5">
-                        <div>
-                          <p className="text-[10px] uppercase font-mono text-muted-foreground">Health Factor</p>
-                          <p className="font-semibold text-red-700">{position.healthFactor}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase font-mono text-muted-foreground">Collateral</p>
-                          <p className="font-semibold font-mono">{position.collateral}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase font-mono text-muted-foreground">Debt</p>
-                          <p className="font-semibold font-mono">{position.debt}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => handleOpenAuction(position.borrower)}
-                      isLoading={isOpeningAuction}
-                      loadingText="Opening..."
-                      className="bg-red-600 text-white hover:bg-red-700 rounded-lg self-start md:self-center"
-                    >
-                      Open Auction
-                    </Button>
-                  </div>
-                ))
-              )}
+      {activeTab === "auctions" ? (
+        <div className="space-y-6">
+          {/* Target Borrower Lookup & Trigger Card */}
+          <div className="border border-slate-200 rounded-2xl bg-white p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Search className="h-4 w-4 text-slate-500" />
+                Target Borrower Position Lookup
+              </h2>
+              <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100">
+                Liquidation LTV Threshold: 80%
+              </span>
             </div>
 
-            {/* Active Auctions List */}
-            <div className="space-y-3 pt-2">
-              <div className="flex items-center justify-between border-b pb-2">
-                <h3 className="text-sm font-semibold text-slate-900">Active Auctions</h3>
-                <span className="text-xs text-muted-foreground">{activeAuctions.length} auctions</span>
+            <div className="grid md:grid-cols-3 gap-3">
+              <div className="md:col-span-2 relative">
+                <input
+                  type="text"
+                  placeholder="Enter Borrower Address (0x...)"
+                  value={targetBorrower}
+                  onChange={(e) => setTargetBorrower(e.target.value.trim())}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 transition-all"
+                />
               </div>
 
-              {activeAuctions.length === 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-6 text-center">
-                  <Gavel className="mx-auto h-8 w-8 text-slate-400" />
-                  <p className="mt-2 text-xs font-semibold text-slate-700">No active auctions at this time</p>
-                </div>
-              ) : (
-                activeAuctions.map((auction) => {
-                  const timeRemaining = formatTimeRemaining(auction.endTime);
-                  const canSelectWinner = auction.endTime <= Math.floor(Date.now() / 1000) && !auction.settled;
-
-                  return (
-                    <div
-                      key={auction.borrower}
-                      className="rounded-lg border border-slate-200 bg-white p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm"
-                    >
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-slate-600" />
-                          <span className="font-mono text-sm font-semibold text-slate-900">
-                            {auction.borrower.slice(0, 8)}...{auction.borrower.slice(-6)}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-6 text-xs text-slate-700 pt-1.5">
-                          <div>
-                            <p className="text-[10px] uppercase font-mono text-muted-foreground">Time Remaining</p>
-                            <p className="font-semibold text-slate-800 font-mono">{timeRemaining}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase font-mono text-muted-foreground">Total Bids</p>
-                            <p className="font-semibold text-slate-800">{auction.bidCount}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase font-mono text-muted-foreground">Status</p>
-                            <p className="font-semibold text-slate-800">
-                              {auction.settled ? "Settled" : auction.active ? "Active" : "Ended"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 self-start md:self-center">
-                        {auction.active && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setSelectedBorrower(auction.borrower)}
-                            className="rounded-lg"
-                          >
-                            Submit Bid
-                          </Button>
-                        )}
-                        {canSelectWinner && (
-                          <Button
-                            size="sm"
-                            onClick={() => handleSelectWinner(auction.borrower)}
-                            isLoading={isSelectingWinner}
-                            loadingText="Selecting..."
-                            className="bg-black text-white hover:bg-slate-900 rounded-lg"
-                          >
-                            Select Winner
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+              <button
+                onClick={handleTriggerCheck}
+                disabled={isSubmitting || !isAddress(targetBorrower)}
+                className="w-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-xs rounded-xl py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                {isSubmitting ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4 text-amber-400" />
+                )}
+                Check Eligibility & Trigger
+              </button>
             </div>
+          </div>
 
-            {/* Bidding Panel */}
-            {selectedBorrower && (
-              <div className="rounded-lg border border-slate-200 bg-slate-50/20 p-5 space-y-4 max-w-md animate-fade-in">
-                <div className="flex items-center gap-1.5 border-b pb-2">
-                  <Gavel className="h-4 w-4 text-slate-800" />
-                  <h3 className="text-sm font-semibold text-slate-900">Submit Encrypted Bid</h3>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Target: <span className="font-mono text-slate-950 font-semibold">{selectedBorrower.slice(0, 10)}...{selectedBorrower.slice(-8)}</span>
-                </p>
-
+          {/* Auction State Card */}
+          {isAddress(targetBorrower) && auctionData && (
+            <div className="border border-slate-200 rounded-2xl bg-white p-6 shadow-sm space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <label className="block text-xs font-mono uppercase text-muted-foreground mb-1">
-                    Liquidation Penalty (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="15"
-                    value={bidAmount}
-                    onChange={(e) => setBidAmount(e.target.value)}
-                    placeholder="e.g., 5.0"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-foreground focus:outline-none"
-                  />
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    Lower penalty increases chances to win. Standard range: 3-10%
+                  <span className="text-xs font-mono uppercase text-slate-400 font-semibold tracking-wider">
+                    Target Borrower State
+                  </span>
+                  <p className="text-sm font-mono font-bold text-slate-900 mt-0.5">
+                    {targetBorrower}
                   </p>
                 </div>
 
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleSubmitBid}
-                    isLoading={isSubmittingBid}
-                    loadingText="Submitting..."
-                    disabled={!bidAmount || parseFloat(bidAmount) <= 0}
-                    className="bg-black text-white hover:bg-slate-900 rounded-lg text-xs"
-                  >
-                    Submit Encrypted Bid
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSelectedBorrower("");
-                      setBidAmount("");
-                    }}
-                    className="rounded-lg text-xs"
-                  >
-                    Cancel
-                  </Button>
+                <div className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${AUCTION_STATE_LABELS[auctionData.state].color}`}>
+                  {AUCTION_STATE_LABELS[auctionData.state].label}
                 </div>
               </div>
-            )}
 
-            {/* Your Submitted Bids */}
-            {myBids.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <div className="border-b pb-2">
-                  <h3 className="text-sm font-semibold text-slate-900">Your Submitted Bids</h3>
+              {/* IDLE State */}
+              {auctionData.state === AuctionState.IDLE && (
+                <div className="py-6 text-center space-y-3">
+                  <ShieldCheck className="h-10 w-10 text-emerald-500 mx-auto" />
+                  <h3 className="text-base font-semibold text-slate-900">No Open Auction for this Position</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    If this position's Health Factor drops below 1.0 (LTV &gt; 80%), click "Check Eligibility &amp; Trigger" above to initiate a sealed-bid auction.
+                  </p>
                 </div>
-                <div className="space-y-1.5 max-w-md">
-                  {myBids.map((bid, index) => (
-                    <div
-                      key={index}
-                      className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 flex items-center justify-between shadow-sm"
-                    >
-                      <span className="font-mono text-xs text-slate-800">
-                        {bid.borrower.slice(0, 8)}...{bid.borrower.slice(-6)}
-                      </span>
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
-                        Bid Encrypted ✅
-                      </span>
+              )}
+
+              {/* OPEN State: Sealed Bidding */}
+              {auctionData.state === AuctionState.OPEN && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div>
+                      <span className="text-xs text-slate-400 font-medium">Bidding Window Remaining</span>
+                      <p className="text-lg font-bold font-mono text-emerald-600 flex items-center gap-1.5 mt-0.5">
+                        <Clock className="h-4 w-4 animate-spin text-emerald-500" />
+                        {formatSeconds(timeRemaining)}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
+                    <div>
+                      <span className="text-xs text-slate-400 font-medium">Total Bids Placed</span>
+                      <p className="text-lg font-bold font-mono text-slate-900 mt-0.5">
+                        {auctionData.biddersCount} / 10
+                      </p>
+                    </div>
+                    <div className="col-span-2 md:col-span-1">
+                      <span className="text-xs text-slate-400 font-medium">Privacy Status</span>
+                      <p className="text-xs font-semibold text-slate-700 flex items-center gap-1 mt-1.5">
+                        <Lock className="h-3.5 w-3.5 text-slate-500" /> All Bids Encrypted (FHE)
+                      </p>
+                    </div>
+                  </div>
 
-          {/* Right Sidebar Info */}
-          <aside className="space-y-3">
-            <div className="p-4 border rounded-lg bg-white shadow-sm space-y-4">
-              <div>
-                <p className="text-xs font-mono uppercase text-muted-foreground">System Thresholds</p>
-                <div className="mt-3 space-y-2 text-xs">
-                  <div className="flex justify-between border-b pb-1.5">
-                    <span className="text-muted-foreground">Liquidation Threshold</span>
-                    <span className="font-mono text-slate-900 font-semibold">HF &lt; 1.05</span>
-                  </div>
-                  <div className="flex justify-between border-b pb-1.5">
-                    <span className="text-muted-foreground">Auction Duration</span>
-                    <span className="font-mono text-slate-900 font-semibold">10 Minutes</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Winning Rule</span>
-                    <span className="font-mono text-slate-900 font-semibold">Minimum Penalty Bps</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+                  {/* Submit Sealed Bid Box */}
+                  <div className="p-5 border border-slate-200 rounded-xl bg-slate-900 text-white space-y-4">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <Coins className="h-4 w-4 text-emerald-400" />
+                      Submit Encrypted Sealed Bid (cUSDC)
+                    </h3>
+                    <p className="text-xs text-slate-300 leading-normal">
+                      Your bid amount is encrypted locally via Fhenix SDK prior to submission. The contract compares bids in ciphertext without ever decrypting your valuation.
+                    </p>
 
-            <div className="p-4 border rounded-lg bg-white shadow-sm space-y-3 text-sm">
-              <h3 className="text-xs font-mono uppercase text-muted-foreground font-semibold">How Sealed-Bid Auctions Work</h3>
-              <div className="space-y-3 text-xs text-muted-foreground leading-relaxed">
-                <div>
-                  <p className="font-semibold text-slate-950">1. Trigger & Open</p>
-                  <p className="mt-0.5">When HF falls below 1.05, position is liquidatable. Any liquidator can trigger a 10-minute auction.</p>
+                    <div className="flex gap-3">
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          placeholder="Bid Amount in cUSDC (e.g. 500)"
+                          value={bidAmount}
+                          onChange={(e) => setBidAmount(e.target.value)}
+                          className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
+                        />
+                        <span className="absolute right-4 top-2.5 text-xs font-bold text-slate-400">
+                          cUSDC
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={handleSubmitBid}
+                        disabled={isSubmitting || !bidAmount}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl px-6 py-2.5 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      >
+                        {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                        Encrypt &amp; Submit Bid
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-slate-950">2. Private Sealed Bidding</p>
-                  <p className="mt-0.5">Liquidators submit encrypted penalty bids. Bids are stored as private ciphertexts on-chain.</p>
+              )}
+
+              {/* SELECTION_PENDING State */}
+              {auctionData.state === AuctionState.SELECTION_PENDING && (
+                <div className="p-6 border border-amber-200 rounded-xl bg-amber-50/50 space-y-4 text-center">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 text-amber-700 mb-1">
+                    <Clock className="h-6 w-6 animate-pulse" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">10-Minute Bidding Period Closed</h3>
+                  <p className="text-xs text-slate-600 max-w-md mx-auto">
+                    The bidding window has elapsed. Anyone can now trigger the FHE Winner Selection phase to compute the highest bid homomorphically.
+                  </p>
+
+                  <button
+                    onClick={handleSelectWinner}
+                    disabled={isSubmitting}
+                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl px-6 py-2.5 flex items-center justify-center gap-2 mx-auto transition-all disabled:opacity-50 shadow-sm"
+                  >
+                    {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Gavel className="h-4 w-4" />}
+                    Compute FHE Winner Selection
+                  </button>
                 </div>
-                <div>
-                  <p className="font-semibold text-slate-950">3. FHE Win Computation</p>
-                  <p className="mt-0.5">Upon ending, CoFHE processes the bids privately. It selects the minimum penalty and reveals *only* the winner address.</p>
+              )}
+
+              {/* SETTLED State */}
+              {auctionData.state === AuctionState.SETTLED && (
+                <div className="p-6 border border-blue-200 rounded-xl bg-blue-50/50 space-y-4 text-center">
+                  <CheckCircle2 className="h-10 w-10 text-blue-600 mx-auto" />
+                  <h3 className="text-base font-bold text-slate-900">Winner Selected</h3>
+                  <p className="text-xs font-mono text-slate-600">
+                    Winning Liquidator: <span className="font-bold text-slate-900">{auctionData.winner}</span>
+                  </p>
+
+                  <button
+                    onClick={handleSettleLiquidation}
+                    disabled={isSubmitting}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl px-6 py-2.5 flex items-center justify-center gap-2 mx-auto transition-all disabled:opacity-50 shadow-sm"
+                  >
+                    {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Finalize &amp; Settle Liquidation
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
-          </aside>
+          )}
         </div>
-      </div>
+      ) : (
+        /* Architecture Tab */
+        <div className="border border-slate-200 rounded-2xl bg-white p-8 shadow-sm space-y-6">
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <HelpCircle className="h-5 w-5 text-slate-700" />
+            Sealed-Bid Liquidation State Machine
+          </h2>
+
+          <div className="grid md:grid-cols-4 gap-4 text-xs">
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+              <span className="font-mono font-bold text-slate-400">STATE 0</span>
+              <h3 className="font-bold text-slate-900 text-sm">1. Eligibility Check</h3>
+              <p className="text-slate-600 leading-normal">
+                `requestLiquidationCheck()` verifies if debt * 10000 &gt;= collateral * 8000 in ciphertext via CoFHE oracle.
+              </p>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+              <span className="font-mono font-bold text-slate-400">STATE 1</span>
+              <h3 className="font-bold text-slate-900 text-sm">2. Sealed Bidding</h3>
+              <p className="text-slate-600 leading-normal">
+                10-minute window opens. Liquidators submit `submitLiquidationBid()` with encrypted cUSDC token burns.
+              </p>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+              <span className="font-mono font-bold text-slate-400">STATE 2</span>
+              <h3 className="font-bold text-slate-900 text-sm">3. FHE Winner Selection</h3>
+              <p className="text-slate-600 leading-normal">
+                `selectWinningBid()` loops over bids in ciphertext using `FHE.gt()` to identify winner index without decrypting individual bids.
+              </p>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+              <span className="font-mono font-bold text-slate-400">STATE 3</span>
+              <h3 className="font-bold text-slate-900 text-sm">4. Settlement</h3>
+              <p className="text-slate-600 leading-normal">
+                `settleLiquidation()` transfers 100% collateral to winner, clears borrower debt up to bid size, and refunds losing bidders.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

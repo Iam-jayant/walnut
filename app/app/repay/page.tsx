@@ -387,7 +387,7 @@ export default function RepayPage() {
       const whole = settlementAmount / MICRO_USDC;
       const fraction = settlementAmount % MICRO_USDC;
       const amountStr = `${whole.toString()}.${fraction.toString().padStart(6, "0")}`;
-      const success = await protocol.submitEncryptedAmount("repay", amountStr, item.loanIndex, quote);
+      const success = await protocol.submitEncryptedAmount("repay", amountStr, undefined, item.loanIndex, quote);
       if (success) {
         void protocol.refetchActiveLoans();
         void protocol.refetchLoans();
@@ -402,7 +402,7 @@ export default function RepayPage() {
     if (recoveringIndex !== null || repayingIndex !== null || settlementPending) return;
     setRecoveringIndex(item.loanIndex);
     try {
-      await protocol.recoverPendingLoanPrincipal(item.loanIndex, item.loan.openedAt);
+      await protocol.recoverPendingLoanPrincipal(item.loanIndex, item.loan.loanId, item.loan.openedAt);
     } finally {
       setRecoveringIndex(null);
     }

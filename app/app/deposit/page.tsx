@@ -12,15 +12,17 @@ import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useTokenBalances } from "@/hooks/use-token-balances";
 import { useToast } from "@/components/walnut/toast-provider";
 import { wagmiConfig } from "@/lib/web3-config";
-import { walnutChainId, walnutLendingAbi } from "@/lib/walnut-contract";
+import {
+  walnutChainId,
+  walnutLendingAbi,
+  walnutContractAddress as WALNUT_LENDING_ADDRESS,
+  walnutMockUsdcAddress as MOCK_USDC_ADDRESS,
+  walnutOracleAddress as ORACLE_ADDRESS,
+} from "@/lib/walnut-contract";
 
 const targetChainName =
   wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
   `Chain ${walnutChainId}`;
-
-const WALNUT_LENDING_ADDRESS = process.env.NEXT_PUBLIC_WALNUT_LENDING_ADDRESS as Address;
-const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as Address;
-const ORACLE_ADDRESS = process.env.NEXT_PUBLIC_ORACLE_ADDRESS as Address;
 
 const SUPPORTED_TOKENS = [
   { address: MOCK_USDC_ADDRESS, symbol: "USDC", name: "USD Coin", decimals: 6 },
@@ -226,22 +228,17 @@ export default function DepositPage() {
 
       setDepositStep('deposit_pending');
 
-      const toEncrypt = usdValue ?? 0n;
-      if (toEncrypt === 0n) {
-        throw new Error("Zero USD valuation. Please wait for price oracle or enter a valid amount.");
-      }
-
-      let encryptedVal;
+      let encryptedAmountVal;
       try {
-        const [enc] = await protocol.encryptor.encryptInputsAsync({
-          items: [Encryptable.uint128(toEncrypt)],
+        const [encAmount] = await protocol.encryptor.encryptInputsAsync({
+          items: [Encryptable.uint128(parsedAmount)],
           account: account.address,
           chainId: walnutChainId,
         });
-        encryptedVal = enc;
+        encryptedAmountVal = encAmount;
       } catch (err) {
         console.error("FHE Encryption failed", err);
-        throw new Error("Collateral valuation encryption failed. Please make sure your wallet supports FHE encryption.");
+        throw new Error("Collateral encryption failed. Please make sure your wallet supports FHE encryption.");
       }
       
       let depositGasLimit;
@@ -250,7 +247,7 @@ export default function DepositPage() {
           address: WALNUT_LENDING_ADDRESS,
           abi: walnutLendingAbi,
           functionName: 'deposit',
-          args: [selectedToken, parsedAmount, encryptedVal as any],
+          args: [selectedToken, encryptedAmountVal as any],
           account: account.address,
         });
         if (estimatedGas) {
@@ -266,7 +263,7 @@ export default function DepositPage() {
         address: WALNUT_LENDING_ADDRESS, 
         abi: walnutLendingAbi, 
         functionName: 'deposit', 
-        args: [selectedToken, parsedAmount, encryptedVal as any],
+        args: [selectedToken, encryptedAmountVal as any],
         maxFeePerGas,
         maxPriorityFeePerGas,
         gas: depositGasLimit
@@ -276,6 +273,8 @@ export default function DepositPage() {
       if (publicClient) {
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         assertSuccessReceipt(receipt);
+        // Sync decryption to execute ERC20 transfer and update collateral on-chain
+        await protocol.syncDecryptResultsFromReceipt('deposit', receipt as any);
       }
       setDepositStep('deposit_confirmed');
       addToast({ variant: 'success', message: `Successfully deposited ${amount} ${tokenInfo?.symbol ?? 'USDC'} as collateral.` });

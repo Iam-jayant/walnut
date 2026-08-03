@@ -26,7 +26,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain } from "wagmi";
 import { arbitrumSepolia } from "wagmi/chains";
 import { decodeEventLog, parseAbiItem } from "viem";
@@ -66,8 +66,18 @@ type WalnutTxReceipt = {
 };
 
 type DecryptSyncTarget = {
-  eventName: "BorrowPrincipalSyncRequested" | "RepayStateSyncRequested" | "TotalBorrowedSyncRequested";
-  syncFunction: "syncLoanPrincipal" | "syncLoanRepay" | "syncTotalBorrowed";
+  eventName:
+    | "BorrowActiveSyncRequested"
+    | "RepayStateSyncRequested"
+    | "TotalBorrowedSyncRequested"
+    | "DepositSyncRequested"
+    | "WithdrawSyncRequested";
+  syncFunction:
+    | "syncBorrowActive"
+    | "syncLoanRepay"
+    | "syncTotalBorrowed"
+    | "syncDepositTransfer"
+    | "syncWithdrawTransfer";
   requestIdIndex: number;
 };
 
@@ -84,20 +94,27 @@ type DecryptSyncResult = {
 };
 
 const REPAY_INTEREST_BUFFER_SECONDS = 300n;
-const BORROW_PRINCIPAL_SYNC_EVENT = parseAbiItem(
-  "event BorrowPrincipalSyncRequested(address indexed user, uint256 requestId, uint256 openedAt)"
+const BORROW_ACTIVE_SYNC_EVENT = parseAbiItem(
+  "event BorrowActiveSyncRequested(address indexed user, uint256 requestId, uint256 openedAt)"
 );
-const PENDING_LOAN_SYNC_LOOKBACK_BLOCKS = 250_000n;
+const LOAN_PRINCIPAL_SYNCED_EVENT = parseAbiItem(
+  "event LoanPrincipalSynced(address indexed user, uint256 loanId, uint256 principal)"
+);
+const PENDING_LOAN_SYNC_LOOKBACK_BLOCKS = 1_000_000n;
 
 export type WalnutAction = "deposit" | "borrow" | "repay" | "withdraw";
 
-// Loan record matching the Solidity struct
+// Loan record matching the Solidity struct (principal decrypted client-side via permit)
 export type LoanRecord = {
   loanId: bigint;
-  principal: bigint;
+  encryptedPrincipalHandle: EncryptedUint128Handle | undefined;
+  decryptedPrincipal: bigint | undefined;
   openedAt: bigint;
   active: boolean;
+  /** @deprecated use !active for borrow-activation sync pending */
   principalPending: boolean;
+  /** Convenience alias for decryptedPrincipal ?? 0n */
+  principal: bigint;
 };
 export type RepaySettlementState =
   | "idle"
@@ -165,10 +182,10 @@ function isZeroEncryptedUint128Handle(handle: EncryptedUint128Handle) {
 }
 
 function tierFromRepaymentCount(count: bigint): bigint {
-  if (count >= 10n) return 4n;
-  if (count >= 7n) return 3n;
-  if (count >= 4n) return 2n;
-  if (count >= 2n) return 1n;
+  if (count >= 50n) return 4n;
+  if (count >= 25n) return 3n;
+  if (count >= 10n) return 2n;
+  if (count >= 3n) return 1n;
   return 0n;
 }
 
@@ -264,23 +281,40 @@ function formatFriendlyError(error: unknown, action?: WalnutAction): string {
   return raw || "Something went wrong. Please try again.";
 }
 
-function normalizeLoanRecord(value: unknown): LoanRecord {
+function normalizeLoanRecord(
+  value: unknown,
+  decryptedPrincipal?: bigint,
+  principalPendingOverride?: boolean
+): LoanRecord {
+  // WalnutLendingV2 returns a 5-field LoanInfo struct:
+  // (uint256 loanId, uint256 principalHandle, uint256 openedAt, bool active, bool principalPending)
   const tuple = Array.isArray(value) ? value : [];
   const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
+  const loanId = BigInt(String(record.loanId ?? tuple[0] ?? 0));
+  const principalHandleRaw = record.principalHandle ?? tuple[1];
+  const principalHandle = normalizeEncryptedUint128Handle(principalHandleRaw);
+  const openedAt = BigInt(String(record.openedAt ?? tuple[2] ?? 0));
+  const active = Boolean(record.active ?? tuple[3] ?? false);
+  const principalPending = Boolean(principalPendingOverride ?? record.principalPending ?? tuple[4] ?? false);
+
+  const principal = decryptedPrincipal ?? 0n;
+
   return {
-    loanId: BigInt(String(record.loanId ?? tuple[0] ?? 0)),
-    principal: BigInt(String(record.principal ?? tuple[1] ?? 0)),
-    openedAt: BigInt(String(record.openedAt ?? tuple[2] ?? 0)),
-    active: Boolean(record.active ?? tuple[3]),
-    principalPending: Boolean(record.principalPending ?? tuple[4]),
+    loanId,
+    encryptedPrincipalHandle: principalHandle,
+    decryptedPrincipal: principal > 0n ? principal : undefined,
+    openedAt,
+    active,
+    principalPending: principalPending || (active && principal <= 0n),
+    principal,
   };
 }
 
 function getDecryptSyncTargets(action: WalnutAction): DecryptSyncTarget[] {
   if (action === "borrow") {
     return [
-      { eventName: "BorrowPrincipalSyncRequested", syncFunction: "syncLoanPrincipal", requestIdIndex: 1 },
+      { eventName: "BorrowActiveSyncRequested", syncFunction: "syncBorrowActive", requestIdIndex: 1 },
       { eventName: "TotalBorrowedSyncRequested", syncFunction: "syncTotalBorrowed", requestIdIndex: 0 },
     ];
   }
@@ -289,6 +323,18 @@ function getDecryptSyncTargets(action: WalnutAction): DecryptSyncTarget[] {
     return [
       { eventName: "RepayStateSyncRequested", syncFunction: "syncLoanRepay", requestIdIndex: 1 },
       { eventName: "TotalBorrowedSyncRequested", syncFunction: "syncTotalBorrowed", requestIdIndex: 0 },
+    ];
+  }
+
+  if (action === "deposit") {
+    return [
+      { eventName: "DepositSyncRequested", syncFunction: "syncDepositTransfer", requestIdIndex: 1 },
+    ];
+  }
+
+  if (action === "withdraw") {
+    return [
+      { eventName: "WithdrawSyncRequested", syncFunction: "syncWithdrawTransfer", requestIdIndex: 1 },
     ];
   }
 
@@ -330,21 +376,11 @@ function extractDecryptRequestIds(receipt: WalnutTxReceipt, action: WalnutAction
   return requestIds;
 }
 
-export function useCreditTier(borrower?: Address) {
-  const { data, isLoading, refetch } = useReadContract({
-    address: walnutContractAddress,
-    abi: walnutLendingAbi,
-    functionName: "creditTier",
-    args: [borrower ?? "0x0000000000000000000000000000000000000000"],
-    query: {
-      enabled: Boolean(borrower),
-    },
-  });
-
+export function useCreditTier() {
   return {
-    creditTier: isBigint(data) ? data : undefined,
-    creditTierLoading: isLoading,
-    refreshCreditTier: refetch,
+    creditTier: undefined,
+    creditTierLoading: false,
+    refreshCreditTier: async () => ({ data: undefined }),
   } as const;
 }
 
@@ -714,8 +750,8 @@ export function useWalnutProtocol() {
     },
   };
 
-  const { creditTier, creditTierLoading, refreshCreditTier } = useCreditTier(account.address);
-  const effectiveCreditTier = fallbackCreditTier ?? creditTier;
+  const { creditTierLoading, refreshCreditTier } = useCreditTier();
+  const effectiveCreditTier = fallbackCreditTier;
   const { tierLTV, tierLTVLoading } = useTierLTV(effectiveCreditTier);
 
   const hasDecryptPending = collateralDecrypting || debtDecrypting;
@@ -934,18 +970,13 @@ export function useWalnutProtocol() {
 
   const getLoanSettlementQuote = useCallback(
     async (principal: bigint, openedAt: bigint): Promise<LoanSettlementQuote> => {
-      if (!publicClient || principal <= 0n || openedAt <= 0n) {
+      if (principal <= 0n || openedAt <= 0n) {
         return { repaymentAmount: principal, interestAmount: 0n, protocolFee: 0n };
       }
 
-      const interestTuple = await publicClient.readContract({
-        address: walnutContractAddress,
-        abi: walnutLendingAbi,
-        functionName: "calculateInterestForLoan",
-        args: [principal, openedAt],
-      });
-
-      const { interestAmount, protocolFee } = normalizeInterestTuple(interestTuple);
+      const elapsed = BigInt(Math.max(0, Math.floor(Date.now() / 1000) - Number(openedAt)));
+      const interestAmount = (principal * 800n * elapsed) / (31_536_000n * 10_000n);
+      const protocolFee = interestAmount / 4n;
       const bufferInterest =
         (principal * 800n * REPAY_INTEREST_BUFFER_SECONDS) / (31_536_000n * 10_000n);
       const repaymentBuffer = bufferInterest > 0n ? bufferInterest + 1n : 1n;
@@ -956,7 +987,7 @@ export function useWalnutProtocol() {
         protocolFee,
       };
     },
-    [publicClient]
+    []
   );
 
   const syncDecryptResultsFromReceipt = useCallback(
@@ -991,12 +1022,16 @@ export function useWalnutProtocol() {
 
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           try {
-            decryptResult = await cofheClient
+            const builder = cofheClient
               .decryptForTx(requestId)
               .setChainId(walnutChainId)
-              .setAccount(account.address)
-              .withoutPermit()
-              .execute();
+              .setAccount(account.address);
+
+            const withPermitBuilder = permit.permitHash
+              ? builder.withPermit(permit.permitHash)
+              : builder.withPermit();
+
+            decryptResult = await withPermitBuilder.execute();
             lastDecryptError = null;
             break; // success
           } catch (err) {
@@ -1045,13 +1080,14 @@ export function useWalnutProtocol() {
 
       return results;
     },
-    [account.address, cofheClient]
+    [account.address, cofheClient, permit.permitHash]
   );
 
   const submitEncryptedAmount = useCallback(
     async (
       action: WalnutAction,
       amount: string,
+      tokenAddress?: string,
       loanIndex?: number,
       repayQuote?: RepaySettlementAmounts
     ) => {
@@ -1089,16 +1125,8 @@ export function useWalnutProtocol() {
           setLastRepayAmount(value);
           setLastRepaySettlementAmounts(repaySettlementAmounts);
 
-          if (!repaySettlementAmounts && publicClient && account.address && typeof debtValue === "bigint") {
-            const interestTuple = await publicClient.readContract({
-              address: walnutContractAddress,
-              abi: walnutLendingAbi,
-              functionName: "calculateInterest",
-              args: [account.address, debtValue],
-            });
-            repaySettlementAmounts = normalizeInterestTuple(interestTuple);
-            setLastRepaySettlementAmounts(repaySettlementAmounts);
-          }
+          // Interest is now computed homomorphically on-chain (no public calculateInterest view).
+          // The repay UI always provides a client-side repayQuote via getLoanSettlementQuote.
         }
 
         setStatus("Encrypting amount...");
@@ -1119,7 +1147,13 @@ export function useWalnutProtocol() {
         setStatus("Submitting transaction...");
         // For repay, the contract now requires (encryptedAmount, loanIndex)
         const contractArgs: unknown[] =
-          action === "repay" ? [encrypted, BigInt(loanIndex ?? 0)] : [encrypted];
+          action === "repay"
+            ? [encrypted, BigInt(loanIndex ?? 0)]
+            : action === "deposit"
+            ? [tokenAddress, encrypted]
+            : action === "withdraw"
+            ? [tokenAddress, encrypted]
+            : [encrypted];
           
         let estimatedGas;
         try {
@@ -1163,7 +1197,7 @@ export function useWalnutProtocol() {
           try {
             const syncResults = await syncDecryptResultsFromReceipt(action, receipt as WalnutTxReceipt);
             const repayResult = syncResults.find((result) => result.syncFunction === "syncLoanRepay");
-            if (action === "repay" && repayResult && repayResult.decryptedValue !== 1n) {
+            if (action === "repay" && repayResult && repayResult.decryptedValue % 2n !== 1n) {
               throw new Error("Repayment amount was too low. Please refresh and try again.");
             }
           } catch (syncError) {
@@ -1290,110 +1324,28 @@ export function useWalnutProtocol() {
 
 
   const requestCreditTierUpdate = useCallback(async () => {
-    if (!canWrite) {
-      addToast({ variant: "error", message: "Connect your wallet to continue." });
+    if (!account.address || !permit.hasPermit) {
+      addToast({ variant: "error", message: "Private access permit is required to view credit tier." });
       return false;
     }
 
-    if (!account.address) {
-      addToast({ variant: "error", message: "Wallet address is unavailable." });
-      return false;
-    }
-
+    setCreditTierPollingActive(true);
     try {
-      const hash = await writeWithGasDebug({
-        address: walnutContractAddress,
-        abi: walnutLendingAbi,
-        functionName: "requestCreditTierUpdate",
-        args: [account.address],
-        chain: arbitrumSepolia,
-        account: account.address!,
-      }, { operation: "requestCreditTierUpdate" });
-      setLastTxHash(hash);
-      if (publicClient) {
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        assertSuccessReceipt(receipt);
+      const localTier = await refreshLocalCreditTier();
+      if (typeof localTier === "bigint") {
+        addToast({ variant: "success", message: `Credit tier loaded (tier ${localTier.toString()}).` });
+        return true;
       }
-
-      const toastId = addToast({ variant: "pending", message: "Waiting for CoFHE result..." });
-      creditTierPollingRef.current.toastId = toastId;
-      setCreditTierPollingActive(true);
-
-      const previousTier = creditTier;
-      let attempt = 0;
-
-      while (attempt < 20) {
-        attempt += 1;
-        const result = await refreshCreditTier();
-        if (typeof result.data === "bigint" && result.data !== previousTier) {
-          if (creditTierPollingRef.current.toastId) {
-            removeToast(creditTierPollingRef.current.toastId);
-          }
-          addToast({ variant: "success", message: "Credit tier updated." });
-          setCreditTierPollingActive(false);
-          return true;
-        }
-
-        await new Promise((resolve) => window.setTimeout(resolve, 15_000));
-      }
-
-      if (creditTierPollingRef.current.toastId) {
-        removeToast(creditTierPollingRef.current.toastId);
-      }
-      addToast({ variant: "error", message: "Timed out waiting for credit tier update." });
-      setCreditTierPollingActive(false);
+      addToast({ variant: "error", message: "Could not decrypt repayment history for credit tier." });
       return false;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Credit tier request failed.";
-      const isSenderNotAllowed =
-        message.includes(SENDER_NOT_ALLOWED_SELECTOR) || message.includes("SenderNotAllowed");
-
-      if (isSenderNotAllowed && publicClient && account.address && permit.hasPermit) {
-        try {
-          // Fallback path: compute tier locally from user's encrypted repayment count.
-          const repaymentStruct = await publicClient.readContract({
-            address: walnutContractAddress,
-            abi: walnutLendingAbi,
-            functionName: "getEncryptedRepaymentCount",
-            args: [account.address],
-          });
-
-          const ctHash = normalizeEncryptedUint128Handle(repaymentStruct);
-
-          if (ctHash !== undefined && !isZeroEncryptedUint128Handle(ctHash)) {
-            const repaymentCount = await decryptForView(ctHash, account.address);
-            if (typeof repaymentCount === "bigint") {
-              const localTier = tierFromRepaymentCount(repaymentCount);
-              setFallbackCreditTier(localTier);
-              addToast({
-                variant: "success",
-                message: `Credit tier available locally (tier ${localTier.toString()}).`,
-              });
-              setCreditTierPollingActive(false);
-              return true;
-            }
-          }
-        } catch {
-          // If fallback also fails, show the original contract error below.
-        }
-      }
-
+      const message = error instanceof Error ? error.message : "Credit tier decrypt failed.";
       addToast({ variant: "error", message });
-      setCreditTierPollingActive(false);
       return false;
+    } finally {
+      setCreditTierPollingActive(false);
     }
-  }, [
-    account.address,
-    addToast,
-    canWrite,
-    creditTier,
-    decryptForView,
-    permit.hasPermit,
-    publicClient,
-    refreshCreditTier,
-    removeToast,
-    writeWithGasDebug,
-  ]);
+  }, [account.address, addToast, permit.hasPermit, refreshLocalCreditTier]);
 
 
 
@@ -1447,11 +1399,13 @@ export function useWalnutProtocol() {
   const totalPoolDebtDecrypting = totalBorrowedLoading;
 
   // ── Multi-loan view hooks ────────────────────────────────────────────────
+  // The deployed contract uses msg.sender-based getters (zero args). The
+  // `account` option sets the `from` field in the eth_call, acting as msg.sender.
   const { data: loansData, refetch: refetchLoans } = useReadContract({
     address: walnutContractAddress,
     abi: walnutLendingAbi,
     functionName: "getLoans",
-    args: account.address ? [account.address] : undefined,
+    account: account.address,
     query: { enabled: !!account.address },
   });
 
@@ -1459,7 +1413,7 @@ export function useWalnutProtocol() {
     address: walnutContractAddress,
     abi: walnutLendingAbi,
     functionName: "getActiveLoans",
-    args: account.address ? [account.address] : undefined,
+    account: account.address,
     query: { enabled: !!account.address },
   });
 
@@ -1471,57 +1425,140 @@ export function useWalnutProtocol() {
     query: { enabled: !!account.address },
   });
 
-  const { data: totalActivePrincipalData } = useReadContract({
-    address: walnutContractAddress,
-    abi: walnutLendingAbi,
-    functionName: "getTotalActivePrincipal",
-    args: account.address ? [account.address] : undefined,
-    query: { enabled: !!account.address },
-  });
+  const [loanPrincipalCache, setLoanPrincipalCache] = useState<Record<string, bigint>>({});
+  const [loanPendingCache, setLoanPendingCache] = useState<Record<string, boolean>>({});
 
-  const { data: totalEstimatedInterestData } = useReadContract({
-    address: walnutContractAddress,
-    abi: walnutLendingAbi,
-    functionName: "getTotalEstimatedInterest",
-    args: account.address ? [account.address] : undefined,
-    query: { enabled: !!account.address },
-  });
+  useEffect(() => {
+    if (!account.address || !Array.isArray(loansData)) {
+      return;
+    }
 
-  // Normalise loan arrays into a typed array of LoanRecord
+    let active = true;
+
+    const fetchLoanPrincipals = async () => {
+      const nextPrincipalCache: Record<string, bigint> = {};
+      const nextPendingCache: Record<string, boolean> = {};
+
+      try {
+        for (let index = 0; index < (loansData as unknown[]).length; index += 1) {
+          const loan = (loansData as unknown[])[index];
+          const normalized = normalizeLoanRecord(loan);
+          if (!normalized.active) continue;
+
+          if (
+            normalized.encryptedPrincipalHandle &&
+            !isZeroEncryptedUint128Handle(normalized.encryptedPrincipalHandle)
+          ) {
+            try {
+              const decrypted = await decryptForView(
+                normalized.encryptedPrincipalHandle,
+                account.address as Address
+              );
+              if (decrypted !== undefined) {
+                nextPrincipalCache[String(index)] = decrypted;
+                nextPendingCache[String(index)] = false;
+                continue;
+              }
+            } catch (e) {
+              console.error("Failed to decrypt loan principal handle:", e);
+            }
+          }
+
+          nextPrincipalCache[String(index)] = 0n;
+          nextPendingCache[String(index)] = normalized.principalPending;
+        }
+      } catch (e) {
+        console.error("Failed to process loan principals:", e);
+      }
+
+      if (active) {
+        setLoanPrincipalCache(nextPrincipalCache);
+        setLoanPendingCache(nextPendingCache);
+      }
+    };
+
+    void fetchLoanPrincipals();
+
+    return () => {
+      active = false;
+    };
+  }, [account.address, loansData, decryptForView]);
+
+  const mapLoanWithPrincipal = useCallback(
+    (value: unknown, index?: number) =>
+      normalizeLoanRecord(
+        value,
+        index !== undefined ? loanPrincipalCache[String(index)] : undefined,
+        index !== undefined ? loanPendingCache[String(index)] : undefined
+      ),
+    [loanPrincipalCache, loanPendingCache]
+  );
+
   const allLoans: LoanRecord[] = Array.isArray(loansData)
-    ? (loansData as unknown[]).map(normalizeLoanRecord)
+    ? (loansData as unknown[]).map((loan, index) => mapLoanWithPrincipal(loan, index))
     : [];
+
+  const hasUnresolvedLoans = useMemo(() => {
+    if (!Array.isArray(loansData)) return false;
+    return loansData.some((loan, index) => {
+      const normalized = normalizeLoanRecord(
+        loan,
+        loanPrincipalCache[String(index)],
+        loanPendingCache[String(index)]
+      );
+      
+      // Only active loans with missing principal are unresolved
+      return normalized.active && normalized.principal === 0n;
+    });
+  }, [loansData, loanPrincipalCache, loanPendingCache]);
+
+  useEffect(() => {
+    if (!hasUnresolvedLoans || !publicClient || !account.address) return;
+
+    const intervalId = window.setInterval(() => {
+      void refetchLoans();
+      void refetchActiveLoans();
+      void refetchHasActiveLoan();
+    }, 10000);
+
+    return () => window.clearInterval(intervalId);
+  }, [hasUnresolvedLoans, publicClient, account.address, refetchLoans, refetchActiveLoans, refetchHasActiveLoan]);
 
   const activeLoansRaw = Array.isArray(activeLoansData)
     ? (activeLoansData as [unknown[], unknown[]])
     : [[], []] as [unknown[], unknown[]];
 
-  const activeLoans: LoanRecord[] = Array.isArray(activeLoansRaw[0])
-    ? (activeLoansRaw[0] as unknown[]).map(normalizeLoanRecord)
-    : [];
-
   const activeLoansIndices: number[] = Array.isArray(activeLoansRaw[1])
     ? (activeLoansRaw[1] as unknown[]).map((i) => Number(i))
     : [];
 
+  const activeLoans: LoanRecord[] = Array.isArray(activeLoansRaw[0])
+    ? (activeLoansRaw[0] as unknown[]).map((loan, j) =>
+        mapLoanWithPrincipal(loan, activeLoansIndices[j])
+      )
+    : [];
+
   const hasActiveLoan = hasActiveLoanData === true;
-  const totalActivePrincipal = typeof totalActivePrincipalData === "bigint" ? totalActivePrincipalData : 0n;
-  const totalEstimatedInterest = typeof totalEstimatedInterestData === "bigint" ? totalEstimatedInterestData : 0n;
+  const totalActivePrincipal = activeLoans.reduce(
+    (total, loan) => total + (loan.decryptedPrincipal ?? 0n),
+    0n
+  );
+  const totalEstimatedInterest = activeLoans.reduce((total, loan) => {
+    const principal = loan.decryptedPrincipal ?? 0n;
+    if (principal <= 0n || loan.openedAt <= 0n) return total;
+    const elapsed = BigInt(Math.max(0, Math.floor(Date.now() / 1000) - Number(loan.openedAt)));
+    return total + (principal * 800n * elapsed) / (31_536_000n * 10_000n);
+  }, 0n);
 
   const recoverPendingLoanPrincipal = useCallback(
-    async (loanIndex: number, openedAt: bigint) => {
+    async (loanIndex: number, loanId: bigint, loanOpenedAt?: bigint) => {
       if (!publicClient || !cofheClient || !account.address) {
         addToast({ variant: "error", message: "Private loan details are still loading. Please try again shortly." });
         return false;
       }
 
-      if (openedAt <= 0n) {
-        addToast({ variant: "error", message: "This loan is missing its open date. Please refresh and try again." });
-        return false;
-      }
-
       try {
-        setStatus("Loading loan details...");
+        setStatus("Finalizing loan activation...");
         const latestBlock = await publicClient.getBlockNumber();
         const fromBlock =
           latestBlock > PENDING_LOAN_SYNC_LOOKBACK_BLOCKS
@@ -1530,19 +1567,28 @@ export function useWalnutProtocol() {
 
         const logs = await publicClient.getLogs({
           address: walnutContractAddress,
-          event: BORROW_PRINCIPAL_SYNC_EVENT,
+          event: BORROW_ACTIVE_SYNC_EVENT,
           args: { user: account.address },
           fromBlock,
           toBlock: "latest",
         });
 
+        // The contract emits BorrowPrincipalSyncRequested(user, ctHash, openedAt).
+        // Match on the openedAt timestamp (3rd param). Fall back to scanning all
+        // logs in reverse order if openedAt is not provided.
         const matchingLog = [...logs]
           .reverse()
-          .find((log) => log.args.openedAt === openedAt);
+          .find((log) => {
+            if (loanOpenedAt !== undefined && loanOpenedAt > 0n) {
+              return log.args.openedAt === loanOpenedAt;
+            }
+            // Fallback: take the most recent event for this user
+            return true;
+          });
 
         const requestId = matchingLog?.args.requestId;
         if (requestId === undefined) {
-          throw new Error("Could not find the encrypted loan details request.");
+          throw new Error("Could not find the borrow activation sync request.");
         }
 
         const decryptResult = await cofheClient
@@ -1552,15 +1598,11 @@ export function useWalnutProtocol() {
           .withoutPermit()
           .execute();
 
-        if (decryptResult.decryptedValue > ((1n << 128n) - 1n)) {
-          throw new Error("Loan principal is outside the supported range.");
-        }
-
         const response = await fetch("/api/walnut/sync-decrypt", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            syncFunction: "syncLoanPrincipal",
+            syncFunction: "syncBorrowActive",
             requestId: requestId.toString(),
             result: decryptResult.decryptedValue.toString(),
             signature: decryptResult.signature,
@@ -1569,11 +1611,11 @@ export function useWalnutProtocol() {
 
         const syncResult = (await response.json()) as SyncDecryptResponse;
         if (!response.ok || !syncResult.ok) {
-          throw new Error(syncResult.message ?? "Could not update this loan.");
+          throw new Error(syncResult.message ?? "Could not activate this loan.");
         }
 
         await Promise.all([refetchLoans(), refetchActiveLoans(), refetchHasActiveLoan()]);
-        addToast({ variant: "success", message: `Loan ${loanIndex + 1} details are ready.` });
+        addToast({ variant: "success", message: `Loan ${loanIndex + 1} is ready.` });
         setStatus(null);
         return true;
       } catch (error) {
@@ -1647,6 +1689,8 @@ export function useWalnutProtocol() {
     liquidationPollingActive: false,
     liquidationPollingMessage: null,
     submitEncryptedAmount,
+    decryptForView,
+    syncDecryptResultsFromReceipt,
     retryRepaySettlement,
     getLoanSettlementQuote,
     recoverPendingLoanPrincipal,

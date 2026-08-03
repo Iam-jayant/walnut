@@ -214,7 +214,7 @@ export default function BorrowPage() {
               ))}
             </div>
 
-            {(exceedsLTV || exceedsMaxBorrow) && (
+            {!pendingBorrow && (exceedsLTV || exceedsMaxBorrow) && (
               <div className="rounded-2xl border border-red-200 bg-red-50 p-3">
                 <p className="text-sm text-red-700">
                   {exceedsMaxBorrow
