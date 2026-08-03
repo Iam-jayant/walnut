@@ -14,7 +14,6 @@ import { WaveChangelog } from "@/components/changelog/WaveChangelog";
 export default function Home() {
   return (
     <>
-      <WaveChangelog />
       <PageLoader />
       <main className="relative min-h-screen overflow-x-hidden noise-overlay">
         <ScrollProgress />

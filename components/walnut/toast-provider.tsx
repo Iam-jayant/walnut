@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { X, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { X, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,7 @@ export type ToastVariant = "success" | "error" | "pending";
 
 type ToastItem = {
   id: string;
+  title?: string;
   message: string;
   variant: ToastVariant;
   durationMs?: number;
@@ -24,22 +25,29 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 function getToastStyles(variant: ToastVariant) {
   if (variant === "success") {
     return {
-      container: "border-white/10 bg-black/82 text-white shadow-[0_8px_32px_rgba(0,0,0,0.36)] shadow-emerald-500/5",
-      iconColor: "text-emerald-400",
+      container: "bg-[#F1FBF7] border border-[#E5F6EE]",
+      iconBg: "bg-white",
+      iconStyle: "fill-[#34D399] text-white",
       Icon: CheckCircle2,
+      defaultTitle: "Payment Successful",
     };
   }
   if (variant === "error") {
     return {
-      container: "border-white/10 bg-black/82 text-white shadow-[0_8px_32px_rgba(0,0,0,0.36)] shadow-red-500/5",
-      iconColor: "text-red-400",
-      Icon: AlertTriangle,
+      container: "bg-[#FEF1F2] border border-[#FDE3E5]",
+      iconBg: "bg-white",
+      iconStyle: "fill-[#F87171] text-white",
+      Icon: AlertCircle,
+      defaultTitle: "Action Failed",
     };
   }
+  // pending
   return {
-    container: "border-white/10 bg-black/82 text-white shadow-[0_8px_32px_rgba(0,0,0,0.36)] shadow-cyan-500/5",
-    iconColor: "text-[#0AD9DC]",
+    container: "bg-[#F0F8FF] border border-[#E1F0FA]",
+    iconBg: "bg-white",
+    iconStyle: "text-[#60A5FA]",
     Icon: Loader2,
+    defaultTitle: "Processing",
   };
 }
 
@@ -89,7 +97,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-3">
+      <div className="fixed bottom-[15vh] left-1/2 z-[100] flex w-[min(480px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-4 pointer-events-none">
         {toasts.map((toast) => {
           const styles = getToastStyles(toast.variant);
           const ToastIcon = styles.Icon;
@@ -99,21 +107,30 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               key={toast.id}
               role="status"
               className={cn(
-                "flex items-start justify-between gap-3 rounded-2xl border px-4 py-3.5 text-xs shadow-xl backdrop-blur-md transition-all duration-300 animate-in slide-in-from-bottom-4 fade-in duration-300",
+                "relative flex w-full items-start gap-4 rounded-[20px] p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all animate-in slide-in-from-bottom-6 fade-in duration-300 pointer-events-auto",
                 styles.container
               )}
             >
-              <div className="flex items-start gap-3 flex-1 min-w-0">
-                <ToastIcon className={cn("h-4 w-4 flex-shrink-0 mt-0.5", styles.iconColor, toast.variant === "pending" && "animate-spin")} />
-                <p className="leading-snug text-white/90 font-medium break-words">{toast.message}</p>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white shadow-sm">
+                <ToastIcon className={cn("h-6 w-6", styles.iconStyle, toast.variant === "pending" && "animate-spin")} />
               </div>
+              
+              <div className="flex flex-col gap-1 pr-6 pt-0.5 text-left">
+                <h3 className="text-[15px] font-semibold text-slate-900">
+                  {toast.title || (toast.variant === "success" && toast.message.toLowerCase().includes("payment") ? "Payment Successful" : styles.defaultTitle)}
+                </h3>
+                <p className="text-[14px] leading-relaxed text-slate-500">
+                  {toast.message}
+                </p>
+              </div>
+
               <button
                 type="button"
                 onClick={() => removeToast(toast.id)}
-                className="rounded-full p-1 text-white/40 hover:text-white hover:bg-white/10 transition flex-shrink-0"
+                className="absolute right-4 top-4 rounded-full p-1.5 text-slate-400 hover:bg-black/5 hover:text-slate-600 transition"
                 aria-label="Dismiss notification"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4 stroke-[2.5]" />
               </button>
             </div>
           );

@@ -264,7 +264,7 @@ export default function VisionPage() {
                     </h2>
                   </div>
                   <Image
-                    src="/svg logo of walnut.svg"
+                    src="/walnut-logo.svg"
                     alt="Walnut"
                     width={160}
                     height={90}
@@ -505,7 +505,7 @@ export default function VisionPage() {
               <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-mono uppercase tracking-[0.16em] text-[#0AD9DC] mb-6">
                 For Investors
               </span>
-              
+
               <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
                 <div>
                   <h2 className="text-3xl font-semibold tracking-tight text-white lg:text-4xl">
@@ -552,7 +552,7 @@ export default function VisionPage() {
                 Co-founder Wanted
               </h2>
               <p className="mt-6 text-base leading-7 text-black/60">
-                This protocol was designed and built solely by one developer. The technical foundation is complete.
+                This protocol was designed and built solely by me(Jayant). The technical foundation is complete.
                 What it needs now is someone who understands go-to-market, institutional BD, and can turn a working protocol into a funded company.
               </p>
               <p className="mt-4 text-base leading-7 text-black/60">
@@ -561,14 +561,14 @@ export default function VisionPage() {
               <p className="mt-8 text-xl font-bold text-[#067f83] bg-[#0AD9DC]/8 border border-[#0AD9DC]/20 px-6 py-3 rounded-2xl inline-block">
                 $700K in seed funding and the right co-founder makes Walnut unstoppable.
               </p>
-              
+
               <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Button
                   asChild
                   size="lg"
                   className="h-12 rounded-full bg-black px-7 text-sm font-semibold text-white hover:bg-black/90 w-full sm:w-auto"
                 >
-                  <a href="mailto:partners@walnut.finance">
+                  <a href="mailto:jayantkurekar1@gmail.com">
                     Reach out via Email
                     <ArrowRight className="h-4 w-4" />
                   </a>
@@ -633,7 +633,7 @@ export default function VisionPage() {
                 <div className="absolute h-[10rem] w-[10rem] rounded-full border border-[#0ABFC2]/30 opacity-90" />
                 <div className="relative rounded-[1.75rem] border border-black/10 bg-white/86 p-6 text-center shadow-[0_24px_50px_rgba(0,0,0,0.06)]">
                   <Image
-                    src="/svg logo of walnut.svg"
+                    src="/walnut-logo.svg"
                     alt="Walnut Protocol"
                     width={160}
                     height={90}

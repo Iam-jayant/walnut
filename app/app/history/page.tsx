@@ -35,8 +35,17 @@ function formatTimestamp(timestamp: bigint | undefined) {
 
 function getEventMeta(eventName: string) {
   switch (eventName) {
-    case "BorrowPrincipalSyncRequested":
-    case "Borrow":
+    case "Deposited":
+    case "DepositSyncRequested":
+      return {
+        title: "Collateral Deposited",
+        description: "Your FHE-encrypted collateral deposit request was submitted on-chain.",
+        icon: Coins,
+        colorClass: "bg-emerald-50 text-emerald-600 border-emerald-200/50",
+        badge: "Deposit"
+      };
+    case "BorrowActiveSyncRequested":
+    case "LoanOpened":
       return {
         title: "Principal Loan Borrowed",
         description: "Your FHE encrypted borrow request completed successfully.",
@@ -45,7 +54,8 @@ function getEventMeta(eventName: string) {
         badge: "Borrow"
       };
     case "RepayStateSyncRequested":
-    case "Repay":
+    case "LoanRepaid":
+    case "RepaymentSettlementIntent":
       return {
         title: "Encrypted Loan Repayment",
         description: "Your repayment transaction was processed and submitted to the FHE enclave.",
@@ -53,13 +63,32 @@ function getEventMeta(eventName: string) {
         colorClass: "bg-emerald-50 text-emerald-600 border-emerald-200/50",
         badge: "Repay"
       };
-    case "TotalBorrowedSyncRequested":
+    case "Withdrawn":
+    case "WithdrawSyncRequested":
       return {
-        title: "Total Borrow Position Synced",
-        description: "Aggregated private borrow balance sync trigger completed on-chain.",
-        icon: Activity,
+        title: "Collateral Withdrawn",
+        description: "Your collateral withdrawal request was submitted on-chain.",
+        icon: ArrowLeftRight,
+        colorClass: "bg-amber-50 text-amber-600 border-amber-200/50",
+        badge: "Withdraw"
+      };
+    case "CreditCountSyncRequested":
+    case "CreditTierUpdated":
+      return {
+        title: "Credit Reputation Synced",
+        description: "Your confidential credit score tier was updated on-chain.",
+        icon: Sparkles,
         colorClass: "bg-purple-50 text-purple-600 border-purple-200/50",
-        badge: "Sync"
+        badge: "Credit"
+      };
+    case "LoanRepayFailed":
+    case "BorrowCancelled":
+      return {
+        title: "Operation Failed",
+        description: "On-chain operation failed to settle or was cancelled.",
+        icon: ShieldAlert,
+        colorClass: "bg-rose-50 text-rose-600 border-rose-200/50",
+        badge: "Failed"
       };
     default:
       return {
@@ -184,23 +213,27 @@ export default function HistoryPage() {
       {/* Page Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Activity Timeline</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Activity Timeline</h1>
+            <div className="group relative flex items-center justify-center">
+              <HelpCircle className="h-5 w-5 text-muted-foreground hover:text-slate-900 cursor-help transition-colors" />
+              <div className="absolute left-1/2 top-full mt-2 w-[340px] -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                <div className="rounded-xl border border-blue-100 bg-blue-50/95 backdrop-blur-sm p-4 text-xs leading-relaxed text-blue-800 shadow-xl relative">
+                  <div className="absolute -top-[16px] left-1/2 -translate-x-1/2 border-[8px] border-transparent border-b-blue-100" />
+                  <div className="absolute -top-[15px] left-1/2 -translate-x-1/2 border-[8px] border-transparent border-b-blue-50/95" />
+                  <strong className="font-semibold block mb-1">How On-chain Activity works:</strong>
+                  <p className="text-blue-700">
+                    Because Walnut is a secure Fully Homomorphic Encryption (FHE) protocol, lending calculations are processed inside encrypted smart contract states. The timeline below monitors the Arbitrum Sepolia network event logs for cryptographic syncing actions (`BorrowActiveSyncRequested`, `RepayStateSyncRequested`, etc.) linked specifically to your wallet address.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Real-time on-chain history and state sync timelines triggered by your encrypted lending actions.
           </p>
         </div>
       </header>
-
-      {/* Info Warning Guide */}
-      <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4 flex gap-3 text-xs leading-relaxed text-blue-800">
-        <HelpCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-        <div>
-          <strong className="font-semibold">How On-chain Activity works:</strong>
-          <p className="mt-0.5 text-blue-700">
-            Because Walnut is a secure Fully Homomorphic Encryption (FHE) protocol, lending calculations are processed inside encrypted smart contract states. The timeline below monitors the Arbitrum Sepolia network event logs for cryptographic syncing actions (`BorrowPrincipalSyncRequested`, `RepayStateSyncRequested`, etc.) linked specifically to your wallet address.
-          </p>
-        </div>
-      </div>
 
       {/* Main Content Area */}
       <div className="border border-slate-200 rounded-2xl bg-white p-6 shadow-sm min-h-[400px] flex flex-col justify-between">

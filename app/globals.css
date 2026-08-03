@@ -90,6 +90,14 @@
     scroll-behavior: smooth;
   }
 
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
   body {
     @apply bg-background text-foreground;
     background-image:
@@ -159,6 +167,13 @@
 
   .cofhe-floating-icon:hover {
     transform: scale(1.08) !important;
+  }
+
+  /* FIX: @cofhe/react hardcodes `items-start` (left-alignment) on the floating button container. 
+     When positioned on the right, this causes the popup to bleed off the right edge. 
+     Override this to `flex-end` to force the popup to expand to the LEFT of the button. */
+  .cofhe-floating-button {
+    align-items: flex-end !important;
   }
 
   /* Remove any background/glow overlays */
