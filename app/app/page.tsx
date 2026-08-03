@@ -25,6 +25,7 @@ import { ProtocolAlerts } from "@/components/walnut/protocol-health";
 import { LoanHealthChart } from "@/components/dashboard/loan-health";
 import { DisconnectedState } from "@/components/onboarding/disconnected-state";
 import { PermitModal } from "@/components/onboarding/permit-modal";
+import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { useWalnutProtocol } from "../../hooks/use-walnut-protocol";
 import { useTokenBalances } from "../../hooks/use-token-balances";
 import {
@@ -34,6 +35,8 @@ import {
   HEALTH_FACTOR_SCORE_MAX,
   HEALTH_FACTOR_SCALE,
 } from "@/lib/protocol-constants";
+
+import { walnutMockUsdcAddress } from "@/lib/walnut-contract";
 
 const USDC_DECIMALS = 1_000_000;
 const ENCRYPTION_MASK = "••••"; // Smaller dots for encrypted values
@@ -77,6 +80,21 @@ export default function WalnutDashboardPage() {
       : undefined;
   const debtDecrypted =
     typeof protocol.debt.decrypted.data === "bigint" ? protocol.debt.decrypted.data : undefined;
+
+  const vaultHoldings = useMemo(() => {
+    if (typeof collateralDecrypted === "bigint" && collateralDecrypted > 0n) {
+      return [
+        {
+          token: walnutMockUsdcAddress,
+          amount: collateralDecrypted,
+          symbol: "USDC",
+          decimals: 6,
+          usdValue: collateralDecrypted,
+        },
+      ];
+    }
+    return [];
+  }, [collateralDecrypted]);
 
   const primaryAction = {
     href: "/app/deposit",
@@ -222,7 +240,8 @@ export default function WalnutDashboardPage() {
     if (!showDecrypted || !protocol.canRead) return null; // null = hidden
     const userDebt = protocol.debt?.decrypted?.data;
     const deposited = protocol.totalPoolCollateral?.decrypted?.data;
-    if (typeof userDebt !== "bigint" || typeof deposited !== "bigint" || deposited <= 0n) return null;
+    if (typeof userDebt !== "bigint" || typeof deposited !== "bigint") return null;
+    if (deposited <= 0n || userDebt <= 0n) return 0;
     // Use bigint arithmetic: userDebt * 10_000n / deposited gives basis points
     const bps = (userDebt * 10_000n) / deposited;
     return Math.min(100, Number(bps) / 100);
@@ -538,13 +557,13 @@ export default function WalnutDashboardPage() {
           </div>
           
           <div className="space-y-4">
-            {tokenBalances.vaultHoldings.length === 0 ? (
+            {vaultHoldings.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
                 <p className="text-sm">No vault holdings yet</p>
                 <p className="text-xs mt-2">Deposit collateral to get started</p>
               </div>
             ) : (
-              tokenBalances.vaultHoldings.map((holding) => (
+              vaultHoldings.map((holding) => (
                 <div key={holding.symbol} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-inner hover:scale-105 transition-transform cursor-pointer overflow-hidden bg-slate-100 border border-slate-200">
@@ -594,38 +613,44 @@ export default function WalnutDashboardPage() {
         </div>
       </div>
 
-      {/* Row 3: Quick Actions */}
-      <div className="grid lg:grid-cols-1 gap-4">{/* Removed tour-actions class */}
-        
+      {/* Row 3: Quick Actions and Activity Feed */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Quick Actions */}
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm">
-          <h3 className="font-bold tracking-tight text-slate-900 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Link href="/app/deposit" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
-                <ArrowDownToLine className="w-5 h-5 text-emerald-600" />
-              </div>
-              <span className="text-sm font-bold text-slate-900">Deposit</span>
-            </Link>
-            <Link href="/app/borrow" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-indigo-50/50 hover:border-indigo-200 transition-all group">
-              <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
-                <HandCoins className="w-5 h-5 text-indigo-600" />
-              </div>
-              <span className="text-sm font-bold text-slate-900">Borrow</span>
-            </Link>
-            <Link href="/app/withdraw" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-orange-50/50 hover:border-orange-200 transition-all group">
-              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
-                <ArrowUpFromLine className="w-5 h-5 text-orange-600" />
-              </div>
-              <span className="text-sm font-bold text-slate-900">Withdraw</span>
-            </Link>
-            <Link href="/app/repay" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-cyan-50/50 hover:border-cyan-200 transition-all group">
-              <div className="w-12 h-12 rounded-full bg-cyan-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
-                <RefreshCcw className="w-5 h-5 text-cyan-600" />
-              </div>
-              <span className="text-sm font-bold text-slate-900">Repay</span>
-            </Link>
+        <div className="lg:col-span-2 border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="font-bold tracking-tight text-slate-900 mb-4">Quick Actions</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Link href="/app/deposit" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                  <ArrowDownToLine className="w-5 h-5 text-emerald-600" />
+                </div>
+                <span className="text-sm font-bold text-slate-900">Deposit</span>
+              </Link>
+              <Link href="/app/borrow" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-indigo-50/50 hover:border-indigo-200 transition-all group">
+                <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                  <HandCoins className="w-5 h-5 text-indigo-600" />
+                </div>
+                <span className="text-sm font-bold text-slate-900">Borrow</span>
+              </Link>
+              <Link href="/app/withdraw" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-orange-50/50 hover:border-orange-200 transition-all group">
+                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                  <ArrowUpFromLine className="w-5 h-5 text-orange-600" />
+                </div>
+                <span className="text-sm font-bold text-slate-900">Withdraw</span>
+              </Link>
+              <Link href="/app/repay" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-cyan-50/50 hover:border-cyan-200 transition-all group">
+                <div className="w-12 h-12 rounded-full bg-cyan-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
+                  <RefreshCcw className="w-5 h-5 text-cyan-600" />
+                </div>
+                <span className="text-sm font-bold text-slate-900">Repay</span>
+              </Link>
+            </div>
           </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="lg:col-span-1">
+          <ActivityFeed />
         </div>
       </div>
     </div>
