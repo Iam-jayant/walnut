@@ -107,12 +107,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (body.syncFunction === "syncWinnerSelected" && !body.borrower) {
-      return NextResponse.json(
-        { ok: false, message: "Missing borrower address for syncWinnerSelected" },
-        { status: 400 }
-      );
-    }
+
 
     if (!body.signature.startsWith("0x")) {
       return NextResponse.json({ ok: false, message: "Invalid decrypt signature" }, { status: 400 });
@@ -150,9 +145,7 @@ export async function POST(request: Request) {
       address: contractAddress,
       abi: syncAbi,
       functionName: body.syncFunction,
-      args: body.syncFunction === "syncWinnerSelected"
-        ? [body.borrower as `0x${string}`, ciphertextHex, result, body.signature] as const
-        : [ciphertextHex, result, body.signature] as const,
+      args: [ciphertextHex, result, body.signature] as const,
     });
 
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
