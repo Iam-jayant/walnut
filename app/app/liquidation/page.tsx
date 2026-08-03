@@ -96,7 +96,7 @@ export default function LiquidationPage() {
   // Sync Relay Helper matching use-walnut-protocol.ts
   const doSyncDecrypt = async (txHash: `0x${string}`, isWinnerSelection: boolean) => {
     try {
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      const receipt = await publicClient!.waitForTransactionReceipt({ hash: txHash });
       const eventAbi = isWinnerSelection ? winnerSelectionEvent : liquidationCheckEvent;
       const syncFunction = isWinnerSelection ? "syncWinnerSelection" : "syncLiquidationCheck";
       

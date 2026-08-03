@@ -13,6 +13,7 @@ import {
   walnutContractAddress as WALNUT_LENDING_ADDRESS,
   walnutFherc20Address as FHERC20_ADDRESS,
   walnutMockUsdcAddress as MOCK_USDC_ADDRESS,
+  walnutOracleAddress as ORACLE_ADDRESS,
 } from "@/lib/walnut-contract";
 
 // WETH is not currently exported from walnut-contract, so read it safely
