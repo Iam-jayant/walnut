@@ -16,7 +16,7 @@ Walnut is a confidential lending protocol built with Fully Homomorphic Encryptio
 
 - **Encrypted Positions**: Collateral, debt, and health factors stored as encrypted `euint128` values
 - **Multi-Loan Support**: Users can have multiple concurrent loans
-- **Credit Tier System**: Encrypted repayment history unlocks better LTV ratios (70% → 90%)
+- **Credit Tier System**: Encrypted repayment history unlocks better LTV ratios (70% → 85%)
 - **Permit-Based Decryption**: Users sign permits to decrypt their own data
 
 ## Documentation Structure
@@ -36,10 +36,10 @@ Walnut is a confidential lending protocol built with Fully Homomorphic Encryptio
 
 | Contract | Address |
 |----------|---------|
-| WalnutLending | `0xA99C28678ca4C19741995B0874155e6abAad76CA` |
-| WalnutFHERC20 (cUSDC) | `0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343` |
-| WalnutPriceOracle | `0xFaB46543812Fc34b080b668f62864e46064D9ba1` |
-| MockUSDC | `0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd` |
+| WalnutLendingV2 | `0x4A94562d83a183461A42F56E0316083b3C33cb25` |
+| WalnutFHERC20 (cUSDC) | `0x471D0Cc3127295de11A8021C3C4AcC63bA4967d6` |
+| WalnutPriceOracle | `0x1E77d42C88BE6d7d036149C6e25c04F3d1a7db40` |
+| MockUSDC | `0xbaF9465042BeFA0714E56bcDAddcaF6311FF5F59` |
 
 ## Next Steps
 

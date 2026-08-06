@@ -238,7 +238,7 @@ The settlement transaction is handled by Privara to keep the interest amount pri
 - **Health Factor**: Improves (or returns to ∞ if all loans repaid)
 - **Available to Borrow**: Increases
 - **Active Loans**: Count decreases by 1
-- **Credit Tier**: May increase after 3+ repayments
+- **Credit Tier**: May increase after 2+ repayments
 
 ### Special Cases
 
@@ -304,10 +304,9 @@ As you repay loans, you progress through credit tiers and unlock higher LTV rati
 | Tier | Repayments Required | Max LTV | Max Borrow (on $100 collateral) |
 |------|---------------------|---------|----------------------------------|
 | 0    | 0 (default)         | 70%     | $70                              |
-| 1    | 3 repayments        | 75%     | $75                              |
-| 2    | 10 repayments       | 80%     | $80                              |
-| 3    | 25 repayments       | 85%     | $85                              |
-| 4    | 50 repayments       | 90%     | $90                              |
+| 1    | 2 repayments        | 75%     | $75                              |
+| 2    | 5 repayments        | 80%     | $80                              |
+| 3    | 10 repayments       | 85%     | $85                              |
 
 ### Requesting Tier Update
 

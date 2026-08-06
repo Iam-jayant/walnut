@@ -366,11 +366,10 @@ Users progress through tiers based on repayment count:
 
 | Tier | Repayments Required | Max LTV |
 |------|---------------------|---------|
-| 0    | 0                   | 70%     |
-| 1    | 3                   | 75%     |
-| 2    | 10                  | 80%     |
-| 3    | 25                  | 85%     |
-| 4    | 50                  | 90%     |
+| 0    | 0 (default)         | 70%     |
+| 1    | 2                   | 75%     |
+| 2    | 5                   | 80%     |
+| 3    | 10                  | 85%     |
 
 **Implementation:**
 - Tier update requires decrypt request + client-driven sync

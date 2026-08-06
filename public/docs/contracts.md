@@ -8,17 +8,17 @@ Complete reference for all smart contracts deployed on Arbitrum Sepolia.
 
 | Contract | Address | Arbiscan |
 |----------|---------|----------|
-| WalnutLending | `0xA99C28678ca4C19741995B0874155e6abAad76CA` | [View](https://sepolia.arbiscan.io/address/0xA99C28678ca4C19741995B0874155e6abAad76CA) |
-| WalnutFHERC20 (cUSDC) | `0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343` | [View](https://sepolia.arbiscan.io/address/0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343) |
-| WalnutPriceOracle | `0xFaB46543812Fc34b080b668f62864e46064D9ba1` | [View](https://sepolia.arbiscan.io/address/0xFaB46543812Fc34b080b668f62864e46064D9ba1) |
-| MockUSDC | `0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd` | [View](https://sepolia.arbiscan.io/address/0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd) |
+| WalnutLendingV2 | `0x4A94562d83a183461A42F56E0316083b3C33cb25` | [View](https://sepolia.arbiscan.io/address/0x4A94562d83a183461A42F56E0316083b3C33cb25) |
+| WalnutFHERC20 (cUSDC) | `0x471D0Cc3127295de11A8021C3C4AcC63bA4967d6` | [View](https://sepolia.arbiscan.io/address/0x471D0Cc3127295de11A8021C3C4AcC63bA4967d6) |
+| WalnutPriceOracle | `0x1E77d42C88BE6d7d036149C6e25c04F3d1a7db40` | [View](https://sepolia.arbiscan.io/address/0x1E77d42C88BE6d7d036149C6e25c04F3d1a7db40) |
+| MockUSDC | `0xbaF9465042BeFA0714E56bcDAddcaF6311FF5F59` | [View](https://sepolia.arbiscan.io/address/0xbaF9465042BeFA0714E56bcDAddcaF6311FF5F59) |
 | MockUSDCPriceFeed | `0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1` | [View](https://sepolia.arbiscan.io/address/0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1) |
 
 All contracts are verified and source code is available on Arbiscan.
 
 ---
 
-## WalnutLending
+## WalnutLendingV2
 
 Main lending protocol contract. Handles deposits, borrows, repayments, and withdrawals with FHE-encrypted user positions.
 
@@ -35,18 +35,17 @@ constructor(address _stablecoin, address _oracle, address _treasury)
 
 **Initialization:**
 - Sets contract owner to deployer
-- Initializes tier LTVs: [7000, 7500, 8000, 8500, 9000]
 - Emits `OwnershipTransferred` event
 
 ### State Variables
 
 **Public Constants:**
 ```solidity
-uint256 public constant BORROW_APR = 800;              // 8% annual rate
-uint256 public constant PROTOCOL_FEE_APR = 200;        // 2% annual rate
-uint256 public constant SECONDS_PER_YEAR = 365 days;
-uint256 public constant PRECISION = 1e6;               // 6 decimals
-uint128 public constant LIQUIDATION_THRESHOLD = 10500; // 105% (10500 bps)
+uint256 public constant PRECISION         = 1e18;              // 18 decimals
+uint256 public constant SECONDS_PER_YEAR  = 365 days;
+uint256 public constant BORROW_APR        = 800;               // 8.00% in basis points
+uint256 public constant PROTOCOL_FEE_APR  = 200;               // 2.00% in basis points
+uint128 public constant LIQUIDATION_THRESHOLD = 8000;          // 80% LTV
 ```
 
 **Immutable:**
@@ -62,22 +61,26 @@ mapping(address => euint128) private _collateral;
 mapping(address => euint128) private _debt;
 mapping(address => euint128) private _repaymentCount;
 mapping(address => euint128) private _defaultCount;
-euint128 private _totalBorrowedEncrypted;
-mapping(address => euint128) private _guardThreshold;
+```
+
+**Multi-loan Data Model:**
+```solidity
+struct Loan {
+    uint256   loanId;
+    euint128  encryptedPrincipal;
+    uint256   openedAt;
+    bool      active;
+    bool      principalPending;
+}
+
+mapping(address => Loan[])   private _loans;
+mapping(address => uint256)  public  loanCounter;
 ```
 
 **Public State:**
 ```solidity
 address public owner;
 bool public paused;
-mapping(address => uint256) private principalDebt;
-mapping(address => uint256) public borrowTimestamp;
-mapping(address => uint8) public creditTier;
-uint16[5] public tierLTVs;
-uint256 public totalDeposited;
-uint256 public totalBorrowed;
-uint256 public totalBorrowedSyncVersion;
-mapping(address => uint256) public auditorPermitExpiry;
 ```
 
 ### User Functions
@@ -691,11 +694,10 @@ Synchronizes user repayment count for credit tier progression.
 - `CreditTierUpdated(user, tier)`
 
 **Tier Mapping:**
-- count >= 50 → Tier 4 (90% LTV)
-- count >= 25 → Tier 3 (85% LTV)
-- count >= 10 → Tier 2 (80% LTV)
-- count >= 3 → Tier 1 (75% LTV)
-- count < 3 → Tier 0 (70% LTV)
+- count >= 10 -> Tier 3 (85% LTV)
+- count >= 5 -> Tier 2 (80% LTV)
+- count >= 2 -> Tier 1 (75% LTV)
+- count < 2 -> Tier 0 (70% LTV)
 
 ### Events
 
