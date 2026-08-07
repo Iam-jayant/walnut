@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Walnut Protocol — Technical Documentation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+  :root {
+    --serif: 'DM Serif Display', Georgia, serif;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --color-text-primary: #f3f3f5;
+    --color-text-secondary: #d0d0d8;
+    --color-text-tertiary: #8f8f99;
+    --color-border-tertiary: #2e2e36;
+    --color-border-secondary: #4f4f59;
+    --color-background-secondary: #18181d;
+    --color-background-success: #193427;
+    --color-text-success: #c6f0d9;
+    --color-background-info: #1d3048;
+    --color-text-info: #cfe3ff;
+    --color-signature-blue: #0ad9dc; /* Walnut signature blue */
+    --border-radius-md: 12px;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(1200px 600px at 50% -200px, #1b1b22 0%, transparent 65%),
+      #0c0c0f;
+    color: var(--color-text-primary);
+  }
+
+  body {
+    font-family: var(--sans);
+    display: flex;
+    justify-content: center;
+    padding: 56px 20px 72px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .wrap {
+    width: min(980px, 100%);
+    text-align: left;
+  }
+
+  .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--color-text-tertiary); text-transform: uppercase; margin-bottom: 0.75rem; }
+  .headline { font-family: var(--serif); font-size: 52px; line-height: 1.15; color: var(--color-text-primary); margin-bottom: 0.65rem; font-weight: 400; }
+  .headline em { font-style: italic; color: var(--color-text-secondary); }
+  .sub {
+    font-size: 15px;
+    color: var(--color-text-secondary);
+    line-height: 1.7;
+    margin: 0 0 2rem;
+    font-weight: 300;
+    max-width: 860px;
+  }
+  .divider { height: 0.5px; background: var(--color-border-tertiary); margin: 1.75rem 0; }
+  .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: var(--color-text-tertiary); text-transform: uppercase; margin-bottom: 1rem; }
+  
+  .prose {
+    font-size: 15px;
+    line-height: 1.85;
+    color: var(--color-text-primary);
+    font-weight: 300;
+    max-width: 860px;
+    margin: 0 0 1rem;
+  }
+  .prose strong { font-weight: 500; color: var(--color-text-primary); }
+  .prose ul, .prose ol { margin: 1rem 0 1rem 1.5rem; }
+  .prose li { margin-bottom: 0.5rem; }
+  .prose code, code { font-family:var(--mono);font-size:12px;background:var(--color-background-secondary);padding:1px 5px;border-radius:3px; }
+
+  .highlight-blue { color: var(--color-signature-blue); font-weight: 500; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 1.5rem 0; }
+  .stat {
+    background: linear-gradient(180deg, #1a1a20 0%, #15151a 100%);
+    border-radius: var(--border-radius-md);
+    border: 1px solid #23232b;
+    padding: 1rem;
+  }
+  .stat-n { font-family: var(--serif); font-size: 26px; color: var(--color-text-primary); }
+  .stat-l { font-size: 12px; color: var(--color-text-secondary); margin-top: 4px; line-height: 1.4; }
+  
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 1.5rem 0; }
+  .feature {
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    padding: 1rem;
+    background: #131318;
+  }
+  .feature-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 6px; }
+  .feature-why { font-size: 12px; color: var(--color-text-secondary); line-height: 1.5; }
+  .feature-tag { font-family: var(--mono); font-size: 10px; color: var(--color-signature-blue); margin-top: 8px; } /* Using blue for tags! */
+  
+  .quote {
+    border-left: 2px solid var(--color-signature-blue);
+    border-right: 2px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    padding: 0.95rem 1.25rem;
+    margin: 1.5rem 0;
+    max-width: 860px;
+    background: #121217;
+  }
+  .quote-text { font-family: var(--serif); font-size: 17px; line-height: 1.6; color: var(--color-text-primary); font-style: italic; }
+  .quote-attr { font-size: 12px; color: var(--color-text-tertiary); margin-top: 6px; font-family: var(--mono); }
+  
+  .stack-row { display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 6px; margin: 1rem 0; }
+  .pill { font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 3px; border: 0.5px solid var(--color-border-secondary); color: var(--color-text-secondary); }
+  
+  .diagram-container {
+    background: #131318;
+    border: 1px solid #23232b;
+    border-radius: var(--border-radius-md);
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    overflow-x: auto;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 13px; background: #131318; border-radius: var(--border-radius-md); overflow: hidden; border: 1px solid var(--color-border-tertiary); }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--color-border-tertiary); }
+  th { font-weight: 500; color: var(--color-text-primary); background: #1a1a20; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; }
+  td { color: var(--color-text-secondary); line-height: 1.5; }
+  tr:last-child td { border-bottom: none; }
+  td code { color: var(--color-signature-blue); background: transparent; padding: 0; font-size: 12px; }
+
+  @media (max-width: 900px) {
+    .headline { font-size: 42px; }
+    .stat-row,
+    .feature-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 640px) {
+    body { padding: 32px 14px 48px; }
+    .headline { font-size: 34px; }
+    .sub,
+    .prose { font-size: 14px; }
+  }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+</script>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">Technical Documentation</p>
+  <h1 class="headline">Walnut Protocol<br><em>Confidential Lending & Borrowing</em></h1>
+  
+  <div class="quote">
+    <p class="quote-text"><strong>Note on Discrepancies (Repo vs. Legacy Draft):</strong> The legacy draft mentions several features that are not present in the current WalnutLendingV2.sol implementation. Specifically, "Multi-wallet ENS collateral", "P2P encrypted lending", and "Selective institutional disclosure" are NOT implemented in the current on-chain contracts. The codebase is the source of truth, and this document reflects the actual protocol state.</p>
+  </div>
+
+  <div class="divider"></div>
+  <p class="section-label">1. Executive Summary</p>
+  <p class="prose">Walnut Protocol is a confidential lending and borrowing protocol deployed on <span class="highlight-blue">Arbitrum Sepolia (Chain ID: 421614)</span>. By utilizing Fully Homomorphic Encryption (FHE) via the Fhenix CoFHE coprocessor, Walnut ensures that all sensitive user variables—collateral, debt, health factor, and repayment history—are stored and computed as encrypted state (<code>euint128</code>). The protocol maintains secure lending operations without exposing individual user positions to the public blockchain, effectively mitigating MEV extraction and opening DeFi to privacy-conscious institutional capital.</p>
+
+  <div class="divider"></div>
+  <p class="section-label">2. The Problem</p>
+  <p class="prose">Every lending protocol on Ethereum today has the same architectural choice baked in from day one: transparency. Aave, Compound, Morpho — every position, every wallet, every pending liquidation is readable by anyone with a browser. That was a reasonable tradeoff in 2020. In 2026, it is a $500M/year extraction machine.</p>
+  <div class="stat-row">
+    <div class="stat">
+      <div class="stat-n">$500M</div>
+      <div class="stat-l">annual MEV losses in DeFi — mostly from visible positions</div>
+    </div>
+    <div class="stat">
+      <div class="stat-n">$2.3B</div>
+      <div class="stat-l">institutional capital already seeking private DeFi rails (Q3 2025)</div>
+    </div>
+    <div class="stat">
+      <div class="stat-n">0</div>
+      <div class="stat-l">production FHE lending protocols on any EVM chain before Walnut (Unclaimed)</div>
+    </div>
+  </div>
+  <p class="prose">The institutions that would bring billions of dollars on-chain won't do it on transparent rails. Their compliance teams cannot allow it. Their risk books cannot be public. This is not a preference — it is a structural barrier. And no amount of ZK proofs or TEEs solves it at the DeFi primitive layer, because the lending logic itself still needs to operate on plaintext.</p>
+
+  <div class="divider"></div>
+  <p class="section-label">The Insight</p>
+  <p class="prose">In H1 2025, Fhenix published benchmarks showing their CoFHE coprocessor can handle <strong class="highlight-blue">tens of thousands of encrypted operations per second</strong> — fast enough for real lending throughput. For the first time, the cryptographic readiness is there. FHE is no longer theoretical.</p>
+  <div class="quote">
+    <p class="quote-text">"The next wave of DeFi needs privacy by default. In H1 2025, we showed that encrypted compute is no longer theoretical — it's live, scalable, and composable."</p>
+    <p class="quote-attr">— Fhenix Research, CCS 2025</p>
+  </div>
+  <p class="prose">The window is open. The protocols that build privacy into their core architecture now will outcompete those trying to retrofit it later. Walnut is built for this moment.</p>
+
+  <div class="divider"></div>
+  <p class="section-label">3. Why FHE (The Differentiator)</p>
+  <p class="prose">Walnut leverages FHE to perform computation directly on ciphertexts. This is not cosmetic privacy; it passes the "cannot exist on transparent rails" test:</p>
+  <ul class="prose">
+    <li><strong class="highlight-blue">Encrypted Health Factor:</strong> The protocol calculates the collateral-to-debt ratio entirely in FHE. If this were transparent, front-runners could precisely calculate and trigger your liquidation point before you can react.</li>
+    <li><strong class="highlight-blue">Sealed-Bid Liquidation:</strong> Liquidators submit encrypted bids, and the CoFHE coprocessor selects the minimum penalty bid without exposing the bid amounts. On transparent rails, liquidators simply outbid each other by 1 wei, maximizing the penalty for the borrower.</li>
+    <li><strong class="highlight-blue">Encrypted Credit Scoring:</strong> Credit scores are derived from encrypted repayment histories. If repayment counts were public, the privacy of the borrower's activity would be destroyed.</li>
+  </ul>
+
+  <div class="divider"></div>
+  <p class="section-label">4. High-Level Design</p>
+  <div class="diagram-container">
+    <div class="mermaid">
+    graph TD
+        User([User / Borrower / Liquidator])
+        Frontend[Next.js Frontend]
+        CoFHE_Client[CoFHE SDK]
+        Chain[Arbitrum Sepolia]
+        WL[WalnutLendingV2 Contract]
+        FHERC20[WalnutFHERC20 cUSDC]
+        Oracle[WalnutPriceOracle]
+        CoFHE_Network((CoFHE Coprocessor))
+
+        User -->|Connects & Signs Permit| Frontend
+        Frontend -->|Encrypts Input| CoFHE_Client
+        CoFHE_Client -->|Submit Encrypted tx| Chain
+        Chain --> WL
+        WL <--> FHERC20
+        WL <--> Oracle
+        WL -->|FHE Ops & Decrypt Requests| CoFHE_Network
+        CoFHE_Network -->|Relays Decrypted Result| WL
+        CoFHE_Client -.->|Decrypts View Data| CoFHE_Network
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <p class="section-label">5. Low-Level Design</p>
+  
+  <p class="prose"><strong>(a) Encrypted Health Factor Check (Liquidation Check)</strong></p>
+  <div class="diagram-container">
+    <div class="mermaid">
+    sequenceDiagram
+        participant Liquidator
+        participant WalnutLendingV2
+        participant CoFHE
+
+        Liquidator->>WalnutLendingV2: requestLiquidationCheck(borrower)
+        Note over WalnutLendingV2: Fetches encrypted debt & collateral
+        Note over WalnutLendingV2: FHE.mul(debt, 10000)
+        Note over WalnutLendingV2: FHE.mul(collateral, Threshold)
+        Note over WalnutLendingV2: isLiquidatable = FHE.gte(...)
+        WalnutLendingV2->>CoFHE: Request decrypt(isLiquidatable)
+        CoFHE-->>WalnutLendingV2: syncLiquidationCheck(result)
+        alt result == 1
+            WalnutLendingV2->>WalnutLendingV2: AuctionState = OPEN
+        else result == 0
+            WalnutLendingV2->>WalnutLendingV2: AuctionState = IDLE
+        end
+    </div>
+  </div>
+
+  <p class="prose"><strong>(b) Sealed-Bid Liquidation Auction Flow</strong></p>
+  <div class="diagram-container">
+    <div class="mermaid">
+    sequenceDiagram
+        participant Bidder
+        participant WalnutLendingV2
+        participant CoFHE
+
+        Bidder->>WalnutLendingV2: submitLiquidationBid(borrower, encryptedAmount)
+        Note over WalnutLendingV2: Stores bid in Auction state
+        Bidder->>WalnutLendingV2: selectWinningBid(borrower)
+        Note over WalnutLendingV2: Iterate bids
+        Note over WalnutLendingV2: isNewMax = FHE.gt(bid, maxBid)
+        Note over WalnutLendingV2: maxBid = FHE.select(isNewMax, bid, maxBid)
+        Note over WalnutLendingV2: winnerIdx = FHE.select(isNewMax, i, winnerIdx)
+        WalnutLendingV2->>CoFHE: Request decrypt(winnerIdx)
+        CoFHE-->>WalnutLendingV2: syncWinnerSelection(winnerIdx)
+        Note over WalnutLendingV2: Apply debt reduction
+        Note over WalnutLendingV2: Transfer borrower collateral to winner
+        Note over WalnutLendingV2: Refund losing bids
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <p class="section-label">6. FHE Hooks / Primitives Chart</p>
+  <table>
+    <thead>
+      <tr>
+        <th>FHE Operation</th>
+        <th>Where It's Used</th>
+        <th>Why It's Needed There</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>FHE.add()</code> / <code>FHE.sub()</code></td>
+        <td>deposit, borrow, repay, withdraw</td>
+        <td>To safely update encrypted collateral, debt, and repayment counters without exposing the amounts.</td>
+      </tr>
+      <tr>
+        <td><code>FHE.mul()</code></td>
+        <td>requestLiquidationCheck</td>
+        <td>To scale encrypted collateral and debt values for precise health factor (LTV) comparisons.</td>
+      </tr>
+      <tr>
+        <td><code>FHE.gte()</code></td>
+        <td>requestLiquidationCheck</td>
+        <td>To determine if a borrower's scaled debt exceeds their scaled collateral threshold, emitting a boolean flag.</td>
+      </tr>
+      <tr>
+        <td><code>FHE.gt()</code></td>
+        <td>selectWinningBid</td>
+        <td>To compare encrypted liquidation bids and find the maximum bid without revealing any bid amounts.</td>
+      </tr>
+      <tr>
+        <td><code>FHE.select()</code></td>
+        <td>selectWinningBid, repay, submitLiquidationBid</td>
+        <td>To perform conditional logic purely on-chain while avoiding branching that would expose plaintext data.</td>
+      </tr>
+      <tr>
+        <td><code>FHE.allow()</code> / <code>FHE.allowThis()</code></td>
+        <td>All state-mutating functions</td>
+        <td>To grant the contract and the specific user permission to interact with and decrypt their own ciphertexts via CoFHE permits.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="divider"></div>
+  <p class="section-label">7. Contracts Overview</p>
+  <ul class="prose">
+    <li><strong class="highlight-blue">WalnutLendingV2:</strong> The core, privacy-hardened protocol contract. It manages all encrypted deposits, loans, repayments, and liquidations. Per-user state is stored as <code>euint128</code>, and the contract orchestrates the async callback flow with the CoFHE coprocessor to finalize state changes.</li>
+    <li><strong class="highlight-blue">WalnutFHERC20 (cUSDC):</strong> An FHE-enabled ERC20-like stablecoin that allows for encrypted balances and transfers. The lending protocol mints and burns cUSDC based on encrypted borrow and repay actions.</li>
+    <li><strong class="highlight-blue">WalnutPriceOracle:</strong> A wrapper around Chainlink price feeds that provides USD valuation for collateral assets.</li>
+    <li><strong class="highlight-blue">MockUSDC & MockUSDCPriceFeed:</strong> Testnet mock contracts representing the underlying plaintext collateral token and its corresponding Chainlink price feed.</li>
+  </ul>
+
+  <div class="divider"></div>
+  <p class="section-label">8. Core features — why each one needs FHE</p>
+  <div class="feature-grid">
+    <div class="feature">
+      <div class="feature-name">Encrypted health factor engine</div>
+      <div class="feature-why">Health factor = collateral/debt. Walnut evaluates this comparison entirely in FHE. Nobody knows you're at 1.05 until the protocol decides to act. MEV bots can't target you.</div>
+      <div class="feature-tag">FHE.div() + FHE.lt() on euint64</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Sealed-bid liquidation</div>
+      <div class="feature-why">Liquidators submit encrypted bids. CoFHE picks the minimum penalty bid via on-chain comparison — without any bid ever being visible. Borrower loses the least. For the first time, liquidation protects the borrower.</div>
+      <div class="feature-tag">publish-decrypt callback pattern</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Multi-wallet ENS collateral</div>
+      <div class="feature-why">Users aggregate collateral across wallets linked to an ENS name. CoFHE sums encrypted balances — unlinking wallets on-chain. Higher borrowing power, zero wallet exposure.</div>
+      <div class="feature-tag">FHE.add() across wallets + ENS</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Encrypted credit scoring</div>
+      <div class="feature-why">Protocol computes a credit tier from encrypted repayment history. Higher tier = lower collateral requirement. Under-collateralized lending unlocked for proven participants. Raw data never exposed.</div>
+      <div class="feature-tag">euint counter history + tier unlock</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">P2P encrypted lending</div>
+      <div class="feature-why">Lenders post encrypted offers: APR, tenor, size — all in ciphertext. Borrowers match without seeing terms until settlement. True private loan negotiation.</div>
+      <div class="feature-tag">FHERC20 + Privara SDK</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Selective institutional disclosure</div>
+      <div class="feature-why">Auditors receive a time-bounded decryption permit for aggregate pool solvency — not individual positions. Compliance without exposure. Fhenix's ACL system.</div>
+      <div class="feature-tag">FHE.allow() + permit system</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <p class="section-label">9. Infrastructure & Stack</p>
+  
+  <div class="stack-row">
+    <span class="pill">Arbitrum Sepolia (Chain 421614)</span>
+    <span class="pill">Fhenix CoFHE Coprocessor</span>
+    <span class="pill">Solidity 0.8.25</span>
+    <span class="pill">Next.js 16.2.1</span>
+    <span class="pill">wagmi & viem</span>
+    <span class="pill">Reineira / Privara SDK</span>
+  </div>
+  
+  <p class="prose"><strong>Status: Partial/Incomplete for Privara Settlement.</strong> The frontend implements a <code>use-privara</code> hook and API route for interest settlement, but the integration represents an async <code>settlement_processing</code> state that is prone to failures and requires retries.</p>
+  <p class="prose"><strong>Test Results:</strong> The repository contains an extensive Hardhat test suite with <span class="highlight-blue">55+ passing tests</span> covering multi-loan support, credit tier LTV enforcement, interest calculations, and the complete user journey.</p>
+
+  <p class="prose" style="margin-top: 1rem;"><strong>Deployed Addresses (From Environment):</strong></p>
+  <ul class="prose">
+    <li><strong>WalnutLendingV2:</strong> <code>0x4A94562d83a183461A42F56E0316083b3C33cb25</code></li>
+    <li><strong>WalnutFHERC20:</strong> <code>0x471D0Cc3127295de11A8021C3C4AcC63bA4967d6</code></li>
+    <li><strong>WalnutPriceOracle:</strong> <code>0x1E77d42C88BE6d7d036149C6e25c04F3d1a7db40</code></li>
+    <li><strong>MockUSDC:</strong> <code>0xbaF9465042BeFA0714E56bcDAddcaF6311FF5F59</code></li>
+    <li><strong>MockUSDCPriceFeed:</strong> <code>0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1</code></li>
+  </ul>
+
+  <div class="divider"></div>
+  <p class="section-label">10. Roadmap</p>
+  <ul class="prose">
+    <li><strong class="highlight-blue">Phase 1 — Mainnet Launch:</strong> Audit, deployment on Arbitrum One with production USDC/Chainlink feeds, and implementation of multisig administration.</li>
+    <li><strong class="highlight-blue">Phase 2 — Token Expansion:</strong> Support for WBTC, WETH, DAI, and USDT with isolated lending markets and tiered collateral factors.</li>
+    <li><strong class="highlight-blue">Phase 3 — Multichain:</strong> Expansion to Base, Optimism, and Polygon as CoFHE availability grows, enabling cross-chain portable encrypted balances.</li>
+    <li><strong class="highlight-blue">Phase 4 — Lender Yield & Economics:</strong> Activating lender deposit pools (base APY), liquidity mining, referral systems, and sealed Privara yield distribution.</li>
+    <li><strong class="highlight-blue">Phase 5 — Institutional Rails:</strong> Permissioned pools (KYC), auditor decryption permits for compliance without individual exposure, and under-collateralized lines of credit for verified entities.</li>
+  </ul>
+
+  <div class="divider"></div>
+  <p class="section-label">11. Design Principles</p>
+  <ul class="prose">
+    <li><strong class="highlight-blue">Phase-Gated Execution:</strong> State updates relying on encrypted operations use strict async CoFHE callbacks. Functions are locked against reentrancy, and pending state prevents race conditions.</li>
+    <li><strong class="highlight-blue">Zero Mock Data:</strong> The protocol relies on actual encrypted state, true cryptographic permits, and robust error handling. Features avoid fake flows, waiting instead for real on-chain transaction receipts and CoFHE relayer confirmations.</li>
+    <li><strong class="highlight-blue">Privacy by Default:</strong> From the FHE-enabled <code>WalnutLendingV2</code> contract to the frontend EIP-712 permit system, architecture enforces that no plaintext per-user financial amounts are emitted in events or exposed in public getters.</li>
+  </ul>
+
+</div>
+</body>
+</html>
