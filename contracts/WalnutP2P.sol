@@ -173,6 +173,94 @@ contract WalnutP2P is ReentrancyGuard {
         emit MatchRequested(offerId, msg.sender, requestId);
     }
 
+    /// @notice Create a P2P offer with plaintext amounts (converts to euint128 internally).
+    function createOfferPlaintext(
+        OfferType offerType,
+        uint128 principalVal,
+        uint128 rateVal,
+        uint128 durationVal
+    ) external nonReentrant whenNotPaused returns (uint256) {
+        euint128 principal = FHE.asEuint128(principalVal);
+        euint128 rate = FHE.asEuint128(rateVal);
+        euint128 duration = FHE.asEuint128(durationVal);
+
+        FHE.allowThis(principal);
+        FHE.allowThis(rate);
+        FHE.allowThis(duration);
+
+        FHE.allow(principal, msg.sender);
+        FHE.allow(rate, msg.sender);
+        FHE.allow(duration, msg.sender);
+
+        if (offerType == OfferType.LEND) {
+            FHE.allowTransient(principal, address(stablecoin));
+            ebool burnSuccess = stablecoin.burnInternal(msg.sender, principal);
+            FHE.allowThis(burnSuccess);
+        }
+
+        uint256 offerId = offerCounter++;
+        _offers[offerId] = P2POffer({
+            offerId: offerId,
+            creator: msg.sender,
+            offerType: offerType,
+            state: OfferState.OPEN,
+            encPrincipal: principal,
+            encInterestRate: rate,
+            encDuration: duration,
+            createdAt: block.timestamp
+        });
+
+        emit OfferCreated(offerId, msg.sender, offerType);
+        return offerId;
+    }
+
+    /// @notice Match an open P2P offer using plaintext amounts (converts to euint128 internally).
+    function matchOfferPlaintext(
+        uint256 offerId,
+        uint128 matchPrincipalVal,
+        uint128 matchRateVal,
+        uint128 matchDurationVal
+    ) external nonReentrant whenNotPaused {
+        P2POffer storage offer = _offers[offerId];
+        require(offer.state == OfferState.OPEN, "Offer not open");
+        require(offer.creator != msg.sender, "Cannot match own offer");
+
+        euint128 matchPrincipal = FHE.asEuint128(matchPrincipalVal);
+        euint128 matchRate = FHE.asEuint128(matchRateVal);
+        euint128 matchDuration = FHE.asEuint128(matchDurationVal);
+
+        FHE.allowThis(matchPrincipal);
+        FHE.allowThis(matchRate);
+        FHE.allowThis(matchDuration);
+
+        if (offer.offerType == OfferType.BORROW) {
+            FHE.allowTransient(matchPrincipal, address(stablecoin));
+            ebool burnSuccess = stablecoin.burnInternal(msg.sender, matchPrincipal);
+            FHE.allowThis(burnSuccess);
+        }
+
+        ebool principalMatch = FHE.eq(offer.encPrincipal, matchPrincipal);
+        ebool rateMatch = FHE.eq(offer.encInterestRate, matchRate);
+        ebool durationMatch = FHE.eq(offer.encDuration, matchDuration);
+
+        ebool fullMatch = FHE.and(principalMatch, FHE.and(rateMatch, durationMatch));
+        FHE.allowThis(fullMatch);
+
+        offer.state = OfferState.MATCH_PENDING;
+
+        euint128 match128 = FHE.asEuint128(fullMatch);
+        FHE.allowThis(match128);
+
+        uint256 requestId = _requestDecrypt(match128);
+        _pendingMatches[requestId] = PendingMatch({
+            offerId: offerId,
+            counterparty: msg.sender,
+            matchPrincipal: matchPrincipal
+        });
+
+        emit MatchRequested(offerId, msg.sender, requestId);
+    }
+
     /// @notice CoFHE callback: finalize P2P match settlement based on single-boolean decrypt.
     function syncMatchSettlement(
         bytes32 ciphertext,
