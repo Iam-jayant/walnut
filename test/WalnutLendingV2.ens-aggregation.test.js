@@ -81,24 +81,8 @@ describe("WalnutLendingV2 ENS Aggregation", function () {
     // We just ignore signature checks by passing zero address
     try { await (await manager.connect(deployer).setVerifierSigner(ethers.ZeroAddress)).wait(); } catch (e) { }
     try { await (await manager.connect(deployer).setDecryptResultSigner(ethers.ZeroAddress)).wait(); } catch (e) { }
+    try { await (await manager.connect(deployer).setZoneBypass(true)).wait(); } catch(e) { }
 
-    const expectedPattern = "6a7aa469";
-    let slotFound = -1;
-    for (let slot = 0; slot < 40; slot++) {
-      const data = await ethers.provider.getStorage(TASK_MANAGER_ADDRESS, slot);
-      if (data.toLowerCase().includes(expectedPattern)) {
-        slotFound = slot;
-        break;
-      }
-    }
-    if (slotFound !== -1) {
-      const overrideValue = "0x000000000000000000000000000000000000000000000000000000007fffffff";
-      await ethers.provider.send("hardhat_setStorageAt", [
-        TASK_MANAGER_ADDRESS,
-        "0x" + slotFound.toString(16),
-        overrideValue
-      ]);
-    }
   });
 
   beforeEach(async function () {
