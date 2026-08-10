@@ -6,11 +6,13 @@ pragma solidity ^0.8.25;
 ///         Per-loan principal is stored as euint128; only the borrower can decrypt via CoFHE permit.
 /// @dev    Requires @fhenixprotocol/cofhe-contracts ^0.5, @openzeppelin/contracts ^5.
 
-import {FHE, ebool, euint128, TASK_MANAGER_ADDRESS} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+import {FHE, ebool, euint8, euint128, TASK_MANAGER_ADDRESS} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {InEuint128, ITaskManager, FunctionId} from "@fhenixprotocol/cofhe-contracts/ICofhe.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 // ─── External interfaces ─────────────────────────────────────────────────────
 
@@ -28,7 +30,7 @@ interface IWalnutOracle {
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
 
-contract WalnutLendingV2 is ReentrancyGuard {
+contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
 
     // ─── Immutables ───────────────────────────────────────────────────────────
@@ -107,11 +109,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
     mapping(uint256 => address) public pendingWinnerSelections;
 
     // ─── Vault / deposit tracking (private) ───────────────────────────────────
-    struct VaultHolding {
-        address token;
-        uint256 amount; // plaintext amount on-chain (ERC20 transfer is inherently public)
-    }
-    mapping(address => VaultHolding[]) private _vaults;
+    // Removed plaintext `_vaults` tracker for privacy. Collateral is tracked fully encrypted in `_collateral`.
 
     // ─── Withdraw pending state ───────────────────────────────────────────────
     struct PendingWithdraw {
@@ -125,7 +123,20 @@ contract WalnutLendingV2 is ReentrancyGuard {
 
     // ─── Credit tier ──────────────────────────────────────────────────────────
     mapping(uint256 => uint16) public tierLTVs; // tier => LTV in basis points
-    mapping(address => uint8)  private _creditTier;
+    mapping(address => euint8) private _creditTier;
+
+    // ─── ENS Wallet Aggregation ─────────────────────────────────────────────────
+    mapping(address => uint256) public nonces;
+    mapping(address => address) public primaryWalletOf;
+    mapping(address => address[]) public linkedWallets;
+
+    bytes32 public constant LINK_WALLET_TYPEHASH = keccak256("LinkWallet(address primary,address secondary,uint256 nonce,string consentMessage)");
+
+    struct PendingUnlink {
+        address primary;
+        address secondary;
+    }
+    mapping(uint256 => PendingUnlink) public pendingUnlinks;
 
     // ─── Plaintext aggregates (protocol-level, not per-user — acceptable) ─────
     uint256 public totalDeposited;
@@ -162,7 +173,12 @@ contract WalnutLendingV2 is ReentrancyGuard {
     event WinnerSelectionRequested(address indexed borrower, uint256 requestId);
     event AuctionSettled(address indexed borrower, address indexed winner);
 
-    event CreditTierUpdated(address indexed user, uint8 newTier);
+    // ENS Aggregation Events
+    event WalletLinked(address indexed primary, address indexed secondary);
+    event UnlinkRequested(address indexed primary, address indexed secondary, uint256 requestId);
+    event WalletUnlinked(address indexed primary, address indexed secondary);
+
+    event CreditTierUpdated(address indexed user, bytes32 newTierCtHash);
     event Paused(address indexed by);
     event Unpaused(address indexed by);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -181,7 +197,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
-    constructor(address _stablecoin, address _oracle, address _treasury) {
+    constructor(address _stablecoin, address _oracle, address _treasury) EIP712("WalnutLending", "2") {
         require(_stablecoin != address(0), "Invalid stablecoin");
         require(_oracle != address(0), "Invalid oracle");
         require(_treasury != address(0), "Invalid treasury");
@@ -259,7 +275,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
         IERC20(token).safeTransferFrom(user, address(this), amount);
 
         // Update vault
-        _addToVault(user, token, amount);
+        // Note: plaintext vault tracking removed. Collateral is tracked in _collateral.
 
         // Update encrypted collateral (USD value)
         uint256 usdValue = oracle.getUSDValue(token, amount);
@@ -389,6 +405,29 @@ contract WalnutLendingV2 is ReentrancyGuard {
         FHE.allow(newRepayCount, msg.sender);
         _repaymentCount[msg.sender] = newRepayCount;
 
+        // Evaluate credit tier homomorphically
+        // Tier 3: >= 10, Tier 2: >= 5, Tier 1: >= 2, Tier 0: < 2
+        ebool isTier3 = FHE.gte(newRepayCount, FHE.asEuint128(10));
+        ebool isTier2 = FHE.gte(newRepayCount, FHE.asEuint128(5));
+        ebool isTier1 = FHE.gte(newRepayCount, FHE.asEuint128(2));
+
+        euint8 t3 = FHE.asEuint8(3);
+        euint8 t2 = FHE.asEuint8(2);
+        euint8 t1 = FHE.asEuint8(1);
+        euint8 t0 = FHE.asEuint8(0);
+
+        euint8 tier = FHE.select(isTier3, t3, 
+                        FHE.select(isTier2, t2, 
+                            FHE.select(isTier1, t1, t0)
+                        )
+                      );
+        
+        FHE.allowThis(tier);
+        FHE.allow(tier, msg.sender);
+        _creditTier[msg.sender] = tier;
+
+        emit CreditTierUpdated(msg.sender, euint8.unwrap(tier));
+
         // Request decrypt for settlement callback
         uint256 requestId = _requestDecrypt(amount);
         _pendingRepaySyncs[requestId] = PendingSync({
@@ -475,7 +514,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
         delete _pendingWithdraws[requestId];
 
         if (amount > 0) {
-            _removeFromVault(user, token, amount);
+            // Plaintext tracking removed.
             IERC20(token).safeTransfer(user, amount);
 
             if (totalDeposited >= amount) {
@@ -494,11 +533,12 @@ contract WalnutLendingV2 is ReentrancyGuard {
 
     /// @notice Request a liquidation check on a borrower.
     function requestLiquidationCheck(address borrower) external whenNotPaused {
+        require(primaryWalletOf[borrower] == address(0), "Must request on primary wallet");
         Auction storage auc = liquidations[borrower];
         require(auc.state == AuctionState.IDLE, "Auction not idle");
         
-        euint128 debt = _safeEncrypted(_debt[borrower]);
-        euint128 collateral = _safeEncrypted(_collateral[borrower]);
+        euint128 debt = _getAggregatedDebt(borrower);
+        euint128 collateral = _getAggregatedCollateral(borrower);
         
         // debt * 10000 >= collateral * LIQUIDATION_THRESHOLD
         euint128 const10000 = FHE.asEuint128(10000);
@@ -621,7 +661,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
             euint128 winningBidAmt = auc.bids[winnerIdx].amount;
 
             // 1. Reduce Debt (Bad Debt Handling)
-            euint128 currentDebt = _safeEncrypted(_debt[borrower]);
+            euint128 currentDebt = _getAggregatedDebt(borrower);
             ebool isBidGreaterThanDebt = FHE.gt(winningBidAmt, currentDebt);
             
             euint128 zero = FHE.asEuint128(0);
@@ -642,7 +682,7 @@ contract WalnutLendingV2 is ReentrancyGuard {
             stablecoin.mintInternal(borrower, surplus);
 
             // 2. Seize Collateral
-            euint128 currentCollateral = _safeEncrypted(_collateral[borrower]);
+            euint128 currentCollateral = _getAggregatedCollateral(borrower);
             euint128 winnerCollateral = _safeEncrypted(_collateral[winner]);
             
             euint128 newWinnerCollateral = FHE.add(winnerCollateral, currentCollateral);
@@ -650,9 +690,16 @@ contract WalnutLendingV2 is ReentrancyGuard {
             FHE.allow(newWinnerCollateral, winner);
             _collateral[winner] = newWinnerCollateral;
 
-            // Zero out borrower's collateral
+            // Zero out borrower's and all linked secondary wallets' collateral and debt
             FHE.allow(zero, borrower);
             _collateral[borrower] = zero;
+            
+            address[] storage linked = linkedWallets[borrower];
+            for (uint256 i = 0; i < linked.length; i++) {
+                FHE.allow(zero, linked[i]);
+                _collateral[linked[i]] = zero;
+                _debt[linked[i]] = zero;
+            }
         }
 
         // 3. Refund Losers
@@ -689,41 +736,97 @@ contract WalnutLendingV2 is ReentrancyGuard {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // CREDIT TIER
+    // ENS WALLET AGGREGATION
     // ═══════════════════════════════════════════════════════════════════════════
 
-    event CreditCountSyncRequested(address indexed user, uint256 requestId);
+    /// @notice Link a secondary wallet to the sender's primary identity via EIP-712 signature.
+    function linkWallet(address secondary, bytes calldata signature) external whenNotPaused {
+        require(secondary != msg.sender, "Cannot link to self");
+        require(primaryWalletOf[secondary] == address(0), "Already linked");
+        require(primaryWalletOf[msg.sender] == address(0), "Primary is already a secondary");
+        require(linkedWallets[secondary].length == 0, "Secondary has linked wallets");
 
-    /// @notice Request a credit tier update (triggers async repayment count decrypt).
-    function requestCreditTierUpdate(address user) external whenNotPaused {
-        euint128 repayCount = _safeEncrypted(_repaymentCount[user]);
-        uint256 requestId = _requestDecrypt(repayCount);
-        decryptRequests[requestId] = user;
-        emit CreditCountSyncRequested(user, requestId);
+        uint256 nonce = nonces[secondary]++;
+        
+        bytes32 structHash = keccak256(abi.encode(LINK_WALLET_TYPEHASH, msg.sender, secondary, nonce, keccak256(bytes("I authorize aggregation and acknowledge that all liquidation surplus accrues exclusively to the primary wallet."))));
+        bytes32 hash = _hashTypedDataV4(structHash);
+        
+        address signer = ECDSA.recover(hash, signature);
+        require(signer == secondary, "Invalid signature");
+
+        primaryWalletOf[secondary] = msg.sender;
+        linkedWallets[msg.sender].push(secondary);
+
+        // Grant primary wallet access to secondary's FHE collateral & debt
+        if (euint128.unwrap(_collateral[secondary]) != 0) {
+            FHE.allow(_collateral[secondary], msg.sender);
+        }
+        if (euint128.unwrap(_debt[secondary]) != 0) {
+            FHE.allow(_debt[secondary], msg.sender);
+        }
+
+        emit WalletLinked(msg.sender, secondary);
     }
 
-    /// @notice CoFHE callback: finalize credit tier from decrypted repayment count.
-    function syncCreditCount(
+    /// @notice Request to unlink a secondary wallet. Evaluates an async health factor check first.
+    function requestUnlink(address secondaryWallet) external whenNotPaused {
+        require(primaryWalletOf[secondaryWallet] == msg.sender, "Not linked to you");
+        require(liquidations[msg.sender].state == AuctionState.IDLE, "Active liquidation");
+        
+        // Compute health factor WITHOUT this secondary wallet
+        euint128 totalCollateral = _safeEncrypted(_collateral[msg.sender]);
+        euint128 totalDebt = _safeEncrypted(_debt[msg.sender]);
+        
+        address[] storage linked = linkedWallets[msg.sender];
+        for (uint256 i = 0; i < linked.length; i++) {
+            if (linked[i] != secondaryWallet) {
+                totalCollateral = FHE.add(totalCollateral, _safeEncrypted(_collateral[linked[i]]));
+                totalDebt = FHE.add(totalDebt, _safeEncrypted(_debt[linked[i]]));
+            }
+        }
+        
+        // Check if debt * 10000 <= collateral * LIQUIDATION_THRESHOLD
+        euint128 const10000 = FHE.asEuint128(10000);
+        euint128 constThreshold = FHE.asEuint128(LIQUIDATION_THRESHOLD);
+        euint128 debtScaled = FHE.mul(totalDebt, const10000);
+        euint128 collateralScaled = FHE.mul(totalCollateral, constThreshold);
+        ebool isHealthy = FHE.lte(debtScaled, collateralScaled);
+        
+        FHE.allowThis(isHealthy);
+        euint128 isHealthy128 = FHE.asEuint128(isHealthy);
+        uint256 reqId = _requestDecrypt(isHealthy128);
+        pendingUnlinks[reqId] = PendingUnlink({primary: msg.sender, secondary: secondaryWallet});
+        
+        emit UnlinkRequested(msg.sender, secondaryWallet, reqId);
+    }
+
+    /// @notice CoFHE callback: finalize unlink if health factor permits.
+    function syncUnlink(
         bytes32 ciphertext,
         uint128 result,
         bytes calldata signature
-    ) external {
-        uint256 requestId = uint256(ciphertext);
-        address user = decryptRequests[requestId];
-        require(user != address(0), "Unknown credit sync");
-        delete decryptRequests[requestId];
+    ) external nonReentrant {
+        uint256 reqId = uint256(ciphertext);
+        PendingUnlink memory pu = pendingUnlinks[reqId];
+        require(pu.primary != address(0), "Unknown unlink");
+        delete pendingUnlinks[reqId];
 
         ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
 
-        uint256 repayCount = uint256(result);
-        uint8 tier;
-        if (repayCount >= 10) tier = 3;
-        else if (repayCount >= 5) tier = 2;
-        else if (repayCount >= 2) tier = 1;
-        else tier = 0;
+        require(result == 1, "Unlink would cause undercollateralization");
 
-        _creditTier[user] = tier;
-        emit CreditTierUpdated(user, tier);
+        // Perform unlink
+        primaryWalletOf[pu.secondary] = address(0);
+        address[] storage linked = linkedWallets[pu.primary];
+        for (uint256 i = 0; i < linked.length; i++) {
+            if (linked[i] == pu.secondary) {
+                linked[i] = linked[linked.length - 1];
+                linked.pop();
+                break;
+            }
+        }
+
+        emit WalletUnlinked(pu.primary, pu.secondary);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -847,35 +950,29 @@ contract WalnutLendingV2 is ReentrancyGuard {
         return uint256(euint128.unwrap(value));
     }
 
-    function _getOrCreateVaultToken(address user) internal view returns (address) {
-        if (_vaults[user].length > 0) {
-            return _vaults[user][0].token;
+
+
+    function _getAggregatedCollateral(address primary) internal returns (euint128) {
+        euint128 total = _safeEncrypted(_collateral[primary]);
+        address[] storage linked = linkedWallets[primary];
+        for (uint256 i = 0; i < linked.length; i++) {
+            total = FHE.add(total, _safeEncrypted(_collateral[linked[i]]));
         }
-        return address(0);
+        FHE.allowThis(total);
+        return total;
     }
 
-    function _addToVault(address user, address token, uint256 amount) internal {
-        VaultHolding[] storage holdings = _vaults[user];
-        for (uint256 i = 0; i < holdings.length; i++) {
-            if (holdings[i].token == token) {
-                holdings[i].amount += amount;
-                return;
-            }
-        }
-        holdings.push(VaultHolding({token: token, amount: amount}));
+    function getAggregatedCollateralCtHash(address primary) external returns (uint256) {
+        return uint256(euint128.unwrap(_getAggregatedCollateral(primary)));
     }
 
-    function _removeFromVault(address user, address token, uint256 amount) internal {
-        VaultHolding[] storage holdings = _vaults[user];
-        for (uint256 i = 0; i < holdings.length; i++) {
-            if (holdings[i].token == token) {
-                if (holdings[i].amount >= amount) {
-                    holdings[i].amount -= amount;
-                } else {
-                    holdings[i].amount = 0;
-                }
-                return;
-            }
+    function _getAggregatedDebt(address primary) internal returns (euint128) {
+        euint128 total = _safeEncrypted(_debt[primary]);
+        address[] storage linked = linkedWallets[primary];
+        for (uint256 i = 0; i < linked.length; i++) {
+            total = FHE.add(total, _safeEncrypted(_debt[linked[i]]));
         }
+        FHE.allowThis(total);
+        return total;
     }
 }
