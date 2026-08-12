@@ -108,8 +108,14 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         LiquidationBid[] bids;
     }
 
+    struct PendingValidCheck {
+        address borrower;
+        euint128 winnerIdx;
+    }
+
     mapping(address => Auction) public liquidations;
     mapping(uint256 => address) public pendingLiquidationChecks;
+    mapping(uint256 => PendingValidCheck) private pendingAuctionValidations;
     mapping(uint256 => address) public pendingWinnerSelections;
 
     // ─── Vault / deposit tracking (private) ───────────────────────────────────
@@ -163,6 +169,8 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     event LiquidationAuctionOpened(address indexed borrower, uint256 endTime);
     event LiquidationAuctionHealthy(address indexed borrower);
     event LiquidationBidSubmitted(address indexed bidder, address indexed borrower);
+    event LiquidationValidCheckRequested(address indexed borrower, uint256 requestId);
+    event LiquidationAuctionFailed(address indexed borrower);
     event WinnerSelectionRequested(address indexed borrower, uint256 requestId);
     event AuctionSettled(address indexed borrower, address indexed winner);
 
@@ -568,7 +576,7 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         FHE.allowThis(amount);
         
         // Escrow funds by burning from bidder
-        FHE.allow(amount, address(stablecoin));
+        FHE.allowTransient(amount, address(stablecoin));
         ebool burnSuccess = stablecoin.burnInternal(msg.sender, amount);
         FHE.allowThis(burnSuccess);
         
@@ -595,27 +603,80 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
 
         if (auc.bids.length == 0) {
             auc.state = AuctionState.IDLE;
+            emit LiquidationAuctionFailed(borrower);
             return;
         }
 
+        euint128 debtOwed = _getAggregatedDebt(borrower);
+        euint128 zero = FHE.asEuint128(0);
         euint128 maxBid = FHE.asEuint128(0);
         euint128 winnerIdx = FHE.asEuint128(0);
+        ebool hasValidBid = FHE.asEbool(false);
+
+        FHE.allowThis(zero);
         FHE.allowThis(maxBid);
         FHE.allowThis(winnerIdx);
+        FHE.allowThis(hasValidBid);
 
         for (uint8 i = 0; i < auc.bids.length; i++) {
             euint128 iEnc = FHE.asEuint128(i);
             FHE.allowThis(iEnc);
-            ebool isNewMax = FHE.gt(auc.bids[i].amount, maxBid);
-            maxBid = FHE.select(isNewMax, auc.bids[i].amount, maxBid);
-            winnerIdx = FHE.select(isNewMax, iEnc, winnerIdx);
+
+            // Homomorphic minimum bid validity check: bid must be >= debtOwed to be eligible (prevents $0 solo-bid theft)
+            ebool bidValid = FHE.gte(auc.bids[i].amount, debtOwed);
+            ebool isBetter = FHE.and(bidValid, FHE.gt(auc.bids[i].amount, maxBid));
+
+            maxBid = FHE.select(isBetter, auc.bids[i].amount, maxBid);
+            winnerIdx = FHE.select(isBetter, iEnc, winnerIdx);
+            hasValidBid = FHE.or(hasValidBid, bidValid);
+
             FHE.allowThis(maxBid);
             FHE.allowThis(winnerIdx);
+            FHE.allowThis(hasValidBid);
         }
 
-        uint256 reqId = _requestDecrypt(winnerIdx);
-        pendingWinnerSelections[reqId] = borrower;
-        emit WinnerSelectionRequested(borrower, reqId);
+        euint128 valid128 = FHE.asEuint128(hasValidBid);
+        FHE.allowThis(valid128);
+
+        uint256 reqId = _requestDecrypt(valid128);
+        pendingAuctionValidations[reqId] = PendingValidCheck({
+            borrower: borrower,
+            winnerIdx: winnerIdx
+        });
+
+        emit LiquidationValidCheckRequested(borrower, reqId);
+    }
+
+    /// @notice CoFHE callback to verify whether any bid met the minimum debt threshold.
+    function syncAuctionValidCheck(
+        bytes32 ciphertext,
+        uint128 result,
+        bytes calldata signature
+    ) external nonReentrant {
+        uint256 reqId = uint256(ciphertext);
+        PendingValidCheck memory check = pendingAuctionValidations[reqId];
+        require(check.borrower != address(0), "Unknown valid check");
+        delete pendingAuctionValidations[reqId];
+
+        ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
+
+        Auction storage auc = liquidations[check.borrower];
+
+        if (result == 0) {
+            // No bid reached the minimum debt threshold — refund all bids and return to IDLE
+            for (uint256 i = 0; i < auc.bids.length; i++) {
+                euint128 refundAmt = auc.bids[i].amount;
+                FHE.allowTransient(refundAmt, address(stablecoin));
+                stablecoin.mintInternal(auc.bids[i].bidder, refundAmt);
+            }
+            auc.state = AuctionState.IDLE;
+            emit LiquidationAuctionFailed(check.borrower);
+        } else {
+            // At least one valid bid exists — proceed to decrypt winning index
+            uint256 winnerReqId = _requestDecrypt(check.winnerIdx);
+            pendingWinnerSelections[winnerReqId] = check.borrower;
+            emit WinnerSelectionRequested(check.borrower, winnerReqId);
+        }
     }
 
     /// @notice CoFHE callback to finalize winner selection and apply state changes.
@@ -656,8 +717,7 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
             // Surplus Handling
             euint128 surplus = FHE.sub(winningBidAmt, debtReduction);
             FHE.allowThis(surplus);
-            // stablecoin.mintInternal uses FHE internally
-            FHE.allow(surplus, address(stablecoin));
+            FHE.allowTransient(surplus, address(stablecoin));
             stablecoin.mintInternal(borrower, surplus);
 
             // 2. Seize Collateral
@@ -686,7 +746,7 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
             if (i != winnerIdx) {
                 // Refund bid amount
                 euint128 refundAmt = auc.bids[i].amount;
-                FHE.allow(refundAmt, address(stablecoin));
+                FHE.allowTransient(refundAmt, address(stablecoin));
                 stablecoin.mintInternal(auc.bids[i].bidder, refundAmt);
             }
         }
