@@ -35,9 +35,9 @@ const navigationItems: NavItem[] = [
       { label: "Repay", href: "/app/repay" }
     ]
   },
-  { label: "Liquidation", href: "/app/liquidation", icon: ShieldCheck, comingSoon: true },
+  { label: "Liquidation", href: "/app/liquidation", icon: ShieldCheck },
   { label: "P2P", href: "/app/p2p", icon: Users, comingSoon: true },
-  { label: "ENS Aggregation", href: "/app/ens", icon: Wallet, comingSoon: true },
+  { label: "ENS Aggregation", href: "/app/ens", icon: Wallet },
   { label: "History", href: "/app/history", icon: Clock },
   { label: "Settings", href: "/app/settings", icon: Settings },
 ];
