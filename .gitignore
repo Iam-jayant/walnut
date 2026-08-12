@@ -74,5 +74,14 @@ _archive/
 # Build artifacts
 .dist/
 
-# IDE specific
-.vscode/settings.json
+# Agent-specific specifications & internal audit reports
+WALNUT_PROTOCOL_SPEC.md
+PRIVACY_AUDIT.md
+scratch_*.json
+scratch_*.txt
+
+# Temporary debug scripts and test contracts
+contracts/DummyCast.sol
+scripts/debug-*.js
+scripts/simulate-*.js
+scripts/deploy-wrapper.js
