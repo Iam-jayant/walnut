@@ -2,7 +2,6 @@
 
 import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 import {
-  coinbaseWallet,
   injectedWallet,
   metaMaskWallet,
   walletConnectWallet,
@@ -48,7 +47,7 @@ const connectors =
         [
           {
             groupName: "Browser Wallets",
-            wallets: [injectedWallet, metaMaskWallet, coinbaseWallet],
+            wallets: [injectedWallet, metaMaskWallet],
           },
           {
             groupName: "WalletConnect",
@@ -65,6 +64,7 @@ const connectors =
 export const wagmiConfig = createConfig({
   chains: [arbitrumSepolia],
   connectors,
+  multiInjectedProviderDiscovery: false,
   transports: {
     [arbitrumSepolia.id]: fallback([
       http(rpcUrlPrimary, {
