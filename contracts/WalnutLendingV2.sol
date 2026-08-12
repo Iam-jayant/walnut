@@ -6,8 +6,8 @@ pragma solidity ^0.8.25;
 ///         Per-loan principal is stored as euint128; only the borrower can decrypt via CoFHE permit.
 /// @dev    Requires @fhenixprotocol/cofhe-contracts ^0.5, @openzeppelin/contracts ^5.
 
-import {FHE, ebool, euint8, euint128, TASK_MANAGER_ADDRESS} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
-import {InEuint128, ITaskManager, FunctionId} from "@fhenixprotocol/cofhe-contracts/ICofhe.sol";
+import {FHE, ebool, euint8, euint64, euint128, TASK_MANAGER_ADDRESS} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
+import {InEuint64, InEuint128, ITaskManager, FunctionId} from "@fhenixprotocol/cofhe-contracts/ICofhe.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -21,6 +21,12 @@ interface IWalnutStablecoin {
     function mintInternal(address to, euint128 amount) external;
     function burn(address from, InEuint128 calldata encryptedAmount) external;
     function burnInternal(address from, euint128 amount) external returns (ebool);
+}
+
+interface IWalnutVaultWrapper {
+    function confidentialTransferFrom(address from, address to, euint64 amount) external returns (euint64);
+    function confidentialTransfer(address to, euint64 amount) external returns (euint64);
+    function underlying() external view returns (address);
 }
 
 interface IWalnutOracle {
@@ -41,6 +47,9 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     // ─── Ownership & pause ────────────────────────────────────────────────────
     address public owner;
     bool    public paused;
+
+    // ─── Collateral config ────────────────────────────────────────────────────
+    address public wUSDC_address;
 
     // ─── Protocol constants ───────────────────────────────────────────────────
     uint256 public constant PRECISION         = 1e18;
@@ -78,16 +87,11 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     mapping(address => uint256)  public  loanCounter;
 
     // ─── Pending sync state (CoFHE callback relay) ────────────────────────────
-    struct PendingDeposit {
-        address  user;
-        address  token;
-    }
     struct PendingSync {
         address  user;
         uint256  loanIndex;
         euint128 encryptedAmount;
     }
-    mapping(uint256 => PendingDeposit) private _pendingDeposits;
     mapping(uint256 => PendingSync) private _pendingBorrowSyncs;
     mapping(uint256 => PendingSync) private _pendingRepaySyncs;
     // ─── Liquidation State ────────────────────────────────────────────────────
@@ -112,14 +116,7 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     // Removed plaintext `_vaults` tracker for privacy. Collateral is tracked fully encrypted in `_collateral`.
 
     // ─── Withdraw pending state ───────────────────────────────────────────────
-    struct PendingWithdraw {
-        address  user;
-        address  token;
-        uint256  amount;
-        euint128 newCollateral;
-    }
-    mapping(uint256 => PendingWithdraw) private _pendingWithdraws;
-    mapping(uint256 => address) public decryptRequests;
+    // Removed pending states for withdraw and decryptRequests.
 
     // ─── Credit tier ──────────────────────────────────────────────────────────
     mapping(uint256 => uint16) public tierLTVs; // tier => LTV in basis points
@@ -138,11 +135,9 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     }
     mapping(uint256 => PendingUnlink) public pendingUnlinks;
 
-    // ─── Plaintext aggregates (protocol-level, not per-user — acceptable) ─────
-    uint256 public totalDeposited;
-    uint256 public totalBorrowed;
-    uint256 public totalBorrowedSyncVersion;
-    mapping(uint256 => uint256) public pendingTotalBorrowedSyncVersions;
+    // ─── Encrypted aggregates ─────────────────────────────────────────────────
+    euint128 private _totalDeposited;
+    euint128 private _totalBorrowed;
 
     // ─── Events (privacy-safe: NO plaintext amounts) ──────────────────────────
 
@@ -160,8 +155,6 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
 
     event BorrowActiveSyncRequested(address indexed user, uint256 requestId, uint256 openedAt);
     event RepayStateSyncRequested(address indexed user, uint256 requestId, uint256 loanId);
-    event DepositSyncRequested(address indexed user, uint256 requestId);
-    event WithdrawSyncRequested(address indexed user, uint256 requestId);
     event TotalBorrowedSyncRequested(uint256 requestId, uint256 version);
     event TotalBorrowedCacheUpdated(uint256 totalBorrowed, uint256 version);
 
@@ -231,64 +224,34 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// @notice Deposit collateral. Amount is encrypted — never plaintext in calldata or events.
-    function deposit(address token, InEuint128 calldata encryptedAmount) external nonReentrant whenNotPaused {
+    function deposit(address token, InEuint64 calldata encryptedAmount) external nonReentrant whenNotPaused {
         require(token != address(0), "Invalid token");
 
-        // Decrypt the amount to perform the ERC20 transfer (inherently public).
-        // This is the documented wrap-boundary caveat: the ERC20 transfer itself
-        // reveals the amount. Full privacy requires a shielded entry (future work).
-        euint128 amount = FHE.asEuint128(encryptedAmount);
-        FHE.allowThis(amount);
+        euint64 amountE64 = FHE.asEuint64(encryptedAmount);
+        FHE.allowThis(amountE64);
+        FHE.allowTransient(amountE64, token);
 
-        // Create a decrypt request to learn the deposit amount for the ERC20 transfer
-        uint256 requestId = _requestDecrypt(amount);
-        _pendingDeposits[requestId] = PendingDeposit({
-            user: msg.sender,
-            token: token
-        });
+        // Shielded entry: Pull wUSDC from user directly in ciphertext
+        IWalnutVaultWrapper(token).confidentialTransferFrom(msg.sender, address(this), amountE64);
+
+        // Cast to euint128 for protocol-wide internal accounting
+        euint128 amountE128 = FHE.asEuint128(amountE64);
+        FHE.allowThis(amountE128);
+
+        // Update encrypted collateral in raw wUSDC units
+        euint128 currentCollateral = _safeEncrypted(_collateral[msg.sender]);
+        euint128 newCollateral = FHE.add(currentCollateral, amountE128);
+        FHE.allowThis(newCollateral);
+        FHE.allow(newCollateral, msg.sender);
+        _collateral[msg.sender] = newCollateral;
+
+        // Update encrypted totalDeposited aggregate
+        euint128 currentTotalDeposited = _safeEncrypted(_totalDeposited);
+        euint128 newTotalDeposited = FHE.add(currentTotalDeposited, amountE128);
+        FHE.allowThis(newTotalDeposited);
+        _totalDeposited = newTotalDeposited;
 
         emit Deposited(msg.sender, token);
-        emit DepositSyncRequested(msg.sender, requestId);
-    }
-
-    /// @notice CoFHE callback: finalize deposit by transferring ERC20 and updating encrypted collateral.
-    function syncDepositTransfer(
-        bytes32 ciphertext,
-        uint128 result,
-        bytes calldata signature
-    ) external nonReentrant {
-        uint256 requestId = uint256(ciphertext);
-        PendingDeposit memory pd = _pendingDeposits[requestId];
-        require(pd.user != address(0), "Unknown decrypt request");
-        delete _pendingDeposits[requestId];
-
-        // Verify with TaskManager
-        ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
-
-        uint256 amount = uint256(result);
-        require(amount > 0, "Zero deposit");
-
-        address user = pd.user;
-        address token = pd.token;
-
-        // Transfer ERC20 from user
-        IERC20(token).safeTransferFrom(user, address(this), amount);
-
-        // Update vault
-        // Note: plaintext vault tracking removed. Collateral is tracked in _collateral.
-
-        // Update encrypted collateral (USD value)
-        uint256 usdValue = oracle.getUSDValue(token, amount);
-        euint128 encryptedUSD = FHE.asEuint128(uint128(usdValue));
-        FHE.allowThis(encryptedUSD);
-
-        euint128 currentCollateral = _safeEncrypted(_collateral[user]);
-        euint128 newCollateral = FHE.add(currentCollateral, encryptedUSD);
-        FHE.allowThis(newCollateral);
-        FHE.allow(newCollateral, user); // Only user can decrypt
-        _collateral[user] = newCollateral;
-
-        totalDeposited += amount;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -301,65 +264,62 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         euint128 amount = FHE.asEuint128(encryptedAmount);
         FHE.allowThis(amount);
 
-        // Add encrypted debt
+        // Compute health factor homomorphically BEFORE applying debt
+        euint128 totalCollateral = _getAggregatedCollateral(msg.sender);
+        euint128 totalDebt = _getAggregatedDebt(msg.sender);
+
+        euint128 newTotalDebt = FHE.add(totalDebt, amount);
+        FHE.allowThis(newTotalDebt);
+
+        require(wUSDC_address != address(0), "wUSDC not set");
+        address underlyingToken = IWalnutVaultWrapper(wUSDC_address).underlying();
+        uint256 colMultiplier = LIQUIDATION_THRESHOLD * oracle.getUSDValue(underlyingToken, 1e6);
+        euint128 constDebtScale = FHE.asEuint128(uint128(10000 * 1e6));
+        euint128 constThreshold = FHE.asEuint128(uint128(colMultiplier));
+
+        euint128 debtScaled = FHE.mul(newTotalDebt, constDebtScale);
+        euint128 collateralScaled = FHE.mul(totalCollateral, constThreshold);
+
+        ebool isHealthy = FHE.lte(debtScaled, collateralScaled);
+        FHE.allowThis(isHealthy);
+
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+
+        euint128 validAmount = FHE.select(isHealthy, amount, zero);
+        FHE.allowThis(validAmount);
+
+        // Add encrypted debt using validAmount
         euint128 currentDebt = _safeEncrypted(_debt[msg.sender]);
-        euint128 newDebt = FHE.add(currentDebt, amount);
-        FHE.allowThis(newDebt);
-        FHE.allow(newDebt, msg.sender);
-        _debt[msg.sender] = newDebt;
+        euint128 actualNewDebt = FHE.add(currentDebt, validAmount);
+        FHE.allowThis(actualNewDebt);
+        FHE.allow(actualNewDebt, msg.sender);
+        _debt[msg.sender] = actualNewDebt;
+
+        // Update encrypted totalBorrowed aggregate
+        euint128 currentTotalBorrowed = _safeEncrypted(_totalBorrowed);
+        euint128 newTotalBorrowed = FHE.add(currentTotalBorrowed, validAmount);
+        FHE.allowThis(newTotalBorrowed);
+        _totalBorrowed = newTotalBorrowed;
 
         // Create loan record with encrypted principal
         uint256 loanId = loanCounter[msg.sender]++;
         _loans[msg.sender].push(Loan({
             loanId: loanId,
-            encryptedPrincipal: amount, // FHE-encrypted — only borrower decrypts
+            encryptedPrincipal: validAmount, // FHE-encrypted — only borrower decrypts
             openedAt: block.timestamp,
             active: true,
-            principalPending: true
+            principalPending: false
         }));
 
         // Allow borrower to decrypt their own principal handle
-        FHE.allow(amount, msg.sender);
+        FHE.allow(validAmount, msg.sender);
 
         // Mint cUSDC to borrower (stablecoin uses FHE internally)
-        FHE.allow(amount, address(stablecoin));
-        stablecoin.mintInternal(msg.sender, amount);
-
-        // Request decrypt for the sync callback (to update totalBorrowed aggregate)
-        uint256 requestId = _requestDecrypt(amount);
-        _pendingBorrowSyncs[requestId] = PendingSync({
-            user: msg.sender,
-            loanIndex: _loans[msg.sender].length - 1,
-            encryptedAmount: amount
-        });
+        FHE.allowTransient(validAmount, address(stablecoin));
+        stablecoin.mintInternal(msg.sender, validAmount);
 
         emit LoanOpened(msg.sender, loanId, block.timestamp);
-        emit BorrowActiveSyncRequested(msg.sender, requestId, block.timestamp);
-    }
-
-    /// @notice CoFHE callback: finalize borrow by setting plaintext tracking and emitting handle.
-    function syncBorrowActive(
-        bytes32 ciphertext,
-        uint128 result,
-        bytes calldata signature
-    ) external nonReentrant {
-        uint256 requestId = uint256(ciphertext);
-        PendingSync memory sync = _pendingBorrowSyncs[requestId];
-        require(sync.user != address(0), "Unknown borrow sync");
-        delete _pendingBorrowSyncs[requestId];
-
-        ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
-
-        Loan storage loan = _loans[sync.user][sync.loanIndex];
-        loan.principalPending = false;
-
-        // Update plaintext aggregate
-        totalBorrowed += uint256(result);
-
-        // Emit the ctHash of the encrypted principal — NOT the plaintext value.
-        // The frontend uses this handle with cofheClient.decryptForView() + permit.
-        uint256 principalHandle = uint256(euint128.unwrap(loan.encryptedPrincipal));
-        emit LoanPrincipalSynced(sync.user, loan.loanId, principalHandle);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -372,35 +332,51 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         require(loanIndex < _loans[msg.sender].length, "Invalid loan index");
         Loan storage loan = _loans[msg.sender][loanIndex];
         require(loan.active, "Loan not active");
-        require(!loan.principalPending, "Loan principal still syncing");
 
         euint128 amount = FHE.asEuint128(encryptedAmount);
         FHE.allowThis(amount);
 
-        // Burn cUSDC from borrower
-        FHE.allow(amount, address(stablecoin));
-        ebool burnSuccess = stablecoin.burnInternal(msg.sender, amount);
-        FHE.allowThis(burnSuccess);
-
-        // Reduce debt (branchless: only reduce if burn succeeded)
         euint128 currentDebt = _safeEncrypted(_debt[msg.sender]);
         euint128 zero = FHE.asEuint128(0);
         FHE.allowThis(zero);
-        euint128 debtReduction = FHE.select(burnSuccess, amount, zero);
+
+        // Cap repayment amount at current user debt to prevent homomorphic underflow
+        ebool exceedsDebt = FHE.gt(amount, currentDebt);
+        euint128 cappedAmount = FHE.select(exceedsDebt, currentDebt, amount);
+        FHE.allowThis(cappedAmount);
+
+        // Burn cUSDC from borrower
+        FHE.allowTransient(cappedAmount, address(stablecoin));
+        ebool burnSuccess = stablecoin.burnInternal(msg.sender, cappedAmount);
+        FHE.allowThis(burnSuccess);
+
+        // Calculate actual debt reduction (branchless: only reduce if burn succeeded)
+        euint128 debtReduction = FHE.select(burnSuccess, cappedAmount, zero);
         FHE.allowThis(debtReduction);
+
+        // Reduce user debt
         euint128 newDebt = FHE.sub(currentDebt, debtReduction);
         FHE.allowThis(newDebt);
         FHE.allow(newDebt, msg.sender);
         _debt[msg.sender] = newDebt;
 
-        // Mark loan as repaid
-        loan.active = false;
+        // Reduce global totalBorrowed
+        euint128 currentTotalBorrowed = _safeEncrypted(_totalBorrowed);
+        euint128 newTotalBorrowed = FHE.sub(currentTotalBorrowed, debtReduction);
+        FHE.allowThis(newTotalBorrowed);
+        _totalBorrowed = newTotalBorrowed;
 
-        // Increment repayment count
+        // Increment repayment count ONLY if burn succeeded AND amount > 0 (prevents credit farming)
+        ebool isNonZeroRepay = FHE.gt(cappedAmount, zero);
+        ebool validRepay = FHE.and(burnSuccess, isNonZeroRepay);
+        FHE.allowThis(validRepay);
+
         euint128 currentRepayCount = _safeEncrypted(_repaymentCount[msg.sender]);
         euint128 one = FHE.asEuint128(1);
         FHE.allowThis(one);
-        euint128 newRepayCount = FHE.add(currentRepayCount, one);
+        euint128 countToAdd = FHE.select(validRepay, one, zero);
+        FHE.allowThis(countToAdd);
+        euint128 newRepayCount = FHE.add(currentRepayCount, countToAdd);
         FHE.allowThis(newRepayCount);
         FHE.allow(newRepayCount, msg.sender);
         _repaymentCount[msg.sender] = newRepayCount;
@@ -428,18 +404,20 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
 
         emit CreditTierUpdated(msg.sender, euint8.unwrap(tier));
 
-        // Request decrypt for settlement callback
-        uint256 requestId = _requestDecrypt(amount);
+        // Request decrypt for a SINGLE BOOLEAN (burnSuccess) to safely flip loan.active
+        euint128 success128 = FHE.asEuint128(burnSuccess);
+        FHE.allowThis(success128);
+        uint256 requestId = _requestDecrypt(success128);
         _pendingRepaySyncs[requestId] = PendingSync({
             user: msg.sender,
             loanIndex: loanIndex,
-            encryptedAmount: amount
+            encryptedAmount: zero
         });
 
         emit RepayStateSyncRequested(msg.sender, requestId, loan.loanId);
     }
 
-    /// @notice CoFHE callback: finalize repay.
+    /// @notice CoFHE callback: flip loan.active if burn succeeded (single boolean decrypt, no amount leak).
     function syncLoanRepay(
         bytes32 ciphertext,
         uint128 result,
@@ -452,16 +430,12 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
 
         ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
 
-        // Update plaintext aggregate
-        if (totalBorrowed >= uint256(result)) {
-            totalBorrowed -= uint256(result);
+        Loan storage loan = _loans[sync.user][sync.loanIndex];
+        if (result > 0) {
+            loan.active = false;
         }
 
-        Loan storage loan = _loans[sync.user][sync.loanIndex];
-
-        // Emit settlement intent — NO amounts, only metadata
         emit LoanRepaid(sync.user, loan.loanId);
-        emit RepaymentSettlementIntent(sync.user, loan.loanId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -476,55 +450,57 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         euint128 amount = FHE.asEuint128(encryptedAmount);
         FHE.allowThis(amount);
 
-        // Reduce encrypted collateral
-        euint128 currentCollateral = _safeEncrypted(_collateral[msg.sender]);
-        euint128 newCollateral = FHE.sub(currentCollateral, amount);
+        euint128 zero = FHE.asEuint128(0);
+        FHE.allowThis(zero);
+
+        // 1. Cap amount at own collateral to prevent homomorphic underflow
+        euint128 currentOwnCollateral = _safeEncrypted(_collateral[msg.sender]);
+        ebool hasEnoughOwn = FHE.lte(amount, currentOwnCollateral);
+        euint128 cappedAmount = FHE.select(hasEnoughOwn, amount, zero);
+        FHE.allowThis(cappedAmount);
+
+        // 2. Validate health factor with cappedAmount
+        euint128 totalCollateral = _getAggregatedCollateral(msg.sender);
+        euint128 totalDebt = _getAggregatedDebt(msg.sender);
+
+        euint128 newTotalCollateral = FHE.sub(totalCollateral, cappedAmount);
+        FHE.allowThis(newTotalCollateral);
+
+        address underlyingToken = IWalnutVaultWrapper(token).underlying();
+        uint256 colMultiplier = LIQUIDATION_THRESHOLD * oracle.getUSDValue(underlyingToken, 1e6);
+        euint128 constDebtScale = FHE.asEuint128(uint128(10000 * 1e6));
+        euint128 constThreshold = FHE.asEuint128(uint128(colMultiplier));
+        euint128 debtScaled = FHE.mul(totalDebt, constDebtScale);
+        euint128 collateralScaled = FHE.mul(newTotalCollateral, constThreshold);
+
+        ebool isHealthy = FHE.lte(debtScaled, collateralScaled);
+        FHE.allowThis(isHealthy);
+
+        // 3. Final validated amount
+        euint128 validAmount = FHE.select(isHealthy, cappedAmount, zero);
+        FHE.allowThis(validAmount);
+
+        // Reduce encrypted collateral using validAmount
+        euint128 newCollateral = FHE.sub(currentOwnCollateral, validAmount);
         FHE.allowThis(newCollateral);
         FHE.allow(newCollateral, msg.sender);
         _collateral[msg.sender] = newCollateral;
 
-        // Request decrypt to perform ERC20 transfer
-        uint256 requestId = _requestDecrypt(amount);
-        _pendingWithdraws[requestId] = PendingWithdraw({
-            user: msg.sender,
-            token: token,
-            amount: 0, // set in callback
-            newCollateral: newCollateral
-        });
+        // Reduce totalDeposited
+        euint128 currentTotalDeposited = _safeEncrypted(_totalDeposited);
+        euint128 newTotalDeposited = FHE.sub(currentTotalDeposited, validAmount);
+        FHE.allowThis(newTotalDeposited);
+        _totalDeposited = newTotalDeposited;
+
+        // Downcast back to euint64 for the FHERC20 transfer
+        euint64 transferAmount = FHE.asEuint64(validAmount);
+        FHE.allowThis(transferAmount);
+        FHE.allowTransient(transferAmount, token);
+
+        // Transfer directly via FHERC20 shielded transfer
+        IWalnutVaultWrapper(token).confidentialTransfer(msg.sender, transferAmount);
 
         emit Withdrawn(msg.sender, token);
-        emit WithdrawSyncRequested(msg.sender, requestId);
-    }
-
-    /// @notice CoFHE callback: finalize withdraw.
-    function syncWithdrawTransfer(
-        bytes32 ciphertext,
-        uint128 result,
-        bytes calldata signature
-    ) external nonReentrant {
-        uint256 requestId = uint256(ciphertext);
-        PendingWithdraw storage pw = _pendingWithdraws[requestId];
-        require(pw.user != address(0), "Unknown withdraw sync");
-
-        ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
-
-        uint256 amount = uint256(result);
-        address user = pw.user;
-        address token = pw.token;
-        delete _pendingWithdraws[requestId];
-
-        if (amount > 0) {
-            // Plaintext tracking removed.
-            IERC20(token).safeTransfer(user, amount);
-
-            if (totalDeposited >= amount) {
-                totalDeposited -= amount;
-            }
-
-            emit WithdrawFinalized(user, token, true);
-        } else {
-            emit WithdrawFinalized(user, token, false);
-        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -540,10 +516,13 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         euint128 debt = _getAggregatedDebt(borrower);
         euint128 collateral = _getAggregatedCollateral(borrower);
         
-        // debt * 10000 >= collateral * LIQUIDATION_THRESHOLD
-        euint128 const10000 = FHE.asEuint128(10000);
-        euint128 constThreshold = FHE.asEuint128(LIQUIDATION_THRESHOLD);
-        euint128 debtScaled = FHE.mul(debt, const10000);
+        // debt * 10000 >= collateral * (LIQUIDATION_THRESHOLD * price)
+        require(wUSDC_address != address(0), "wUSDC not set");
+        address underlyingToken = IWalnutVaultWrapper(wUSDC_address).underlying();
+        uint256 colMultiplier = LIQUIDATION_THRESHOLD * oracle.getUSDValue(underlyingToken, 1e6);
+        euint128 constDebtScale = FHE.asEuint128(uint128(10000 * 1e6));
+        euint128 constThreshold = FHE.asEuint128(uint128(colMultiplier));
+        euint128 debtScaled = FHE.mul(debt, constDebtScale);
         euint128 collateralScaled = FHE.mul(collateral, constThreshold);
         ebool isLiquidatable = FHE.gte(debtScaled, collateralScaled);
         
@@ -720,19 +699,8 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     // TOTAL BORROWED SYNC
     // ═══════════════════════════════════════════════════════════════════════════
 
-    function syncTotalBorrowed(
-        bytes32 ciphertext,
-        uint128 result,
-        bytes calldata signature
-    ) external {
-        ITaskManager(TASK_MANAGER_ADDRESS).verifyDecryptResult(uint256(ciphertext), uint256(result), signature);
-        uint256 requestId = uint256(ciphertext);
-        uint256 version = pendingTotalBorrowedSyncVersions[requestId];
-        if (version > 0) {
-            delete pendingTotalBorrowedSyncVersions[requestId];
-            totalBorrowed = uint256(result);
-            emit TotalBorrowedCacheUpdated(totalBorrowed, version);
-        }
+    function getEncryptedTotalBorrowedCtHash() external returns (uint256) {
+        return uint256(euint128.unwrap(_safeEncrypted(_totalBorrowed)));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -785,10 +753,13 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
             }
         }
         
-        // Check if debt * 10000 <= collateral * LIQUIDATION_THRESHOLD
-        euint128 const10000 = FHE.asEuint128(10000);
-        euint128 constThreshold = FHE.asEuint128(LIQUIDATION_THRESHOLD);
-        euint128 debtScaled = FHE.mul(totalDebt, const10000);
+        // Check if debt * 10000 <= collateral * (LIQUIDATION_THRESHOLD * price)
+        require(wUSDC_address != address(0), "wUSDC not set");
+        address underlyingToken = IWalnutVaultWrapper(wUSDC_address).underlying();
+        uint256 colMultiplier = LIQUIDATION_THRESHOLD * oracle.getUSDValue(underlyingToken, 1e6);
+        euint128 constDebtScale = FHE.asEuint128(uint128(10000 * 1e6));
+        euint128 constThreshold = FHE.asEuint128(uint128(colMultiplier));
+        euint128 debtScaled = FHE.mul(totalDebt, constDebtScale);
         euint128 collateralScaled = FHE.mul(totalCollateral, constThreshold);
         ebool isHealthy = FHE.lte(debtScaled, collateralScaled);
         
@@ -904,11 +875,7 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         return false;
     }
 
-    /// @notice Protocol utilization rate in basis points.
-    function utilizationRate() external view returns (uint256) {
-        if (totalDeposited == 0) return 0;
-        return (totalBorrowed * 10000) / totalDeposited;
-    }
+    // utilizationRate removed because totalDeposited is fully encrypted
 
     /// @notice Current borrow rate (constant for V2).
     function currentBorrowRate() external pure returns (uint256) {
@@ -933,6 +900,11 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
         require(newOwner != address(0), "Invalid owner");
         emit OwnershipTransferred(owner, newOwner);
         owner = newOwner;
+    }
+
+    function setWUSDCAddress(address _wUSDC) external onlyOwner {
+        require(_wUSDC != address(0), "Invalid address");
+        wUSDC_address = _wUSDC;
     }
 
     function setTierLTV(uint256 tier, uint16 ltv) external onlyOwner {
