@@ -36,7 +36,6 @@ function formatTimestamp(timestamp: bigint | undefined) {
 function getEventMeta(eventName: string) {
   switch (eventName) {
     case "Deposited":
-    case "DepositSyncRequested":
       return {
         title: "Collateral Deposited",
         description: "Your FHE-encrypted collateral deposit request was submitted on-chain.",
@@ -44,7 +43,14 @@ function getEventMeta(eventName: string) {
         colorClass: "bg-emerald-50 text-emerald-600 border-emerald-200/50",
         badge: "Deposit"
       };
-    case "BorrowActiveSyncRequested":
+    case "DepositSyncRequested":
+      return {
+        title: "Deposit Sync",
+        description: "Intermediate FHE state sync for deposit.",
+        icon: Activity,
+        colorClass: "bg-slate-50 text-slate-600 border-slate-200/50",
+        badge: "System"
+      };
     case "LoanOpened":
       return {
         title: "Principal Loan Borrowed",
@@ -53,7 +59,14 @@ function getEventMeta(eventName: string) {
         colorClass: "bg-blue-50 text-blue-600 border-blue-200/50",
         badge: "Borrow"
       };
-    case "RepayStateSyncRequested":
+    case "BorrowActiveSyncRequested":
+      return {
+        title: "Borrow Sync",
+        description: "Intermediate FHE state sync for borrow.",
+        icon: Activity,
+        colorClass: "bg-slate-50 text-slate-600 border-slate-200/50",
+        badge: "System"
+      };
     case "LoanRepaid":
     case "RepaymentSettlementIntent":
       return {
@@ -63,14 +76,29 @@ function getEventMeta(eventName: string) {
         colorClass: "bg-emerald-50 text-emerald-600 border-emerald-200/50",
         badge: "Repay"
       };
+    case "RepayStateSyncRequested":
+      return {
+        title: "Repay Sync",
+        description: "Intermediate FHE state sync for repay.",
+        icon: Activity,
+        colorClass: "bg-slate-50 text-slate-600 border-slate-200/50",
+        badge: "System"
+      };
     case "Withdrawn":
-    case "WithdrawSyncRequested":
       return {
         title: "Collateral Withdrawn",
         description: "Your collateral withdrawal request was submitted on-chain.",
         icon: ArrowLeftRight,
         colorClass: "bg-amber-50 text-amber-600 border-amber-200/50",
         badge: "Withdraw"
+      };
+    case "WithdrawSyncRequested":
+      return {
+        title: "Withdraw Sync",
+        description: "Intermediate FHE state sync for withdraw.",
+        icon: Activity,
+        colorClass: "bg-slate-50 text-slate-600 border-slate-200/50",
+        badge: "System"
       };
     case "CreditCountSyncRequested":
     case "CreditTierUpdated":
@@ -96,10 +124,12 @@ function getEventMeta(eventName: string) {
         description: "On-chain smart contract state sync transaction finalized.",
         icon: Sparkles,
         colorClass: "bg-slate-50 text-slate-600 border-slate-200/50",
-        badge: "Event"
+        badge: "System"
       };
   }
 }
+
+const TABS = ["All", "Deposits", "Borrows", "Repayments", "Withdraws"];
 
 export default function HistoryPage() {
   const publicClient = usePublicClient();
@@ -107,15 +137,24 @@ export default function HistoryPage() {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("All");
 
-  const historyRows = useMemo(
-    () =>
-      [...items].sort((a, b) => {
+  const historyRows = useMemo(() => {
+    return [...items]
+      .filter((item) => {
+        const meta = getEventMeta(item.eventName);
+        if (activeTab === "All") return meta.badge !== "System"; // Hide system events in All
+        if (activeTab === "Deposits") return meta.badge === "Deposit";
+        if (activeTab === "Borrows") return meta.badge === "Borrow";
+        if (activeTab === "Repayments") return meta.badge === "Repay";
+        if (activeTab === "Withdraws") return meta.badge === "Withdraw";
+        return true;
+      })
+      .sort((a, b) => {
         if (a.blockNumber === b.blockNumber) return 0;
         return a.blockNumber > b.blockNumber ? -1 : 1;
-      }),
-    [items]
-  );
+      });
+  }, [items, activeTab]);
 
   useEffect(() => {
     let active = true;
@@ -209,12 +248,12 @@ export default function HistoryPage() {
   }, [address, publicClient]);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-5">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Activity Timeline</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Activity History</h1>
             <div className="group relative flex items-center justify-center">
               <HelpCircle className="h-5 w-5 text-muted-foreground hover:text-slate-900 cursor-help transition-colors" />
               <div className="absolute left-1/2 top-full mt-2 w-[340px] -translate-x-1/2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
@@ -223,96 +262,117 @@ export default function HistoryPage() {
                   <div className="absolute -top-[15px] left-1/2 -translate-x-1/2 border-[8px] border-transparent border-b-blue-50/95" />
                   <strong className="font-semibold block mb-1">How On-chain Activity works:</strong>
                   <p className="text-blue-700">
-                    Because Walnut is a secure Fully Homomorphic Encryption (FHE) protocol, lending calculations are processed inside encrypted smart contract states. The timeline below monitors the Arbitrum Sepolia network event logs for cryptographic syncing actions (`BorrowActiveSyncRequested`, `RepayStateSyncRequested`, etc.) linked specifically to your wallet address.
+                    Because Walnut is a secure Fully Homomorphic Encryption (FHE) protocol, lending calculations are processed inside encrypted smart contract states. This table filters smart contract events linked directly to your wallet address.
                   </p>
                 </div>
               </div>
             </div>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Real-time on-chain history and state sync timelines triggered by your encrypted lending actions.
+            Real-time on-chain logs of your confidential lending activities.
           </p>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <div className="border border-slate-200 rounded-2xl bg-white p-6 shadow-sm min-h-[400px] flex flex-col justify-between">
-        {isLoading && historyRows.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center space-y-3">
-            <Clock className="h-10 w-10 text-slate-400 animate-spin" />
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Loading Activity</p>
-            <p className="text-xs text-muted-foreground">Fetching verified smart contract events from block logs...</p>
-          </div>
-        ) : error ? (
-          <div className="py-20 flex flex-col items-center justify-center text-center space-y-3 max-w-sm mx-auto">
-            <ShieldAlert className="h-10 w-10 text-rose-500" />
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-rose-500">History Unavailable</p>
-            <p className="text-xs text-muted-foreground leading-normal">{error}</p>
-          </div>
-        ) : historyRows.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center text-center space-y-3 max-w-sm mx-auto">
-            <CheckCircle2 className="h-10 w-10 text-slate-300" />
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">No Recent Activity</p>
-            <p className="text-xs text-muted-foreground leading-normal">
-              No recent lending or borrowing event logs were found for the connected wallet on-chain.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400 border-b border-slate-100 pb-2">Recent Transactions</h3>
-            
-            {/* Dotted Timeline track */}
-            <div className="relative pl-6 border-l-2 border-dashed border-slate-100 ml-4 space-y-6">
-              {historyRows.map((item) => {
-                const meta = getEventMeta(item.eventName);
-                const IconComponent = meta.icon;
+      <div className="border border-slate-200 rounded-2xl bg-white shadow-sm overflow-hidden min-h-[400px] flex flex-col">
+        {/* Tabs */}
+        <div className="flex items-center gap-2 bg-slate-50 border-b border-slate-200 p-3 overflow-x-auto">
+          {TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                activeTab === tab
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent"
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
 
-                return (
-                  <div key={item.key} className="relative group">
-                    {/* Timeline Dot Anchor */}
-                    <div className={`absolute -left-[37px] top-0.5 flex h-7 w-7 items-center justify-center rounded-full border bg-white shadow-sm transition group-hover:scale-105 ${meta.colorClass}`}>
-                      <IconComponent className="h-3.5 w-3.5" />
-                    </div>
-
-                    {/* Timeline Event Card */}
-                    <div className="rounded-2xl border border-slate-150 bg-white p-4 shadow-sm hover:border-slate-300 transition-all space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold text-slate-900">{meta.title}</p>
-                          <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-semibold text-slate-500 uppercase tracking-wider border border-slate-100">
-                            {meta.badge}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground font-mono bg-slate-50 border px-1.5 py-0.5 rounded-md self-start sm:self-auto">
-                          Block #{item.blockNumber.toString()}
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-muted-foreground leading-normal">
-                        {meta.description}
-                      </p>
-
-                      <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <p className="text-[10px] text-slate-400 font-mono">
-                          Timestamp: {formatTimestamp(item.timestamp)}
-                        </p>
-                        <a
-                          className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-black font-mono underline decoration-dotted transition"
-                          href={`https://sepolia.arbiscan.io/tx/${item.txHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {shortHash(item.txHash)}
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+        {/* Content */}
+        <div className="flex-1">
+          {isLoading && items.length === 0 ? (
+            <div className="py-20 flex flex-col items-center justify-center space-y-3">
+              <Clock className="h-10 w-10 text-slate-400 animate-spin" />
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Loading Activity</p>
+              <p className="text-xs text-muted-foreground">Fetching verified smart contract events from block logs...</p>
             </div>
-          </div>
-        )}
+          ) : error ? (
+            <div className="py-20 flex flex-col items-center justify-center text-center space-y-3 max-w-sm mx-auto">
+              <ShieldAlert className="h-10 w-10 text-rose-500" />
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-rose-500">History Unavailable</p>
+              <p className="text-xs text-muted-foreground leading-normal">{error}</p>
+            </div>
+          ) : historyRows.length === 0 ? (
+            <div className="py-20 flex flex-col items-center justify-center text-center space-y-3 max-w-sm mx-auto">
+              <CheckCircle2 className="h-10 w-10 text-slate-300" />
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">No {activeTab !== "All" ? activeTab : "Recent"} Activity</p>
+              <p className="text-xs text-muted-foreground leading-normal">
+                No verified logs matching this category were found for your wallet.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    <th className="p-4 w-[280px]">Action</th>
+                    <th className="p-4">Date & Time</th>
+                    <th className="p-4 text-center">Block</th>
+                    <th className="p-4 text-right">Transaction</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {historyRows.map((item) => {
+                    const meta = getEventMeta(item.eventName);
+                    const IconComponent = meta.icon;
+
+                    return (
+                      <tr key={item.key} className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${meta.colorClass}`}>
+                              <IconComponent className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{meta.title}</p>
+                              <p className="text-xs text-slate-500">{meta.badge} Event</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <p className="text-sm text-slate-600 font-medium">
+                            {formatTimestamp(item.timestamp)}
+                          </p>
+                        </td>
+                        <td className="p-4 text-center">
+                          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-mono font-medium text-slate-600">
+                            {item.blockNumber.toString()}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <a
+                            className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-mono transition"
+                            href={`https://sepolia.arbiscan.io/tx/${item.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {shortHash(item.txHash)}
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
