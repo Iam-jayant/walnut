@@ -24,13 +24,15 @@ contract WalnutFHERC20 {
         minter = msg.sender;
     }
 
+    mapping(address => bool) public isMinter;
+
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
         _;
     }
 
     modifier onlyMinter() {
-        require(msg.sender == minter, "Only minter");
+        require(msg.sender == minter || isMinter[msg.sender], "Only minter");
         _;
     }
 
@@ -38,6 +40,7 @@ contract WalnutFHERC20 {
         require(_minter != address(0), "Invalid minter");
         address oldMinter = minter;
         minter = _minter;
+        isMinter[_minter] = true;
         emit MinterUpdated(oldMinter, _minter);
     }
 
