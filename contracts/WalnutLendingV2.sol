@@ -50,6 +50,9 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
 
     // ─── Collateral config ────────────────────────────────────────────────────
     address public wUSDC_address;
+    mapping(address => bool) public isApprovedVault;
+
+    event VaultApprovalSet(address indexed vault, bool approved);
 
     // ─── Protocol constants ───────────────────────────────────────────────────
     uint256 public constant PRECISION         = 1e18;
@@ -234,6 +237,7 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     /// @notice Deposit collateral. Amount is encrypted — never plaintext in calldata or events.
     function deposit(address token, InEuint64 calldata encryptedAmount) external nonReentrant whenNotPaused {
         require(token != address(0), "Invalid token");
+        require(isApprovedVault[token], "Unregistered vault token");
 
         euint64 amountE64 = FHE.asEuint64(encryptedAmount);
         FHE.allowThis(amountE64);
@@ -454,6 +458,7 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     function withdraw(address token, InEuint128 calldata encryptedAmount) external nonReentrant whenNotPaused {
         require(liquidations[msg.sender].state == AuctionState.IDLE, "Active liquidation");
         require(token != address(0), "Invalid token");
+        require(isApprovedVault[token], "Unregistered vault token");
 
         euint128 amount = FHE.asEuint128(encryptedAmount);
         FHE.allowThis(amount);
@@ -965,6 +970,14 @@ contract WalnutLendingV2 is ReentrancyGuard, EIP712 {
     function setWUSDCAddress(address _wUSDC) external onlyOwner {
         require(_wUSDC != address(0), "Invalid address");
         wUSDC_address = _wUSDC;
+        isApprovedVault[_wUSDC] = true;
+        emit VaultApprovalSet(_wUSDC, true);
+    }
+
+    function setApprovedVault(address vault, bool approved) external onlyOwner {
+        require(vault != address(0), "Invalid vault address");
+        isApprovedVault[vault] = approved;
+        emit VaultApprovalSet(vault, approved);
     }
 
     function setTierLTV(uint256 tier, uint16 ltv) external onlyOwner {
