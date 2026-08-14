@@ -173,13 +173,13 @@ contract WalnutP2P is ReentrancyGuard {
         emit MatchRequested(offerId, msg.sender, requestId);
     }
 
-    /// @notice Create a P2P offer with plaintext amounts (converts to euint128 internally).
+    /// @notice Create a P2P offer with plaintext amounts (TEST ONLY / OWNER ONLY).
     function createOfferPlaintext(
         OfferType offerType,
         uint128 principalVal,
         uint128 rateVal,
         uint128 durationVal
-    ) external nonReentrant whenNotPaused returns (uint256) {
+    ) external onlyOwner nonReentrant whenNotPaused returns (uint256) {
         euint128 principal = FHE.asEuint128(principalVal);
         euint128 rate = FHE.asEuint128(rateVal);
         euint128 duration = FHE.asEuint128(durationVal);
@@ -214,13 +214,13 @@ contract WalnutP2P is ReentrancyGuard {
         return offerId;
     }
 
-    /// @notice Match an open P2P offer using plaintext amounts (converts to euint128 internally).
+    /// @notice Match an open P2P offer using plaintext amounts (TEST ONLY / OWNER ONLY).
     function matchOfferPlaintext(
         uint256 offerId,
         uint128 matchPrincipalVal,
         uint128 matchRateVal,
         uint128 matchDurationVal
-    ) external nonReentrant whenNotPaused {
+    ) external onlyOwner nonReentrant whenNotPaused {
         P2POffer storage offer = _offers[offerId];
         require(offer.state == OfferState.OPEN, "Offer not open");
         require(offer.creator != msg.sender, "Cannot match own offer");
