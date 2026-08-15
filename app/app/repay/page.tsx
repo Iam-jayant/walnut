@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Clock, DollarSign, Eye, EyeOff, Loader2, Landmark, Receipt, Hourglass, ChevronDown } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, DollarSign, Eye, EyeOff, Loader2, Landmark, Receipt, Hourglass, ChevronDown, Dna } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ProtocolAlerts } from "@/components/walnut/protocol-health";
@@ -57,7 +57,7 @@ function getLoanStatus(loan: LoanRecord): LoanStatus {
 function statusBadge(status: LoanStatus) {
   if (status === "paid") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
+      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
         Paid
       </span>
@@ -65,7 +65,7 @@ function statusBadge(status: LoanStatus) {
   }
   if (status === "processing") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-600 ring-1 ring-amber-200">
+      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-600 ring-1 ring-amber-200">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         Loading
       </span>
@@ -73,7 +73,7 @@ function statusBadge(status: LoanStatus) {
   }
   // Unpaid
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-600/20">
+    <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-600/20">
       <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
       Unpaid
     </span>
@@ -128,11 +128,11 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
     return (
       <article
         onClick={() => setIsExpanded(!isExpanded)}
-        className="rounded-xl border border-slate-200 bg-white p-3 transition-all opacity-70 hover:opacity-100 cursor-pointer hover:border-slate-300 select-none"
+        className="rounded-md border border-black/10 bg-white p-3 transition-all opacity-70 hover:opacity-100 cursor-pointer hover:border-black/10 select-none"
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-xs font-bold text-slate-500">
               #{displayNumber}
             </div>
             <div>
@@ -159,20 +159,20 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
           }`}
         >
           <div className="overflow-hidden">
-            <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5 text-[11px] space-y-1.5 text-slate-600">
+            <div className="rounded-md bg-slate-50 border border-black/10 p-2.5 text-[11px] space-y-1.5 text-slate-600">
               <div className="flex justify-between">
                 <span className="text-slate-400">On-chain Loan ID</span>
-                <span className="font-mono font-medium text-slate-800">#{loan.loanId.toString()}</span>
+                <span className="font-mono font-medium text-black">#{loan.loanId.toString()}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Start Date</span>
-                <span className="text-slate-800">{formatDate(loan.openedAt)}</span>
+                <span className="text-black">{formatDate(loan.openedAt)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Status</span>
                 <span className="text-emerald-700 font-semibold font-medium">Fully Settled</span>
               </div>
-              <div className="pt-2 border-t border-slate-200/60 text-[10px] text-slate-400 leading-normal">
+              <div className="pt-2 border-t border-black/10 text-[10px] text-slate-400 leading-normal">
                 This loan has been fully repaid. All interest calculations are finalized, and the collateral has been released/adjusted.
               </div>
             </div>
@@ -186,11 +186,11 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
   return (
     <article
       onClick={() => setIsExpanded(!isExpanded)}
-      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:border-slate-300 cursor-pointer select-none"
+      className="rounded-md border border-black/10 bg-white p-5 shadow-none transition-all hover:border-black/10 cursor-pointer select-none"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-sm font-bold text-black">
             #{displayNumber}
           </div>
           <div>
@@ -209,7 +209,7 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
       </div>
 
       {/* Metrics row */}
-      <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3">
+      <div className="mt-4 grid grid-cols-3 gap-2 rounded-md bg-slate-50 p-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Principal</p>
           <p className="mt-1 text-sm font-semibold text-foreground">{principalLabel}</p>
@@ -225,7 +225,7 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
       </div>
 
       {isUnpaid && (
-        <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-muted-foreground">
+        <div className="mt-3 rounded-md border border-black/10 bg-slate-50 p-3 text-xs text-muted-foreground">
           <div className="flex justify-between gap-4">
             <span>Principal (cUSDC)</span>
             <span className="font-mono text-foreground">{formatUSDC(loan.principal)}</span>
@@ -234,7 +234,7 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
             <span>Estimated interest (8% APR)</span>
             <span className="font-mono text-foreground">{formatUSDC(interest)}</span>
           </div>
-          <div className="mt-2 flex justify-between gap-4 border-t border-slate-200 pt-2 font-semibold text-foreground">
+          <div className="mt-2 flex justify-between gap-4 border-t border-black/10 pt-2 font-semibold text-foreground">
             <span>Amount to repay</span>
             <span className="font-mono">{formatUSDC(settlementAmount)} cUSDC</span>
           </div>
@@ -251,7 +251,7 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
         {isUnpaid ? (
           <Button
             type="button"
-            className="w-full rounded-xl bg-black py-2 text-white hover:bg-slate-800"
+            className="w-full rounded-md bg-black py-2 text-white hover:bg-slate-800"
             onClick={handleRepay}
             isLoading={isRepaying}
             loadingText="Repaying..."
@@ -263,7 +263,7 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
           <Button
             type="button"
             variant="outline"
-            className="w-full rounded-xl py-2"
+            className="w-full rounded-md py-2"
             onClick={handleRecover}
             isLoading={isRecovering}
             loadingText="Loading details..."
@@ -281,27 +281,27 @@ function LoanCard({ item, onRepay, onRecover, repayingIndex, recoveringIndex, se
         }`}
       >
         <div className="overflow-hidden">
-          <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 text-xs space-y-3 text-slate-600">
+          <div className="rounded-md bg-slate-50 border border-black/10 p-4 text-xs space-y-3 text-slate-600">
             <div className="grid grid-cols-2 gap-y-2">
               <span className="text-slate-400">On-chain Loan ID</span>
-              <span className="text-right font-mono font-medium text-slate-800">#{loan.loanId.toString()}</span>
+              <span className="text-right font-mono font-medium text-black">#{loan.loanId.toString()}</span>
               
               <span className="text-slate-400">Interest Calculation</span>
-              <span className="text-right text-slate-800">8.00% APR Compounding</span>
+              <span className="text-right text-black">8.00% APR Compounding</span>
 
               <span className="text-slate-400">Start Date</span>
-              <span className="text-right text-slate-800">{formatDate(loan.openedAt)}</span>
+              <span className="text-right text-black">{formatDate(loan.openedAt)}</span>
 
               <span className="text-slate-400">Time Elapsed</span>
-              <span className="text-right text-slate-800 font-medium text-slate-700">
+              <span className="text-right text-black font-medium text-black">
                 {loan.openedAt > 0n ? formatTimeSince(loan.openedAt) : "N/A"}
               </span>
 
               <span className="text-slate-400">Privacy Status</span>
-              <span className="text-right text-slate-800 font-medium">FHE Encrypted Debt</span>
+              <span className="text-right text-black font-medium">FHE Encrypted Debt</span>
             </div>
             
-            <div className="pt-2.5 border-t border-slate-200/60 text-[11px] text-slate-400 leading-normal">
+            <div className="pt-2.5 border-t border-black/10 text-[11px] text-slate-400 leading-normal">
               This loan is active on the Arbitrum Sepolia network. The debt value is encrypted on-chain via Fully Homomorphic Encryption (FHE). Interest accrues dynamically and is settled automatically upon repayment.
             </div>
           </div>
@@ -409,128 +409,102 @@ export default function RepayPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Page header */}
-      <header>
-        <h1 className="text-2xl font-semibold">Repay Loans</h1>
-        <p className="text-sm text-muted-foreground">Review active and paid loans. Repay any outstanding debt below.</p>
-      </header>
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="pb-6 border-b border-black/10">
+        <h1 className="text-3xl font-bold tracking-tight text-black">Repay Loans</h1>
+        <p className="mt-2 text-sm text-slate-500 max-w-xl">
+          Review active and paid loans. Repay any outstanding debt below.
+        </p>
+      </div>
 
       <ProtocolAlerts protocol={protocol} />
 
-      {/* ── Top debt summary card — glassmorphism ──────────────────────────── */}
-      <section
-        style={{
-          background: "linear-gradient(135deg, rgba(248,250,252,0.85) 0%, rgba(226,232,240,0.7) 50%, rgba(241,245,249,0.9) 100%)",
-          backdropFilter: "blur(20px) saturate(180%)",
-          WebkitBackdropFilter: "blur(20px) saturate(180%)",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.9)",
-        }}
-        className="rounded-2xl border border-slate-200/80 p-6"
-      >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          {/* Left: total debt */}
-          <div className="flex items-center gap-4">
-            <div
-              style={{ background: "linear-gradient(135deg, #1e293b 0%, #334155 100%)" }}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm"
-            >
-              <Landmark className="h-5 w-5 text-slate-300" />
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Total Outstanding Debt</p>
-              <p className="mt-0.5 text-3xl font-bold tracking-tight text-slate-900">
-                ${formatUSDC(totalUnpaidDue)}
-                <span className="ml-1.5 text-base font-normal text-slate-400">cUSDC</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Right: mini stats + decrypt button */}
-          <div className="flex flex-col gap-3 sm:items-end">
-            <div className="flex gap-5 text-sm">
-              <div className="text-center">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400">Unpaid</p>
-                <p className="font-bold text-slate-800">{unpaidLoans.length}</p>
-              </div>
-              <div className="h-full w-px bg-slate-200" />
-              <div className="text-center">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400">Principal</p>
-                <p className="font-bold text-slate-800">${formatUSDC(totalUnpaidPrincipal)}</p>
-              </div>
-              <div className="h-full w-px bg-slate-200" />
-              <div className="text-center">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400">Paid</p>
-                <p className="font-bold text-slate-800">{paidLoans.length}</p>
-              </div>
-            </div>
-
-            {/* Decrypt button */}
-            <button
-              type="button"
-              onClick={async () => {
-                setShowEncryptedDebt((v) => !v);
-                if (!showEncryptedDebt && protocol.canRead) {
-                  await protocol.debt.decrypted.refetch();
-                }
-              }}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white/70 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-sm transition hover:bg-white hover:shadow active:scale-95"
-            >
-              {showEncryptedDebt ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              {showEncryptedDebt ? "Hide Debt" : "Decrypt Debt"}
-            </button>
-          </div>
-        </div>
-
-        {/* Encrypted debt row — always visible */}
-        <div
-          style={{ background: "rgba(255,255,255,0.55)" }}
-          className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200/60 px-4 py-3 backdrop-blur-sm"
-        >
-          <DollarSign className="h-4 w-4 shrink-0 text-slate-400" />
-          <span className="text-sm text-slate-500">On-chain encrypted debt</span>
-          <span className="ml-auto font-mono font-semibold text-slate-800">
-            {pendingDecrypt ? (
-              <span className="flex items-center gap-1.5 text-slate-400">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...
-              </span>
-            ) : showEncryptedDebt && typeof protocol.debt.decrypted.data === "bigint" ? (
-              <span>{formatUSDC(protocol.debt.decrypted.data)} cUSDC</span>
-            ) : (
-              <span className="tracking-[0.25em] text-slate-300">•••••• cUSDC</span>
-            )}
-          </span>
-        </div>
-      </section>
-
-      {/* ── No loans empty state ─────────────────────────────────────────── */}
-      {loans.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-12 text-center">
-          <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-emerald-400" />
-          <p className="text-sm font-semibold text-foreground">No loans yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">Borrowed loans will appear here once created.</p>
-        </div>
-      ) : (
-        <>
-          {/* ── 2-column loan panel ───────────────────────────────────────── */}
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[3fr_2fr]">
-            {/* Left 60%: Active / unpaid loans */}
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">Active Loans</h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Loans that need repayment or are still loading.</p>
+      <div className="grid gap-6 md:grid-cols-3 items-start">
+        {/* Main Panel */}
+        <section className="md:col-span-2">
+          <div className="bg-white border border-black/10 rounded-md p-6 space-y-8 shadow-none">
+            
+            {/* Top Debt Summary */}
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-black border border-black/20 rounded-md p-5 space-y-5">
+              <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                {/* Left: total debt */}
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full border border-white/20 bg-slate-800 flex items-center justify-center font-bold text-white shadow-sm text-[11px] tracking-wide">
+                    cUSDC
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Total Outstanding Debt</p>
+                    <p className="text-3xl font-bold tracking-tight text-white">
+                      ${formatUSDC(totalUnpaidDue)}
+                      <span className="ml-1.5 text-base font-normal text-slate-400">cUSDC</span>
+                    </p>
+                  </div>
                 </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+
+                {/* Right: decrypt button */}
+                <div className="flex flex-col sm:items-end pt-1">
+                  <Button
+                    variant="outline"
+                    className="bg-white/10 border-white/10 text-white hover:bg-white/20 hover:text-white font-medium rounded-md h-9 px-4 text-xs shadow-none inline-flex items-center gap-2 transition-colors"
+                    onClick={async () => {
+                      setShowEncryptedDebt((v) => !v);
+                      if (!showEncryptedDebt && protocol.canRead) {
+                        await protocol.debt.decrypted.refetch();
+                      }
+                    }}
+                  >
+                    {showEncryptedDebt ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showEncryptedDebt ? "Hide Debt" : "Decrypt Debt"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Stats Row */}
+              <div className="relative z-10 flex gap-6 text-sm pt-2">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400">Unpaid Loans</p>
+                  <p className="font-bold text-white text-lg">{unpaidLoans.length}</p>
+                </div>
+                <div className="h-10 w-px bg-white/10" />
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400">Unpaid Principal</p>
+                  <p className="font-bold text-white text-lg">${formatUSDC(totalUnpaidPrincipal)}</p>
+                </div>
+              </div>
+
+              {/* Encrypted debt row */}
+              <div className="relative z-10 flex items-center gap-3 rounded-md bg-black/40 border border-white/5 px-4 py-3">
+                <DollarSign className="h-4 w-4 shrink-0 text-slate-400" />
+                <span className="text-xs font-medium text-slate-300">On-chain encrypted debt</span>
+                <span className="ml-auto font-mono font-semibold text-white text-sm">
+                  {pendingDecrypt ? (
+                    <span className="flex items-center gap-1.5 text-slate-400">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...
+                    </span>
+                  ) : showEncryptedDebt && typeof protocol.debt.decrypted.data === "bigint" ? (
+                    <span>{formatUSDC(protocol.debt.decrypted.data)} cUSDC</span>
+                  ) : (
+                    <span className="tracking-[0.25em] text-slate-400">•••••• cUSDC</span>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Active Loans List */}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between ml-1">
+                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Active Loans</h2>
+                <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 border border-black/5">
                   {activeLoans.length}
                 </span>
               </div>
 
               {activeLoans.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
+                <div className="rounded-md border border-black/5 bg-slate-50 p-6 text-center">
                   <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-slate-400" />
-                  <p className="text-sm font-semibold text-foreground">No active loans</p>
-                  <p className="mt-1 text-xs text-muted-foreground">All loans are settled. Great work.</p>
+                  <p className="text-sm font-semibold text-black">No active loans</p>
+                  <p className="mt-1 text-xs text-slate-500">All loans are settled. Great work.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -547,26 +521,121 @@ export default function RepayPage() {
                   ))}
                 </div>
               )}
-            </section>
+            </div>
 
-            {/* Right ~35%: Paid loans */}
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">Paid Loans</h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Closed loans — no action needed.</p>
+            {/* Settlement History */}
+            {(protocol.repayTxHash || protocol.settlementTxHash || protocol.repaySettlementState !== "idle") && (
+              <div className="space-y-4 pt-2 border-t border-black/10 mt-6 pt-6">
+                <div className="flex items-center justify-between ml-1">
+                  <h2 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Settlement History</h2>
                 </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
-                  {paidLoans.length}
-                </span>
-              </div>
 
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {protocol.repayTxHash && (
+                    <div className="rounded-md border border-black/10 bg-slate-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Repayment Tx</p>
+                      <a
+                        className="mt-1 block font-mono text-xs text-black underline decoration-dotted hover:text-black"
+                        href={`https://sepolia.arbiscan.io/tx/${protocol.repayTxHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {protocol.repayTxHash.slice(0, 10)}...{protocol.repayTxHash.slice(-8)}
+                      </a>
+                      <span className="mt-2 inline-flex items-center gap-1 rounded-md border border-black/10 bg-white px-2 py-0.5 text-[10px] text-slate-600">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Confirmed
+                      </span>
+                    </div>
+                  )}
+
+                  {protocol.settlementTxHash && (
+                    <div className="rounded-md border border-black/10 bg-slate-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Interest Settlement Tx</p>
+                      <a
+                        className="mt-1 block font-mono text-xs text-black underline decoration-dotted hover:text-black"
+                        href={`https://sepolia.arbiscan.io/tx/${protocol.settlementTxHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {protocol.settlementTxHash.slice(0, 10)}...{protocol.settlementTxHash.slice(-8)}
+                      </a>
+                      <span className="mt-2 inline-flex items-center gap-1 rounded-md border border-black/10 bg-white px-2 py-0.5 text-[10px] text-slate-600">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Settled
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Settlement state banners */}
+                {protocol.repaySettlementState === "settlement_processing" && (
+                  <div className="flex items-start gap-3 rounded-md border border-black/10 bg-slate-50 p-4">
+                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 animate-spin" />
+                    <div>
+                      <p className="text-xs font-semibold text-black">
+                        {countdown !== null && countdown > 0 
+                          ? `Settling interest on-chain... (will be paid in ${countdown}s)`
+                          : "Interest settlement processing..."}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+                        Your repayment succeeded. The interest settlement is confirming in the background. The dashboard will automatically update once finalized.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {protocol.repaySettlementState === "settlement_confirmed" && (
+                  <div className="flex items-start gap-3 rounded-md border border-black/10 bg-emerald-50 p-4">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-800">Fully settled</p>
+                      <p className="mt-1 text-[11px] text-emerald-600/80 leading-relaxed">
+                        Repayment and interest settlement are both confirmed. The loan should now appear under Paid Loans.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {protocol.repaySettlementState === "settlement_failed" && (
+                  <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-4">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                    <div>
+                      <p className="text-xs font-semibold text-red-800">Settlement failed</p>
+                      <p className="mt-1 text-[11px] text-red-700/80 leading-relaxed">
+                        {protocol.repaySettlementError ?? "The interest settlement encountered an error. Please retry."}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="mt-3 bg-white text-black border-black/10 rounded-md shadow-none px-4 py-2 text-xs"
+                        onClick={() => void protocol.retryRepaySettlement()}
+                      >
+                        Retry Settlement
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Sidebar */}
+        <aside className="space-y-6">
+          <div className="rounded-md bg-white border border-black/10 shadow-none">
+            <div className="p-4 border-b border-black/10 flex items-center justify-between">
+              <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Paid Loans</h4>
+              <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 border border-black/5">
+                {paidLoans.length}
+              </span>
+            </div>
+            
+            <div className="p-4 space-y-4">
               {paidLoans.length === 0 ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center text-xs text-muted-foreground">
+                <div className="text-center text-xs text-slate-500 py-2">
                   Paid loans will appear here after repayment.
                 </div>
               ) : (
-                <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="space-y-2">
                   {paidLoans.map((item) => (
                     <LoanCard
                       key={`${item.loanIndex}-${item.loan.loanId.toString()}`}
@@ -581,105 +650,10 @@ export default function RepayPage() {
                   ))}
                 </div>
               )}
-            </section>
+            </div>
           </div>
-
-          {/* ── Settlement history — full width ──────────────────────────── */}
-          {(protocol.repayTxHash || protocol.settlementTxHash || protocol.repaySettlementState !== "idle") && (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <Receipt className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">Settlement History</h2>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {protocol.repayTxHash && (
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Repayment Tx</p>
-                    <a
-                      className="mt-1 block font-mono text-xs text-slate-700 underline decoration-dotted hover:text-black"
-                      href={`https://sepolia.arbiscan.io/tx/${protocol.repayTxHash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {protocol.repayTxHash.slice(0, 10)}...{protocol.repayTxHash.slice(-8)}
-                    </a>
-                    <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
-                      <CheckCircle2 className="h-3 w-3" /> Confirmed
-                    </span>
-                  </div>
-                )}
-
-                {protocol.settlementTxHash && (
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Interest Settlement Tx</p>
-                    <a
-                      className="mt-1 block font-mono text-xs text-slate-700 underline decoration-dotted hover:text-black"
-                      href={`https://sepolia.arbiscan.io/tx/${protocol.settlementTxHash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {protocol.settlementTxHash.slice(0, 10)}...{protocol.settlementTxHash.slice(-8)}
-                    </a>
-                    <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
-                      <CheckCircle2 className="h-3 w-3" /> Settled
-                    </span>
-                  </div>
-                )}
-
-                {/* Settlement state banners */}
-                {protocol.repaySettlementState === "settlement_processing" && (
-                  <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 animate-spin" />
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">
-                        {countdown !== null && countdown > 0 
-                          ? `Settling interest on-chain... (will be paid in ${countdown}s)`
-                          : "Interest settlement processing..."}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Your repayment succeeded. The interest settlement is confirming in the background. The dashboard will automatically update once finalized.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {protocol.repaySettlementState === "settlement_confirmed" && (
-                  <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">Fully settled</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        Repayment and interest settlement are both confirmed. The loan should now appear under Paid Loans.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {protocol.repaySettlementState === "settlement_failed" && (
-                  <div className="flex items-start gap-3 rounded-xl border border-slate-300 bg-slate-50 p-3">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-700" />
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">Settlement failed</p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {protocol.repaySettlementError ?? "The interest settlement encountered an error. Please retry."}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="mt-2 rounded-xl px-3 py-1.5 text-xs"
-                        onClick={() => void protocol.retryRepaySettlement()}
-                      >
-                        Retry Settlement
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-        </>
-      )}
+        </aside>
+      </div>
     </div>
   );
 }
