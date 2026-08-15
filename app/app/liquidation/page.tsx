@@ -46,10 +46,10 @@ enum AuctionState {
 }
 
 const AUCTION_STATE_LABELS: Record<AuctionState, { label: string; color: string }> = {
-  [AuctionState.IDLE]: { label: "No Active Auction", color: "bg-slate-100 text-slate-700 border-slate-200" },
+  [AuctionState.IDLE]: { label: "No Active Auction", color: "bg-slate-100 text-black border-black/10" },
   [AuctionState.OPEN]: { label: "Bidding Open", color: "bg-emerald-50 text-emerald-700 border-emerald-200 animate-pulse" },
   [AuctionState.SELECTION_PENDING]: { label: "Winner Selection Pending", color: "bg-amber-50 text-amber-700 border-amber-200" },
-  [AuctionState.SETTLED]: { label: "Liquidation Settled", color: "bg-blue-50 text-blue-700 border-blue-200" },
+  [AuctionState.SETTLED]: { label: "Liquidation Settled", color: "bg-slate-50 text-blue-700 border-black/10" },
 };
 
 export default function LiquidationPage() {
@@ -320,12 +320,12 @@ export default function LiquidationPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto min-h-screen text-slate-900">
+    <div className="p-6 space-y-6 max-w-5xl mx-auto min-h-screen text-black">
       {/* Page Header */}
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
+      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-black/10 pb-5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2.5">
-            <Gavel className="h-6 w-6 text-slate-800" />
+          <h1 className="text-2xl font-bold tracking-tight text-black flex items-center gap-2.5">
+            <Gavel className="h-6 w-6 text-black" />
             Sealed-Bid Liquidation Engine
           </h1>
           <p className="text-sm text-slate-500 mt-1">
@@ -333,23 +333,23 @@ export default function LiquidationPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start md:self-auto">
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-md border border-black/10 self-start md:self-auto">
           <button
             onClick={() => setActiveTab("auctions")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
               activeTab === "auctions"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-900"
+                ? "bg-white text-black shadow-none"
+                : "text-slate-500 hover:text-black"
             }`}
           >
             Live Auctions
           </button>
           <button
             onClick={() => setActiveTab("how-it-works")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
               activeTab === "how-it-works"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-900"
+                ? "bg-white text-black shadow-none"
+                : "text-slate-500 hover:text-black"
             }`}
           >
             Mechanism Architecture
@@ -360,13 +360,13 @@ export default function LiquidationPage() {
       {activeTab === "auctions" ? (
         <div className="space-y-6">
           {/* Target Borrower Lookup & Trigger Card */}
-          <div className="border border-slate-200 rounded-2xl bg-white p-6 shadow-sm space-y-4">
+          <div className="border border-black/10 rounded-md bg-white p-6 shadow-none space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <h2 className="text-base font-semibold text-black flex items-center gap-2">
                 <Search className="h-4 w-4 text-slate-500" />
                 Target Borrower Position Lookup
               </h2>
-              <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100">
+              <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-black/10">
                 Liquidation LTV Threshold: 80%
               </span>
             </div>
@@ -378,14 +378,14 @@ export default function LiquidationPage() {
                   placeholder="Enter Borrower Address (0x...)"
                   value={targetBorrower}
                   onChange={(e) => setTargetBorrower(e.target.value.trim())}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 transition-all"
+                  className="w-full px-4 py-2.5 rounded-md border border-black/10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-900 transition-all"
                 />
               </div>
 
               <button
                 onClick={handleTriggerCheck}
                 disabled={isSubmitting || !isAddress(targetBorrower)}
-                className="w-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-xs rounded-xl py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-sm"
+                className="w-full bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-xs rounded-md py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow-none"
               >
                 {isSubmitting ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -399,18 +399,18 @@ export default function LiquidationPage() {
 
           {/* Auction State Card */}
           {isAddress(targetBorrower) && auctionData && (
-            <div className="border border-slate-200 rounded-2xl bg-white p-6 shadow-sm space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="border border-black/10 rounded-md bg-white p-6 shadow-none space-y-6">
+              <div className="flex items-center justify-between border-b border-black/10 pb-4">
                 <div>
                   <span className="text-xs font-mono uppercase text-slate-400 font-semibold tracking-wider">
                     Target Borrower State
                   </span>
-                  <p className="text-sm font-mono font-bold text-slate-900 mt-0.5">
+                  <p className="text-sm font-mono font-bold text-black mt-0.5">
                     {targetBorrower}
                   </p>
                 </div>
 
-                <div className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${AUCTION_STATE_LABELS[auctionData.state].color}`}>
+                <div className={`px-3 py-1.5 rounded-md text-xs font-semibold border ${AUCTION_STATE_LABELS[auctionData.state].color}`}>
                   {AUCTION_STATE_LABELS[auctionData.state].label}
                 </div>
               </div>
@@ -419,7 +419,7 @@ export default function LiquidationPage() {
               {auctionData.state === AuctionState.IDLE && (
                 <div className="py-6 text-center space-y-3">
                   <ShieldCheck className="h-10 w-10 text-emerald-500 mx-auto" />
-                  <h3 className="text-base font-semibold text-slate-900">No Open Auction for this Position</h3>
+                  <h3 className="text-base font-semibold text-black">No Open Auction for this Position</h3>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
                     If this position's Health Factor drops below 1.0 (LTV &gt; 80%), click "Check Eligibility &amp; Trigger" above to initiate a sealed-bid auction.
                   </p>
@@ -429,7 +429,7 @@ export default function LiquidationPage() {
               {/* OPEN State: Sealed Bidding */}
               {auctionData.state === AuctionState.OPEN && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-md border border-black/10">
                     <div>
                       <span className="text-xs text-slate-400 font-medium">Bidding Window Remaining</span>
                       <p className="text-lg font-bold font-mono text-emerald-600 flex items-center gap-1.5 mt-0.5">
@@ -439,20 +439,20 @@ export default function LiquidationPage() {
                     </div>
                     <div>
                       <span className="text-xs text-slate-400 font-medium">Total Bids Placed</span>
-                      <p className="text-lg font-bold font-mono text-slate-900 mt-0.5">
+                      <p className="text-lg font-bold font-mono text-black mt-0.5">
                         {auctionData.biddersCount} / 10
                       </p>
                     </div>
                     <div className="col-span-2 md:col-span-1">
                       <span className="text-xs text-slate-400 font-medium">Privacy Status</span>
-                      <p className="text-xs font-semibold text-slate-700 flex items-center gap-1 mt-1.5">
+                      <p className="text-xs font-semibold text-black flex items-center gap-1 mt-1.5">
                         <Lock className="h-3.5 w-3.5 text-slate-500" /> All Bids Encrypted (FHE)
                       </p>
                     </div>
                   </div>
 
                   {/* Submit Sealed Bid Box */}
-                  <div className="p-5 border border-slate-200 rounded-xl bg-slate-900 text-white space-y-4">
+                  <div className="p-5 border border-black/10 rounded-md bg-slate-900 text-white space-y-4">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
                       <Coins className="h-4 w-4 text-emerald-400" />
                       Submit Encrypted Sealed Bid (cUSDC)
@@ -468,7 +468,7 @@ export default function LiquidationPage() {
                           placeholder="Bid Amount in cUSDC (e.g. 500)"
                           value={bidAmount}
                           onChange={(e) => setBidAmount(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
+                          className="w-full px-4 py-2.5 rounded-md bg-slate-800 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
                         />
                         <span className="absolute right-4 top-2.5 text-xs font-bold text-slate-400">
                           cUSDC
@@ -478,7 +478,7 @@ export default function LiquidationPage() {
                       <button
                         onClick={handleSubmitBid}
                         disabled={isSubmitting || !bidAmount}
-                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl px-6 py-2.5 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-md px-6 py-2.5 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-none"
                       >
                         {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
                         Encrypt &amp; Submit Bid
@@ -490,11 +490,11 @@ export default function LiquidationPage() {
 
               {/* SELECTION_PENDING State */}
               {auctionData.state === AuctionState.SELECTION_PENDING && (
-                <div className="p-6 border border-amber-200 rounded-xl bg-amber-50/50 space-y-4 text-center">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 text-amber-700 mb-1">
+                <div className="p-6 border border-amber-200 rounded-md bg-amber-50/50 space-y-4 text-center">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-md bg-amber-100 text-amber-700 mb-1">
                     <Clock className="h-6 w-6 animate-pulse" />
                   </div>
-                  <h3 className="text-base font-bold text-slate-900">10-Minute Bidding Period Closed</h3>
+                  <h3 className="text-base font-bold text-black">10-Minute Bidding Period Closed</h3>
                   <p className="text-xs text-slate-600 max-w-md mx-auto">
                     The bidding window has elapsed. Anyone can now trigger the FHE Winner Selection phase to compute the highest bid homomorphically.
                   </p>
@@ -502,7 +502,7 @@ export default function LiquidationPage() {
                   <button
                     onClick={handleSelectWinner}
                     disabled={isSubmitting}
-                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl px-6 py-2.5 flex items-center justify-center gap-2 mx-auto transition-all disabled:opacity-50 shadow-sm"
+                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-md px-6 py-2.5 flex items-center justify-center gap-2 mx-auto transition-all disabled:opacity-50 shadow-none"
                   >
                     {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Gavel className="h-4 w-4" />}
                     Compute FHE Winner Selection
@@ -512,17 +512,17 @@ export default function LiquidationPage() {
 
               {/* SETTLED State */}
               {auctionData.state === AuctionState.SETTLED && (
-                <div className="p-6 border border-blue-200 rounded-xl bg-blue-50/50 space-y-4 text-center">
+                <div className="p-6 border border-black/10 rounded-md bg-slate-50/50 space-y-4 text-center">
                   <CheckCircle2 className="h-10 w-10 text-blue-600 mx-auto" />
-                  <h3 className="text-base font-bold text-slate-900">Winner Selected</h3>
+                  <h3 className="text-base font-bold text-black">Winner Selected</h3>
                   <p className="text-xs font-mono text-slate-600">
-                    Winning Liquidator: <span className="font-bold text-slate-900">{auctionData.winner}</span>
+                    Winning Liquidator: <span className="font-bold text-black">{auctionData.winner}</span>
                   </p>
 
                   <button
                     onClick={handleSettleLiquidation}
                     disabled={isSubmitting}
-                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl px-6 py-2.5 flex items-center justify-center gap-2 mx-auto transition-all disabled:opacity-50 shadow-sm"
+                    className="bg-blue-600 hover:bg-slate-500 text-white font-bold text-xs rounded-md px-6 py-2.5 flex items-center justify-center gap-2 mx-auto transition-all disabled:opacity-50 shadow-none"
                   >
                     {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                     Finalize &amp; Settle Liquidation
@@ -534,40 +534,40 @@ export default function LiquidationPage() {
         </div>
       ) : (
         /* Architecture Tab */
-        <div className="border border-slate-200 rounded-2xl bg-white p-8 shadow-sm space-y-6">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <HelpCircle className="h-5 w-5 text-slate-700" />
+        <div className="border border-black/10 rounded-md bg-white p-8 shadow-none space-y-6">
+          <h2 className="text-lg font-bold text-black flex items-center gap-2">
+            <HelpCircle className="h-5 w-5 text-black" />
             Sealed-Bid Liquidation State Machine
           </h2>
 
           <div className="grid md:grid-cols-4 gap-4 text-xs">
-            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+            <div className="border border-black/10 rounded-md p-4 bg-slate-50 space-y-2">
               <span className="font-mono font-bold text-slate-400">STATE 0</span>
-              <h3 className="font-bold text-slate-900 text-sm">1. Eligibility Check</h3>
+              <h3 className="font-bold text-black text-sm">1. Eligibility Check</h3>
               <p className="text-slate-600 leading-normal">
                 `requestLiquidationCheck()` verifies if debt * 10000 &gt;= collateral * 8000 in ciphertext via CoFHE oracle.
               </p>
             </div>
 
-            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+            <div className="border border-black/10 rounded-md p-4 bg-slate-50 space-y-2">
               <span className="font-mono font-bold text-slate-400">STATE 1</span>
-              <h3 className="font-bold text-slate-900 text-sm">2. Sealed Bidding</h3>
+              <h3 className="font-bold text-black text-sm">2. Sealed Bidding</h3>
               <p className="text-slate-600 leading-normal">
                 10-minute window opens. Liquidators submit `submitLiquidationBid()` with encrypted cUSDC token burns.
               </p>
             </div>
 
-            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+            <div className="border border-black/10 rounded-md p-4 bg-slate-50 space-y-2">
               <span className="font-mono font-bold text-slate-400">STATE 2</span>
-              <h3 className="font-bold text-slate-900 text-sm">3. FHE Winner Selection</h3>
+              <h3 className="font-bold text-black text-sm">3. FHE Winner Selection</h3>
               <p className="text-slate-600 leading-normal">
                 `selectWinningBid()` loops over bids in ciphertext using `FHE.gt()` to identify winner index without decrypting individual bids.
               </p>
             </div>
 
-            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-2">
+            <div className="border border-black/10 rounded-md p-4 bg-slate-50 space-y-2">
               <span className="font-mono font-bold text-slate-400">STATE 3</span>
-              <h3 className="font-bold text-slate-900 text-sm">4. Settlement</h3>
+              <h3 className="font-bold text-black text-sm">4. Settlement</h3>
               <p className="text-slate-600 leading-normal">
                 `settleLiquidation()` transfers 100% collateral to winner, clears borrower debt up to bid size, and refunds losing bidders.
               </p>
