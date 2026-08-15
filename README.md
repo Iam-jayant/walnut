@@ -206,8 +206,8 @@ User Input (Plain) → Browser Encryption → InEuint128 (Ciphertext)
 
 | Contract | Address | Arbiscan |
 |----------|---------|----------|
-| **WalnutLendingV2** | `0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8` | [View →](https://sepolia.arbiscan.io/address/0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8) |
-| **WalnutP2P (Confidential Marketplace)** | `0xDBE85a6e8369B7E155B4c78dA7e0e841d97322Bc` | [View →](https://sepolia.arbiscan.io/address/0xDBE85a6e8369B7E155B4c78dA7e0e841d97322Bc) |
+| **WalnutLendingV2** | `0xdF921cF29Aae0fBf524139a4cae9289478893fDf` | [View →](https://sepolia.arbiscan.io/address/0xdF921cF29Aae0fBf524139a4cae9289478893fDf) |
+| **WalnutP2P (Confidential Marketplace)** | `0xFd2AbEB7fd4fe91fc78ddD54dB13f7762a17A88E` | [View →](https://sepolia.arbiscan.io/address/0xFd2AbEB7fd4fe91fc78ddD54dB13f7762a17A88E) |
 | **cUSDC (WalnutFHERC20)** | `0x78136BC03b4549688C48181a26c521eb2F27F23F` | [View →](https://sepolia.arbiscan.io/address/0x78136BC03b4549688C48181a26c521eb2F27F23F) |
 | **WalnutVaultWrapper (wUSDC)** | `0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61` | [View →](https://sepolia.arbiscan.io/address/0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61) |
 | **WalnutPriceOracle** | `0x82E7caF958B329c47F10778E10A89B2319D67A14` | [View →](https://sepolia.arbiscan.io/address/0x82E7caF958B329c47F10778E10A89B2319D67A14) |
@@ -257,8 +257,8 @@ NEXT_PUBLIC_RPC_URL_PRIMARY=https://sepolia-rollup.arbitrum.io/rpc
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id_here
 
 # Contract Addresses (Canonical Live Network Deployment)
-NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8
-NEXT_PUBLIC_WALNUT_P2P_ADDRESS=0xDBE85a6e8369B7E155B4c78dA7e0e841d97322Bc
+NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0xdF921cF29Aae0fBf524139a4cae9289478893fDf
+NEXT_PUBLIC_WALNUT_P2P_ADDRESS=0xFd2AbEB7fd4fe91fc78ddD54dB13f7762a17A88E
 NEXT_PUBLIC_FHERC20_ADDRESS=0x78136BC03b4549688C48181a26c521eb2F27F23F
 NEXT_PUBLIC_ORACLE_ADDRESS=0x82E7caF958B329c47F10778E10A89B2319D67A14
 NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x6341A12D08EE6F6fA071CF94C7C4a878ee5AF3ef
@@ -760,7 +760,7 @@ npx hardhat verify --network arbitrumSepolia <CONTRACT_ADDRESS> [CONSTRUCTOR_ARG
 
 # Example: Verify WalnutLendingV2
 npx hardhat verify --network arbitrumSepolia \
-  0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8 \
+  0xdF921cF29Aae0fBf524139a4cae9289478893fDf \
   <MockUSDC_Address> \
   <PriceOracle_Address> \
   <FHERC20_Address>
@@ -900,7 +900,7 @@ In no event shall the authors or copyright holders be liable for any claim, dama
 
 **Walnut Protocol** • Confidential Lending for Everyone
 
-[Get Started](https://walnut-finance.vercel.app/) • [Read Docs](./Technical-docs) • [View Contracts](https://sepolia.arbiscan.io/address/0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8)
+[Get Started](https://walnut-finance.vercel.app/) • [Read Docs](./Technical-docs) • [View Contracts](https://sepolia.arbiscan.io/address/0xdF921cF29Aae0fBf524139a4cae9289478893fDf)
 
 ---
 
