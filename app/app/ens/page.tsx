@@ -1,20 +1,21 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Wallet, Clock, Link as LinkIcon, Unlink, Key, ShieldCheck, HelpCircle } from "lucide-react";
-import { useAccount, useSignTypedData, useWriteContract, useReadContract, useChainId, usePublicClient } from "wagmi";
-import { formatUnits } from "viem";
+import { Wallet, Clock, Link as LinkIcon, Unlink, Key, ShieldCheck, HelpCircle, Copy, Check } from "lucide-react";
+import { useAccount, useSignTypedData, useReadContract, useChainId, usePublicClient, useWalletClient } from "wagmi";
+import { formatUnits, verifyTypedData } from "viem";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/walnut/toast-provider";
 import walnutABI from "@/abis/WalnutLending.deployed.json";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
-import { walnutContractAddress as WALNUT_LENDING_ADDRESS } from "@/lib/walnut-contract";
+import { walnutContractAddress as WALNUT_LENDING_ADDRESS, getGasFeeOverrides } from "@/lib/walnut-contract";
 
 export default function ENSSettingsPage() {
   const { address } = useAccount();
   const chainId = useChainId();
   const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
   const { addToast } = useToast();
   const { collateral, decryptForView } = useWalnutProtocol();
   
@@ -25,15 +26,16 @@ export default function ENSSettingsPage() {
   const [primaryAddressToLink, setPrimaryAddressToLink] = useState("");
   const { signTypedDataAsync } = useSignTypedData();
   const [generatedSignature, setGeneratedSignature] = useState("");
+  const [copiedSignature, setCopiedSignature] = useState(false);
 
   // Primary Wallet Flow (Submit Signature)
   const [secondaryAddressToSubmit, setSecondaryAddressToSubmit] = useState("");
   const [signatureToSubmit, setSignatureToSubmit] = useState("");
-  const { writeContractAsync: writeLink, isPending: isLinking } = useWriteContract();
+  const [isLinking, setIsLinking] = useState(false);
 
   // Primary Wallet Flow (Unlink)
   const [secondaryAddressToUnlink, setSecondaryAddressToUnlink] = useState("");
-  const { writeContractAsync: writeUnlink, isPending: isUnlinking } = useWriteContract();
+  const [isUnlinking, setIsUnlinking] = useState(false);
 
   // Aggregation State
   const [linkedAddresses, setLinkedAddresses] = useState<string[]>([]);
@@ -161,12 +163,62 @@ export default function ENSSettingsPage() {
   };
 
   const handleSubmitLink = async () => {
+    if (!walletClient || !publicClient || !address) return;
+    setIsLinking(true);
     try {
-      const txHash = await writeLink({
+      // 1. Verify the signature matches the input address AND the connected primary address
+      const currentNonce = await publicClient.readContract({
+        address: WALNUT_LENDING_ADDRESS as `0x${string}`,
+        abi: walnutABI,
+        functionName: "nonces",
+        args: [secondaryAddressToSubmit as `0x${string}`]
+      });
+
+      const isValid = await verifyTypedData({
+        address: secondaryAddressToSubmit as `0x${string}`,
+        domain: {
+          name: "WalnutLending",
+          version: "2",
+          chainId: chainId,
+          verifyingContract: WALNUT_LENDING_ADDRESS as `0x${string}`,
+        },
+        types: {
+          LinkWallet: [
+            { name: "primary", type: "address" },
+            { name: "secondary", type: "address" },
+            { name: "nonce", type: "uint256" },
+            { name: "consentMessage", type: "string" }
+          ],
+        },
+        primaryType: "LinkWallet",
+        message: {
+          primary: address as `0x${string}`,
+          secondary: secondaryAddressToSubmit as `0x${string}`,
+          nonce: BigInt(currentNonce as any),
+          consentMessage: "I authorize aggregation and acknowledge that all liquidation surplus accrues exclusively to the primary wallet."
+        },
+        signature: signatureToSubmit as `0x${string}`,
+      });
+
+      if (!isValid) {
+        addToast({ 
+          variant: "error", 
+          title: "Invalid Signature", 
+          message: "The signature is invalid. Ensure you are connected to the correct Primary wallet and entered the correct Secondary address." 
+        });
+        setIsLinking(false);
+        return;
+      }
+
+      const gasOverrides = await getGasFeeOverrides(publicClient);
+      const txHash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
         abi: walnutABI,
         functionName: "linkWallet",
         args: [secondaryAddressToSubmit as `0x${string}`, signatureToSubmit as `0x${string}`],
+        account: address,
+        chain: walletClient.chain,
+        ...gasOverrides
       });
       addToast({ 
         variant: "pending", 
@@ -174,16 +226,14 @@ export default function ENSSettingsPage() {
         title: `Tx: ${txHash.slice(0, 10)}...${txHash.slice(-8)}` 
       });
       
-      if (publicClient) {
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-        if (receipt.status === 'success') {
-          addToast({ variant: "success", message: "Successfully linked wallet on-chain!" });
-          setSecondaryAddressToSubmit("");
-          setSignatureToSubmit("");
-          hasLoadedLinked.current = false; // trigger refresh
-        } else {
-          addToast({ variant: "error", message: "Transaction reverted on-chain!" });
-        }
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status === 'success') {
+        addToast({ variant: "success", message: "Successfully linked wallet on-chain!" });
+        setSecondaryAddressToSubmit("");
+        setSignatureToSubmit("");
+        hasLoadedLinked.current = false; // trigger refresh
+      } else {
+        addToast({ variant: "error", message: "Transaction reverted on-chain!" });
       }
     } catch (e: any) {
       console.error(e);
@@ -192,16 +242,24 @@ export default function ENSSettingsPage() {
         message: "Failed to link wallet", 
         title: e.shortMessage || e.message 
       });
+    } finally {
+      setIsLinking(false);
     }
   };
 
   const handleUnlink = async () => {
+    if (!walletClient || !publicClient || !address) return;
+    setIsUnlinking(true);
     try {
-      const txHash = await writeUnlink({
+      const gasOverrides = await getGasFeeOverrides(publicClient);
+      const txHash = await walletClient.writeContract({
         address: WALNUT_LENDING_ADDRESS as `0x${string}`,
         abi: walnutABI,
-        functionName: "unlinkWallet",
+        functionName: "requestUnlink", // It's requestUnlink in V2, not unlinkWallet
         args: [secondaryAddressToUnlink as `0x${string}`],
+        account: address,
+        chain: walletClient.chain,
+        ...gasOverrides
       });
       addToast({ 
         variant: "pending", 
@@ -209,15 +267,13 @@ export default function ENSSettingsPage() {
         title: `Tx: ${txHash.slice(0, 10)}...${txHash.slice(-8)}` 
       });
       
-      if (publicClient) {
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-        if (receipt.status === 'success') {
-          addToast({ variant: "success", message: "Successfully unlinked wallet on-chain!" });
-          setSecondaryAddressToUnlink("");
-          hasLoadedLinked.current = false; // trigger refresh
-        } else {
-          addToast({ variant: "error", message: "Transaction reverted on-chain!" });
-        }
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status === 'success') {
+        addToast({ variant: "success", message: "Successfully unlinked wallet on-chain!" });
+        setSecondaryAddressToUnlink("");
+        hasLoadedLinked.current = false; // trigger refresh
+      } else {
+        addToast({ variant: "error", message: "Transaction reverted on-chain!" });
       }
     } catch (e: any) {
       console.error(e);
@@ -226,6 +282,8 @@ export default function ENSSettingsPage() {
         message: "Failed to unlink wallet", 
         title: e.shortMessage || e.message 
       });
+    } finally {
+      setIsUnlinking(false);
     }
   };
 
@@ -237,9 +295,9 @@ export default function ENSSettingsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
-      <header className="flex flex-col gap-2 border-b border-slate-100 pb-5">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 flex items-center gap-2">
-          <Wallet className="h-6 w-6 text-slate-700" />
+      <header className="flex flex-col gap-2 border-b border-black/10 pb-5">
+        <h1 className="text-2xl font-semibold tracking-tight text-black flex items-center gap-2">
+          <Wallet className="h-6 w-6 text-black" />
           Private Wallet Aggregation
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -264,8 +322,8 @@ export default function ENSSettingsPage() {
 
       <div className="space-y-6">
         {activeTab === "secondary" && (
-          <div className="max-w-2xl border border-slate-200 rounded-xl bg-white p-6 shadow-sm space-y-4">
-            <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+          <div className="max-w-2xl border border-black/10 rounded-md bg-white p-6 shadow-none space-y-4">
+            <h2 className="text-lg font-semibold text-black flex items-center gap-2">
               <Key className="h-5 w-5 text-slate-600" />
               Sign Consent
             </h2>
@@ -286,10 +344,27 @@ export default function ENSSettingsPage() {
             </div>
 
             {generatedSignature && (
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg break-all text-xs text-slate-700 font-mono mt-4 relative">
-                <p className="font-semibold text-slate-900 mb-1">Generated Signature:</p>
-                {generatedSignature}
-                <div className="mt-4 text-slate-500 bg-white p-2 rounded border border-slate-100 text-center font-medium">
+              <div className="p-5 bg-[#fafafa] border border-black/10 rounded-md relative group">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-semibold text-black">Generated Signature</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-[#1EAEA1] hover:bg-[#1EAEA1]/10 hover:text-[#1EAEA1] h-8 px-3"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedSignature);
+                      setCopiedSignature(true);
+                      setTimeout(() => setCopiedSignature(false), 2000);
+                    }}
+                  >
+                    {copiedSignature ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                    {copiedSignature ? "Copied!" : "Copy"}
+                  </Button>
+                </div>
+                <div className="bg-white p-4 rounded-md border border-black/10 font-mono text-[11px] leading-relaxed text-black break-all shadow-none">
+                  {generatedSignature}
+                </div>
+                <div className="mt-4 text-white bg-[#1EAEA1] p-3 rounded-md text-center text-sm font-medium shadow-none">
                   Copy this exact signature and paste it into the "Consent Signature" field on the Primary Wallet.
                 </div>
               </div>
@@ -299,21 +374,91 @@ export default function ENSSettingsPage() {
 
         {activeTab === "primary" && (
           <div className="space-y-6">
-            <div className="border border-slate-200 rounded-xl bg-white p-6 shadow-sm space-y-4">
-              <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-indigo-600" />
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="border border-black/10 rounded-md bg-white p-6 shadow-none flex flex-col h-full">
+                <div className="flex-1 space-y-4">
+                  <h2 className="text-lg font-semibold text-black flex items-center gap-2">
+                    <LinkIcon className="h-5 w-5 text-slate-600" />
+                    Link Secondary Wallet
+                  </h2>
+                  <p className="text-sm text-slate-600">
+                    Register a secondary wallet to pool its collateral and debt with your own. You need its EIP-712 consent signature.
+                  </p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-semibold text-black">Secondary Wallet Address</label>
+                      <Input 
+                        placeholder="0x..." 
+                        className="mt-1"
+                        value={secondaryAddressToSubmit}
+                        onChange={(e) => setSecondaryAddressToSubmit(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-black">Consent Signature</label>
+                      <Input 
+                        placeholder="0x..." 
+                        className="mt-1"
+                        value={signatureToSubmit}
+                        onChange={(e) => setSignatureToSubmit(e.target.value)}
+                      />
+                      {signatureToSubmit && !isValidSignature && (
+                        <p className="text-xs text-red-500 mt-1 font-medium">Please enter a valid signature starting with 0x (approx 130+ characters), NOT an address.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-6">
+                  <Button onClick={handleSubmitLink} disabled={isLinking || !isValidSignature || !secondaryAddressToSubmit} className="w-full bg-black text-white hover:bg-black/90">
+                    {isLinking ? "Submitting..." : "Submit Link"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border border-black/10 rounded-md bg-white p-6 shadow-none flex flex-col h-full">
+                <div className="flex-1 space-y-4">
+                  <h2 className="text-lg font-semibold text-black flex items-center gap-2">
+                    <Unlink className="h-5 w-5 text-slate-600" />
+                    Unlink Wallet
+                  </h2>
+                  <p className="text-sm text-slate-600">
+                    Remove a previously linked secondary wallet. Fails if this causes undercollateralization.
+                  </p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-semibold text-black">Secondary Wallet Address</label>
+                      <Input 
+                        placeholder="0x..." 
+                        className="mt-1"
+                        value={secondaryAddressToUnlink}
+                        onChange={(e) => setSecondaryAddressToUnlink(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-6">
+                  <Button variant="outline" onClick={handleUnlink} disabled={isUnlinking || !secondaryAddressToUnlink} className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
+                    {isUnlinking ? "Submitting..." : "Unlink Wallet"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-black/10 rounded-md bg-white p-6 shadow-none space-y-4">
+              <h2 className="text-lg font-semibold text-black flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-slate-600" />
                 Aggregated Collateral
               </h2>
               
-              <div className="flex justify-between items-center bg-slate-50 p-4 rounded-lg">
+              <div className="flex justify-between items-center bg-slate-50 p-4 rounded-md">
                 <span className="text-sm font-medium text-slate-600">Your Own Collateral:</span>
-                <span className="font-semibold text-slate-900">{formatUnits(primaryBal, 6)} USDC</span>
+                <span className="font-semibold text-black">{formatUnits(primaryBal, 6)} USDC</span>
               </div>
               
               {linkedAddresses.map(addr => (
-                <div key={addr} className="flex justify-between items-center bg-slate-50 p-4 rounded-lg border border-slate-100">
+                <div key={addr} className="flex justify-between items-center bg-slate-50 p-4 rounded-md border border-black/10">
                   <span className="text-sm font-medium text-slate-600">Linked Wallet ({addr.slice(0,6)}...{addr.slice(-4)}):</span>
-                  <span className="font-semibold text-slate-900">{formatUnits(linkedCollaterals[addr] || 0n, 6)} USDC</span>
+                  <span className="font-semibold text-black">{formatUnits(linkedCollaterals[addr] || 0n, 6)} USDC</span>
                 </div>
               ))}
               
@@ -323,71 +468,9 @@ export default function ENSSettingsPage() {
                 </div>
               )}
               
-              <div className="flex justify-between items-center bg-indigo-50 p-4 rounded-lg border border-indigo-100 mt-2">
-                <span className="text-sm font-semibold text-indigo-900">Total Borrowing Power:</span>
-                <span className="text-xl font-bold text-indigo-900">{formatUnits(totalAggregated, 6)} USDC</span>
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="border border-slate-200 rounded-xl bg-white p-6 shadow-sm space-y-4">
-                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                  <LinkIcon className="h-5 w-5 text-slate-600" />
-                  Link Secondary Wallet
-                </h2>
-                <p className="text-sm text-slate-600">
-                  Register a secondary wallet to pool its collateral and debt with your own. You need its EIP-712 consent signature.
-                </p>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-semibold text-slate-700">Secondary Wallet Address</label>
-                    <Input 
-                      placeholder="0x..." 
-                      className="mt-1"
-                      value={secondaryAddressToSubmit}
-                      onChange={(e) => setSecondaryAddressToSubmit(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-semibold text-slate-700">Consent Signature</label>
-                    <Input 
-                      placeholder="0x..." 
-                      className="mt-1"
-                      value={signatureToSubmit}
-                      onChange={(e) => setSignatureToSubmit(e.target.value)}
-                    />
-                    {signatureToSubmit && !isValidSignature && (
-                      <p className="text-xs text-red-500 mt-1 font-medium">Please enter a valid signature starting with 0x (approx 130+ characters), NOT an address.</p>
-                    )}
-                  </div>
-                  <Button onClick={handleSubmitLink} disabled={isLinking || !isValidSignature || !secondaryAddressToSubmit} className="w-full">
-                    {isLinking ? "Submitting..." : "Submit Link"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="border border-slate-200 rounded-xl bg-white p-6 shadow-sm space-y-4 h-fit">
-                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                  <Unlink className="h-5 w-5 text-slate-600" />
-                  Unlink Wallet
-                </h2>
-                <p className="text-sm text-slate-600">
-                  Remove a previously linked secondary wallet. Fails if this causes undercollateralization.
-                </p>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-semibold text-slate-700">Secondary Wallet Address</label>
-                    <Input 
-                      placeholder="0x..." 
-                      className="mt-1"
-                      value={secondaryAddressToUnlink}
-                      onChange={(e) => setSecondaryAddressToUnlink(e.target.value)}
-                    />
-                  </div>
-                  <Button variant="outline" onClick={handleUnlink} disabled={isUnlinking || !secondaryAddressToUnlink} className="w-full text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
-                    {isUnlinking ? "Submitting..." : "Unlink Wallet"}
-                  </Button>
-                </div>
+              <div className="flex justify-between items-center bg-slate-50 p-4 rounded-md border border-black/10 mt-2">
+                <span className="text-sm font-semibold text-black">Total Borrowing Power:</span>
+                <span className="text-xl font-bold text-black">{formatUnits(totalAggregated, 6)} USDC</span>
               </div>
             </div>
           </div>
