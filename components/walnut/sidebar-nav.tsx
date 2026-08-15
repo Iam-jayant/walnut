@@ -36,7 +36,7 @@ const navigationItems: NavItem[] = [
     ]
   },
   { label: "Liquidation", href: "/app/liquidation", icon: ShieldCheck },
-  { label: "P2P", href: "/app/p2p", icon: Users, comingSoon: true },
+  { label: "P2P", href: "/app/p2p", icon: Users },
   { label: "ENS Aggregation", href: "/app/ens", icon: Wallet },
   { label: "History", href: "/app/history", icon: Clock },
   { label: "Settings", href: "/app/settings", icon: Settings },
@@ -96,18 +96,14 @@ export function SidebarNav() {
   };
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-[#EFEFEF] bg-[#FAFAFA]/50 backdrop-blur-xl">
-      <div className="flex h-16 shrink-0 items-center px-6">
+    <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/5 bg-[#09090B]/95 backdrop-blur-2xl">
+      <div className="flex h-20 shrink-0 items-center px-6 pt-2">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/walnut-logo.svg" alt="Walnut" className="h-13 w-auto" />
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider text-black/60 font-medium">
-            </span>
-          </div>
+          <img src="/walnut-logo-dark.svg" alt="Walnut" className="h-14 w-auto" />
         </Link>
       </div>
 
-      <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-6">
+      <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {navigationItems.map((item) => {
           
           if (item.subItems) {
@@ -119,28 +115,28 @@ export function SidebarNav() {
                  <button
                    onClick={() => toggleGroup(item.label)}
                    className={cn(
-                     "group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                     isChildActive ? "text-black bg-black/5" : "text-muted-foreground hover:bg-black/5 hover:text-foreground"
+                     "group flex w-full items-center justify-between rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-200 border border-transparent",
+                     isChildActive ? "text-white" : "text-white/60 hover:text-white"
                    )}
                  >
                    <div className="flex items-center gap-3">
                      <item.icon
-                       size={16}
+                       size={18}
                        className={cn(
                          "transition-colors",
-                         isChildActive ? "text-black" : "text-muted-foreground group-hover:text-foreground"
+                         isChildActive ? "text-white" : "text-white/50 group-hover:text-white"
                        )}
                      />
                      {item.label}
                    </div>
                    <ChevronDown 
                      size={14} 
-                     className={cn("transition-transform duration-200", isOpen ? "rotate-180" : "", isChildActive ? "text-black/50" : "text-muted-foreground")} 
+                     className={cn("transition-transform duration-200", isOpen ? "rotate-180" : "", isChildActive ? "text-white/80" : "text-white/40")} 
                    />
                  </button>
                  
                  {isOpen && (
-                   <div className="ml-9 mt-1 flex flex-col gap-1 border-l border-black/10 pl-3 py-1">
+                   <div className="ml-5 mt-1 flex flex-col gap-1 border-l border-white/10 pl-4 py-1">
                      {item.subItems.map(sub => {
                        const isActive = pathname === sub.href;
                        return (
@@ -148,15 +144,12 @@ export function SidebarNav() {
                            key={sub.href}
                            href={sub.href}
                            className={cn(
-                             "relative flex items-center rounded-md px-3 py-2 text-sm font-medium transition-all duration-200",
+                             "relative flex items-center rounded-md px-3 py-2 text-sm font-medium transition-all duration-200 border",
                              isActive
-                               ? "bg-white text-black shadow-sm ring-1 ring-black/5"
-                               : "text-slate-500 hover:bg-black/5 hover:text-slate-900"
+                               ? "bg-transparent text-white border-[#00C2FF]"
+                               : "text-white/60 border-transparent hover:text-white"
                            )}
                          >
-                           {isActive && (
-                             <div className="absolute -left-3.25 top-1/2 -mt-1 h-2 w-2 rounded-full border-2 border-white bg-black" />
-                           )}
                            {sub.label}
                          </Link>
                        )
@@ -173,18 +166,18 @@ export function SidebarNav() {
               key={item.label}
               href={item.href!}
               className={cn(
-                "group flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group flex items-center justify-between rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-200 border",
                 isActive
-                  ? "bg-white text-black shadow-sm ring-1 ring-black/5"
-                  : "text-muted-foreground hover:bg-black/5 hover:text-foreground"
+                  ? "bg-transparent text-white border-[#00C2FF]"
+                  : "text-white/60 border-transparent hover:text-white"
               )}
             >
               <div className="flex items-center gap-3">
                 <item.icon
-                  size={16}
+                  size={18}
                   className={cn(
                     "transition-colors",
-                    isActive ? "text-black" : "text-muted-foreground group-hover:text-foreground"
+                    isActive ? "text-white" : "text-white/50 group-hover:text-white"
                   )}
                 />
                 {item.label}
@@ -199,69 +192,62 @@ export function SidebarNav() {
         })}
       </nav>
 
-      <div className="p-4 border-t border-black/5">
+      <div className="p-4 pb-12">
         <button
           onClick={handleWalletClick}
-          className="flex w-full items-center gap-3 rounded-lg p-2 transition-all hover:bg-black/5"
+          className="flex w-full items-center gap-3 rounded-xl border border-white/5 bg-[#141414] p-3 transition-all hover:bg-white/5 hover:border-white/10"
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/5">
-            <Activity size={16} className="text-muted-foreground" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-black border border-white/10">
+            <Activity size={14} className="text-white/60" />
           </div>
           <div className="flex flex-col items-start overflow-hidden text-sm">
-            <span className="truncate font-medium text-foreground">
+            <span className="truncate font-medium text-white/90">
               {isConnected ? formatAddress(address) : "Connect Wallet"}
             </span>
           </div>
+          <ChevronDown size={14} className="ml-auto text-white/40" />
         </button>
 
         {isConnected && (
-          <div className="mt-3 flex items-center justify-between rounded-lg border border-black/5 bg-white p-3 shadow-sm">
+          <div className="mt-3 flex items-center justify-between px-3">
             <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              <span className="text-[9px] uppercase tracking-wider text-white/40 font-bold mb-0.5">
                 Credit Tier
               </span>
-              <span className={cn("text-sm font-semibold", 
-                creditTier === "Tier 1" ? "text-red-600" :
-                creditTier === "Tier 2" ? "text-amber-600" :
-                "text-emerald-600"
+              <span className={cn("text-sm font-medium", 
+                creditTier === "Tier 1" ? "text-red-400" :
+                creditTier === "Tier 2" ? "text-amber-400" :
+                "text-[#00C2FF]"
               )}>
                 {creditTier}
               </span>
             </div>
             <div className="flex flex-col items-end">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              <span className="text-[9px] uppercase tracking-wider text-white/40 font-bold mb-0.5">
                 Max LTV
               </span>
-              <span className="text-sm font-semibold">75%</span>
+              <span className="text-sm font-medium text-white/90">75%</span>
             </div>
           </div>
         )}
 
-        <div className={cn(
-          "mt-4 flex items-center justify-between rounded-md px-3 py-2",
-          systemStatus === "All Operational" ? "bg-emerald-50 border border-emerald-200" :
-          systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "bg-amber-50 border border-amber-200" :
-          "bg-red-50 border border-red-200"
-        )}>
-          <span className={cn(
-            "text-xs font-medium",
-            systemStatus === "All Operational" ? "text-emerald-700" :
-            systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "text-amber-700" :
-            "text-red-700"
-          )}>System Status</span>
-          <div className="flex items-center gap-1.5">
+        <div className="mt-6 flex items-center gap-2 px-3">
+          <span className="text-[10px] uppercase tracking-wider text-white/40 font-bold">
+            System Status
+          </span>
+          <div className="ml-auto flex items-center gap-2">
             <div className={cn(
-              "h-1.5 w-1.5 rounded-full",
+              "h-1.5 w-1.5 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]",
               systemStatus === "All Operational" ? "bg-emerald-500" :
-              systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "bg-amber-500" :
-              "bg-red-500"
+              systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]" :
+              "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"
             )} />
             <span className={cn(
-              "text-[10px]",
-              systemStatus === "All Operational" ? "text-emerald-700" :
-              systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "text-amber-700" :
-              "text-red-700"
-            )}>{systemStatus}</span>
+              "text-[10px] font-medium",
+              systemStatus === "All Operational" ? "text-emerald-400" :
+              systemStatus === "Permit Pending" || systemStatus === "Degraded" ? "text-amber-400" :
+              "text-red-400"
+            )}>{systemStatus === "All Operational" ? "All Systems Operational" : systemStatus}</span>
           </div>
         </div>
       </div>
