@@ -76,17 +76,6 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "SafeERC20FailedOperation",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "int32",
         "name": "value",
         "type": "int32"
@@ -186,50 +175,12 @@
       },
       {
         "indexed": false,
-        "internalType": "uint256",
-        "name": "requestId",
-        "type": "uint256"
-      }
-    ],
-    "name": "CreditCountSyncRequested",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint8",
-        "name": "newTier",
-        "type": "uint8"
+        "internalType": "bytes32",
+        "name": "newTierCtHash",
+        "type": "bytes32"
       }
     ],
     "name": "CreditTierUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "requestId",
-        "type": "uint256"
-      }
-    ],
-    "name": "DepositSyncRequested",
     "type": "event"
   },
   {
@@ -255,6 +206,19 @@
     "anonymous": false,
     "inputs": [],
     "name": "EIP712DomainChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      }
+    ],
+    "name": "LiquidationAuctionFailed",
     "type": "event"
   },
   {
@@ -325,6 +289,25 @@
       }
     ],
     "name": "LiquidationCheckRequested",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "requestId",
+        "type": "uint256"
+      }
+    ],
+    "name": "LiquidationValidCheckRequested",
     "type": "event"
   },
   {
@@ -579,6 +562,25 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "vault",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "approved",
+        "type": "bool"
+      }
+    ],
+    "name": "VaultApprovalSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "primary",
         "type": "address"
       },
@@ -653,25 +655,6 @@
       }
     ],
     "name": "WithdrawFinalized",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "requestId",
-        "type": "uint256"
-      }
-    ],
-    "name": "WithdrawSyncRequested",
     "type": "event"
   },
   {
@@ -822,25 +805,6 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "name": "decryptRequests",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "token",
         "type": "address"
@@ -868,7 +832,7 @@
             "type": "bytes"
           }
         ],
-        "internalType": "struct InEuint128",
+        "internalType": "struct InEuint64",
         "name": "encryptedAmount",
         "type": "tuple"
       }
@@ -970,6 +934,25 @@
     "inputs": [
       {
         "internalType": "address",
+        "name": "primary",
+        "type": "address"
+      }
+    ],
+    "name": "getAggregatedCollateralCtHash",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
         "name": "user",
         "type": "address"
       }
@@ -1044,6 +1027,19 @@
   },
   {
     "inputs": [],
+    "name": "getEncryptedTotalBorrowedCtHash",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "getLoans",
     "outputs": [
       {
@@ -1091,6 +1087,25 @@
       }
     ],
     "name": "hasActiveLoan",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "isApprovedVault",
     "outputs": [
       {
         "internalType": "bool",
@@ -1278,25 +1293,6 @@
         "type": "uint256"
       }
     ],
-    "name": "pendingTotalBorrowedSyncVersions",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
     "name": "pendingUnlinks",
     "outputs": [
       {
@@ -1395,19 +1391,6 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "user",
-        "type": "address"
-      }
-    ],
-    "name": "requestCreditTierUpdate",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
         "name": "borrower",
         "type": "address"
       }
@@ -1446,6 +1429,24 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "vault",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "approved",
+        "type": "bool"
+      }
+    ],
+    "name": "setApprovedVault",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "uint256",
         "name": "tier",
         "type": "uint256"
@@ -1457,6 +1458,19 @@
       }
     ],
     "name": "setTierLTV",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_wUSDC",
+        "type": "address"
+      }
+    ],
+    "name": "setWUSDCAddress",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1532,53 +1546,7 @@
         "type": "bytes"
       }
     ],
-    "name": "syncBorrowActive",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "ciphertext",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint128",
-        "name": "result",
-        "type": "uint128"
-      },
-      {
-        "internalType": "bytes",
-        "name": "signature",
-        "type": "bytes"
-      }
-    ],
-    "name": "syncCreditCount",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "ciphertext",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint128",
-        "name": "result",
-        "type": "uint128"
-      },
-      {
-        "internalType": "bytes",
-        "name": "signature",
-        "type": "bytes"
-      }
-    ],
-    "name": "syncDepositTransfer",
+    "name": "syncAuctionValidCheck",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1647,29 +1615,6 @@
         "type": "bytes"
       }
     ],
-    "name": "syncTotalBorrowed",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "ciphertext",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint128",
-        "name": "result",
-        "type": "uint128"
-      },
-      {
-        "internalType": "bytes",
-        "name": "signature",
-        "type": "bytes"
-      }
-    ],
     "name": "syncUnlink",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -1701,29 +1646,6 @@
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "ciphertext",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint128",
-        "name": "result",
-        "type": "uint128"
-      },
-      {
-        "internalType": "bytes",
-        "name": "signature",
-        "type": "bytes"
-      }
-    ],
-    "name": "syncWithdrawTransfer",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
@@ -1735,45 +1657,6 @@
         "internalType": "uint16",
         "name": "",
         "type": "uint16"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalBorrowed",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalBorrowedSyncVersion",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalDeposited",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1814,12 +1697,12 @@
   },
   {
     "inputs": [],
-    "name": "utilizationRate",
+    "name": "wUSDC_address",
     "outputs": [
       {
-        "internalType": "uint256",
+        "internalType": "address",
         "name": "",
-        "type": "uint256"
+        "type": "address"
       }
     ],
     "stateMutability": "view",

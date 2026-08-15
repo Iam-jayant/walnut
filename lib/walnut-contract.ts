@@ -1,6 +1,8 @@
 import type { Abi, Address } from "viem";
 
 import walnutLendingAbiRaw from "../abis/WalnutLending.deployed.json";
+import walnutP2pAbiRaw from "../abis/WalnutP2P.deployed.json";
+import walnutWrapperAbiRaw from "../abis/WalnutVaultWrapper.deployed.json";
 
 function requirePublicEnv(key: string, value: string | undefined) {
   if (!value) {
@@ -46,7 +48,27 @@ export const walnutMockUsdcAddress = requirePublicEnv(
   process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS
 ) as Address;
 
+export const walnutP2PAddress = requirePublicEnv(
+  "NEXT_PUBLIC_WALNUT_P2P_ADDRESS",
+  process.env.NEXT_PUBLIC_WALNUT_P2P_ADDRESS
+) as Address;
+
+export const walnutWrapperAddress = requirePublicEnv(
+  "NEXT_PUBLIC_WRAPPER_ADDRESS",
+  process.env.NEXT_PUBLIC_WRAPPER_ADDRESS
+) as Address;
+
 export const walnutLendingAbi = walnutLendingAbiRaw as unknown as Abi;
+export const walnutP2pAbi = walnutP2pAbiRaw as unknown as Abi;
+export const walnutWrapperAbi = walnutWrapperAbiRaw as unknown as Abi;
+
+export const erc20Abi = [
+  { inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], name: "approve", outputs: [{ name: "", type: "bool" }], stateMutability: "nonpayable", type: "function" },
+  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "account", type: "address" }], name: "balanceOf", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "decimals", outputs: [{ name: "", type: "uint8" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], name: "mint", outputs: [], stateMutability: "nonpayable", type: "function" },
+] as const;
 
 export async function getGasFeeOverrides(publicClient: any) {
   try {
@@ -64,5 +86,3 @@ export async function getGasFeeOverrides(publicClient: any) {
   }
   return {};
 }
-
-
