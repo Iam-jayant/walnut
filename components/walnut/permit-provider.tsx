@@ -73,7 +73,7 @@ export function WalnutPermitProvider({ children }: { children: ReactNode }) {
     setIsCreatingPermit(true);
 
     try {
-      const permit = await cofheClient.permits.getOrCreateSelfPermit(chainId, address);
+      const permit = await cofheClient.permits.getOrCreateSelfPermit(chainId, address, { issuer: address });
 
       debugPermit("Permit created/retrieved:", {
         hash: permit?.hash,
