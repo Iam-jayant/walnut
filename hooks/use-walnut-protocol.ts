@@ -559,8 +559,8 @@ export function useWalnutProtocol() {
   // Define decryptForView before the useEffect hooks that depend on it
   const decryptForView = useCallback(
     async (ctHash: bigint | string, accountAddress: Address) => {
-      if (!cofheClient) {
-        debugDecrypt("decryptForView: No cofheClient available");
+      if (!cofheClient || !permit.hasPermit) {
+        debugDecrypt("decryptForView: No active permit or cofheClient available");
         return undefined;
       }
 
@@ -593,18 +593,21 @@ export function useWalnutProtocol() {
         });
         return typeof decrypted === "bigint" ? decrypted : undefined;
       } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes("Active permit not found") || msg.includes("permit")) {
+          debugDecrypt("decryptForView: Active permit not found for account. Returning undefined.");
+          return undefined;
+        }
         debugError("decryptForView: Failed!", {
           errorType: typeof error,
           errorConstructor: error?.constructor?.name,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          errorStack: error instanceof Error ? error.stack : undefined,
-          errorObject: error,
+          errorMessage: msg,
           ctHash: ctHash.toString(),
           accountAddress,
           permitHash: permit.permitHash,
           chainId: walnutChainId
         });
-        throw error;
+        return undefined;
       } finally {
         decryptInflightRef.current = Math.max(0, decryptInflightRef.current - 1);
       }
