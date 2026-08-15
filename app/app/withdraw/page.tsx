@@ -1,465 +1,375 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import type { Address } from "viem";
-import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-
-import { Input } from "@/components/ui/input";
-import { useCofheEncrypt } from "@cofhe/react";
 import { Encryptable } from "@cofhe/sdk";
+import { ShieldAlert, Lock, ArrowRight, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useToast } from "@/components/walnut/toast-provider";
-import { wagmiConfig } from "@/lib/web3-config";
+import { TransactionProgressModal, TransactionStage, StepItem } from "@/components/walnut/transaction-progress-modal";
 import {
   walnutChainId,
   walnutLendingAbi,
+  walnutWrapperAbi,
+  erc20Abi,
+  getGasFeeOverrides,
   walnutContractAddress as WALNUT_LENDING_ADDRESS,
+  walnutWrapperAddress as WRAPPER_ADDRESS,
   walnutMockUsdcAddress as MOCK_USDC_ADDRESS,
-  walnutOracleAddress as ORACLE_ADDRESS,
 } from "@/lib/walnut-contract";
 
-const targetChainName =
-  wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
-  `Chain ${walnutChainId}`;
-
-// Supported tokens on Arbitrum Sepolia
-const SUPPORTED_TOKENS = [
-  {
-    address: MOCK_USDC_ADDRESS,
-    symbol: "USDC",
-    name: "USD Coin",
-    decimals: 6,
-  },
-  {
-    address: "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73" as Address,
-    symbol: "WETH",
-    name: "Wrapped Ethereum",
-    decimals: 18,
-  },
-  {
-    address: "0x152b0df80135c63b4cb1fbe00ddce7e9a8ffcb04" as Address,
-    symbol: "LINK",
-    name: "Chainlink Token",
-    decimals: 18,
-  },
-] as const;
-
-function TokenBadge({ symbol, name }: { symbol: string; name?: string }) {
-  const TOKEN_IMAGES: Record<string, string> = {
-    USDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
-    cUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
-    WETH: "https://assets.coingecko.com/coins/images/2518/standard/weth.png",
-    LINK: "https://assets.coingecko.com/coins/images/877/large/chainlink.png",
-  };
-  const src = TOKEN_IMAGES[symbol] ?? `/tokens/${symbol.toLowerCase()}.png`;
-  const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    setImgError(false);
-  }, [src]);
-
-  if (process.env.NODE_ENV === "development") {
-    console.debug(`[TokenBadge] symbol=${symbol} src=${src} imgError=${imgError}`);
-  }
-
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-sm hover:scale-105 transition-transform cursor-pointer overflow-hidden bg-slate-100 border border-slate-200">
-        {!imgError ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={`${symbol} logo`} onError={() => setImgError(true)} className="w-full h-full object-cover" />
-        ) : (
-          <div className="text-xs font-bold text-slate-500">{symbol.slice(0, 3)}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-sm font-semibold text-slate-900">{symbol}</div>
-        <div className="text-xs text-muted-foreground">{name}</div>
-      </div>
-    </div>
-  );
-}
-
-function TokenDropdown({ value, onChange, className }: { value: Address; onChange: (a: Address) => void; className?: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!ref.current) return;
-      if (e.target instanceof Node && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
-
-  const selected = SUPPORTED_TOKENS.find((t) => t.address.toLowerCase() === value.toLowerCase()) ?? SUPPORTED_TOKENS[0];
-
-  return (
-    <div ref={ref} className={`${className} relative`}>
-      <button type="button" onClick={() => setOpen((s) => !s)} className="w-full flex items-center justify-between gap-3 p-3 border rounded-xl bg-white shadow-sm">
-        <TokenBadge symbol={selected.symbol} name={selected.name} />
-        <span className="text-sm text-muted-foreground">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute z-40 mt-2 w-full rounded-2xl border bg-white shadow-xl">
-          {SUPPORTED_TOKENS.map((t) => (
-            <button
-              key={t.address}
-              onClick={() => {
-                onChange(t.address);
-                setOpen(false);
-              }}
-              className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3"
-            >
-              <TokenBadge symbol={t.symbol} name={t.name} />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Oracle ABI (minimal)
-const ORACLE_ABI = [
-  {
-    inputs: [
-      { name: "token", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    name: "getUSDValue",
-    outputs: [{ name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-] as const;
-
-type WithdrawStep = "idle" | "withdraw_pending" | "withdraw_confirmed" | "error";
-
-function assertSuccessReceipt(receipt: { status?: "success" | "reverted" }) {
-  if (receipt.status && receipt.status !== "success") {
-    throw new Error("Transaction reverted on-chain.");
-  }
-}
+const WITHDRAW_STEPS: StepItem[] = [
+  { id: "encrypt", label: "1. FHE Input Encryption", description: "Encrypting withdrawal amount into euint128 via CoFHE ZK engine." },
+  { id: "withdraw", label: "2. Protocol Withdrawal", description: "Broadcasting confidential withdrawal to WalnutLendingV2." },
+  { id: "health_check", label: "3. Homomorphic Health Check", description: "Contract verifies position health and releases wUSDC collateral." },
+];
 
 export default function WithdrawPage() {
   const account = useAccount();
   const publicClient = usePublicClient();
   const { addToast } = useToast();
   const protocol = useWalnutProtocol();
-  const encryptor = useCofheEncrypt();
 
-  const [selectedToken, setSelectedToken] = useState<Address>(MOCK_USDC_ADDRESS);
   const [amount, setAmount] = useState("");
-  const [withdrawStep, setWithdrawStep] = useState<WithdrawStep>("idle");
-  const [withdrawTxHash, setWithdrawTxHash] = useState<string | null>(null);
+  const [unshieldAmount, setUnshieldAmount] = useState("");
+  
+  // Progress modal states
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalStage, setModalStage] = useState<TransactionStage>("zk_encrypt");
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [activeTxHash, setActiveTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const hasActiveLoan = protocol.hasActiveLoan;
+  const [isUnshielding, setIsUnshielding] = useState(false);
 
-  const tokenInfo = useMemo(() => {
-    const fromSupported = SUPPORTED_TOKENS.find((t) => t.address.toLowerCase() === selectedToken.toLowerCase());
-    if (!fromSupported) return undefined;
-    return {
-      token: fromSupported.address,
-      symbol: fromSupported.symbol,
-      decimals: fromSupported.decimals,
-    };
-  }, [selectedToken]);
+  const { writeContractAsync } = useWriteContract();
 
-  const collateralUsd = protocol.collateral.decrypted.data ?? 0n;
+  // Read wUSDC Balance
+  const { data: wUsdcBalance, refetch: refetchWUsdc } = useReadContract({
+    address: WRAPPER_ADDRESS,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [account.address ?? "0x0000000000000000000000000000000000000000"],
+    query: { enabled: Boolean(account.address) }
+  });
 
-  // Parse amount to bigint
   const parsedAmount = useMemo(() => {
     if (!amount || !/^\d+(\.\d+)?$/.test(amount)) return 0n;
     try {
-      const decimals = tokenInfo?.decimals ?? 6;
-      const parts = amount.split(".");
-      const integerPart = parts[0] || "0";
-      const decimalPart = (parts[1] || "").padEnd(decimals, "0").slice(0, decimals);
+      const parts = amount.split('.');
+      const integerPart = parts[0] || '0';
+      const decimalPart = (parts[1] || '').padEnd(6, '0').slice(0, 6);
       return BigInt(integerPart + decimalPart);
-    } catch {
-      return 0n;
+    } catch { return 0n; }
+  }, [amount]);
+
+  const parsedUnshieldAmount = useMemo(() => {
+    if (!unshieldAmount || !/^\d+(\.\d+)?$/.test(unshieldAmount)) return 0n;
+    try {
+      const parts = unshieldAmount.split('.');
+      const integerPart = parts[0] || '0';
+      const decimalPart = (parts[1] || '').padEnd(6, '0').slice(0, 6);
+      return BigInt(integerPart + decimalPart);
+    } catch { return 0n; }
+  }, [unshieldAmount]);
+
+  const hasActiveLoan = protocol.hasActiveLoan;
+
+  // Unshield Handler (wUSDC -> Raw MockUSDC)
+  const handleUnshieldUSDC = async () => {
+    if (!account.address || parsedUnshieldAmount === 0n) return;
+    setIsUnshielding(true);
+    try {
+      addToast({ variant: "pending", title: "Unshielding Collateral", message: "Broadcasting unshield request to WalnutVaultWrapper..." });
+
+      const gasOverrides = await getGasFeeOverrides(publicClient);
+
+      const unshieldHash = await writeContractAsync({
+        address: WRAPPER_ADDRESS,
+        abi: walnutWrapperAbi,
+        functionName: "unshield",
+        args: [account.address, account.address, parsedUnshieldAmount],
+        ...gasOverrides
+      });
+
+      if (publicClient) await publicClient.waitForTransactionReceipt({ hash: unshieldHash });
+
+      addToast({
+        variant: "success",
+        title: "Unshield Request Placed",
+        message: `Unshield request submitted! Your wUSDC is pending unshielding back to raw USDC.`,
+        txHash: unshieldHash
+      });
+
+      setUnshieldAmount("");
+      await refetchWUsdc();
+    } catch (err: any) {
+      addToast({ variant: "error", title: "Unshield Failed", message: err?.message || err });
+    } finally {
+      setIsUnshielding(false);
     }
-  }, [amount, tokenInfo]);
+  };
 
-  // Get USD value
-  const { data: usdValue } = useReadContract({
-    address: ORACLE_ADDRESS,
-    abi: ORACLE_ABI,
-    functionName: "getUSDValue",
-    args: [selectedToken, parsedAmount],
-    query: {
-      enabled: parsedAmount > 0n,
-    },
-  });
-
-  // Format USD value
-  const formattedUsdValue = useMemo(() => {
-    if (!usdValue || usdValue === 0n) return "$0.00";
-    const value = Number(usdValue) / 1e6; // 6 decimals
-    return `$${value.toFixed(2)}`;
-  }, [usdValue]);
-
-  const exceedsCollateral = useMemo(() => {
-    if (!usdValue || usdValue === 0n) return false;
-    return usdValue > collateralUsd;
-  }, [collateralUsd, usdValue]);
-
-  // Withdraw contract
-  const { writeContractAsync: withdrawAsync } = useWriteContract();
-  const { isLoading: isWithdrawConfirming } = useWaitForTransactionReceipt({
-    hash: withdrawTxHash as `0x${string}` | undefined,
-  });
-
-  // Handle withdraw
+  // Main Withdraw Handler
   const handleWithdraw = async () => {
-    if (!account.address || parsedAmount === 0n || exceedsCollateral || !usdValue) return;
+    if (!account.address || parsedAmount === 0n) return;
+
+    setModalOpen(true);
+    setModalStage("zk_encrypt");
+    setCurrentStepIndex(0);
+    setActiveTxHash(null);
+    setErrorMessage(null);
 
     try {
-      setWithdrawStep("withdraw_pending");
-      setErrorMessage(null);
+      const gasOverrides = await getGasFeeOverrides(publicClient);
 
+      // ----------------------------------------------------
+      // STEP 1: FHE INPUT ENCRYPTION
+      // ----------------------------------------------------
       let encryptedAmountVal;
       try {
-        const [encAmount] = await encryptor.encryptInputsAsync({
+        const [encAmount] = await protocol.encryptor.encryptInputsAsync({
           items: [Encryptable.uint128(parsedAmount)],
           account: account.address,
           chainId: walnutChainId,
         });
         encryptedAmountVal = encAmount;
       } catch (err) {
-        console.error("FHE Encryption failed", err);
-        throw new Error("Withdrawal encryption failed. Please make sure your wallet supports FHE encryption.");
+        console.error("FHE Encryption error", err);
+        throw new Error("Withdrawal input encryption failed. Please verify your CoFHE wallet connection.");
       }
 
-      const gasPrice = await publicClient?.getGasPrice();
-      const maxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined;
-      const maxPriorityFeePerGas = gasPrice ? (gasPrice * 10n) / 100n : undefined;
+      // ----------------------------------------------------
+      // STEP 2: PROTOCOL WITHDRAWAL
+      // ----------------------------------------------------
+      setModalStage("wallet_sign");
+      setCurrentStepIndex(1);
 
-      const hash = await withdrawAsync({
+      let withdrawGasLimit = 15000000n;
+      try {
+        const estimatedGas = await publicClient?.estimateContractGas({
+          address: WALNUT_LENDING_ADDRESS,
+          abi: walnutLendingAbi,
+          functionName: "withdraw",
+          args: [WRAPPER_ADDRESS, encryptedAmountVal as any],
+          account: account.address,
+        });
+        if (estimatedGas) {
+          withdrawGasLimit = (estimatedGas * 130n) / 100n;
+        }
+      } catch (e) {
+        console.warn("Withdraw gas estimation fallback used", e);
+      }
+
+      const withdrawHash = await writeContractAsync({
         address: WALNUT_LENDING_ADDRESS,
         abi: walnutLendingAbi,
         functionName: "withdraw",
-        args: [selectedToken, encryptedAmountVal as any],
-        maxFeePerGas,
-        maxPriorityFeePerGas,
+        args: [WRAPPER_ADDRESS, encryptedAmountVal as any],
+        gas: withdrawGasLimit,
+        ...gasOverrides
       });
 
-      setWithdrawTxHash(hash);
-      addToast({ variant: "pending", message: "Withdraw transaction submitted..." });
+      setActiveTxHash(withdrawHash);
+      setModalStage("mining");
+      setCurrentStepIndex(2);
 
-      // Wait for confirmation
       if (publicClient) {
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        assertSuccessReceipt(receipt);
-        // Sync decryption to execute ERC20 transfer and update collateral on-chain
-        await protocol.syncDecryptResultsFromReceipt("withdraw", receipt as any);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: withdrawHash });
+        if (receipt.status !== "success") throw new Error("Withdraw transaction reverted on-chain.");
       }
 
-      setWithdrawStep("withdraw_confirmed");
-      addToast({ variant: "success", message: "Withdraw request submitted. CoFHE settlement pending." });
+      setModalStage("completed");
+      addToast({
+        variant: "success",
+        title: "Withdrawal Confirmed",
+        message: `Withdrawal transaction mined! Homomorphic health check verified your position safety.`,
+        txHash: withdrawHash
+      });
 
-      await protocol.refreshBalances();
-
-      // Reset form
       setAmount("");
-      setWithdrawTxHash(null);
-
-      // Reset to idle after 3 seconds
-      setTimeout(() => {
-        setWithdrawStep("idle");
-      }, 3000);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Withdraw failed";
-      setErrorMessage(message);
-      setWithdrawStep("error");
-      addToast({ variant: "error", message });
+      await refetchWUsdc();
+      await protocol.refreshBalances();
+    } catch (err: any) {
+      console.error("Withdrawal Execution Failure:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(msg);
+      setModalStage("failed");
+      addToast({ variant: "error", title: "Withdrawal Reverted", message: msg });
     }
   };
 
-  // Handle user cancellation
-  const handleCancel = () => {
-    setWithdrawStep("idle");
-    setWithdrawTxHash(null);
-    setErrorMessage(null);
-  };
-
-  // Determine button state
-  const isProcessing = withdrawStep === "withdraw_pending" || isWithdrawConfirming;
-  const canSubmit =
-    parsedAmount > 0n &&
-    !isProcessing &&
-    withdrawStep !== "withdraw_confirmed" &&
-    !exceedsCollateral &&
-    !hasActiveLoan;
+  const formattedWUsdc = wUsdcBalance ? (Number(wUsdcBalance) / 1e6).toFixed(2) : "0.00";
 
   return (
-    <div className="p-6 space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Withdraw Collateral</h1>
-        <p className="text-sm text-muted-foreground">Withdraw ERC20 tokens from your vault.</p>
-      </header>
-
-      <div className="border rounded-lg p-4">
-        <div className="mb-3 text-sm font-medium">
-          Status: {withdrawStep === "idle" ? (parsedAmount > 0n ? (exceedsCollateral ? "Amount exceeds encrypted collateral" : "Ready to withdraw") : "Enter amount to continue") : withdrawStep === "withdraw_pending" ? "Submitting withdrawal request..." : withdrawStep === "withdraw_confirmed" ? "Withdrawal request submitted" : "Transaction failed"} — {targetChainName}
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <section className="md:col-span-2 space-y-4">
-            <div>
-              <label className="block text-xs font-mono uppercase text-muted-foreground">Select Token</label>
-              <TokenDropdown className="mt-2 w-full" value={selectedToken} onChange={(addr: Address) => setSelectedToken(addr)} />
-            </div>
-
-            {hasActiveLoan && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-900">Active Loan Detected</p>
-                    <p className="text-sm text-amber-700 mt-1">Repay your loan before withdrawing collateral.</p>
-                    <a
-                      href="/app/repay"
-                      className="inline-flex items-center gap-1 mt-3 px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition-colors"
-                    >
-                      Go to Repay →
-                    </a>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-mono uppercase text-muted-foreground">Amount</label>
-              <Input
-                id="withdraw-amount"
-                inputMode="decimal"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))}
-                placeholder="0.00"
-                className="mt-2 w-full"
-                disabled={isProcessing}
-              />
-              <div className="text-xs text-muted-foreground mt-1">
-                Encrypted collateral: ${(Number(collateralUsd) / 1e6).toFixed(2)} USD
-              </div>
-            </div>
-
-            <div className="flex gap-2 flex-wrap">
-              {[
-                { label: "25%", value: parsedAmount > 0n ? parsedAmount / 4n : 0n },
-                { label: "50%", value: parsedAmount > 0n ? parsedAmount / 2n : 0n },
-                { label: "75%", value: parsedAmount > 0n ? (parsedAmount * 3n) / 4n : 0n },
-                { label: "Max", value: parsedAmount },
-              ].map((option) => {
-                const displayValue = tokenInfo && option.value > 0n
-                  ? (Number(option.value) / 10 ** tokenInfo.decimals).toFixed(6)
-                  : "0";
-                return (
-                  <button
-                    key={option.label}
-                    type="button"
-                    onClick={() => setAmount(displayValue)}
-                    disabled={isProcessing || option.value === 0n}
-                    className="px-3 py-1 border rounded text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {exceedsCollateral && withdrawStep === "idle" && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                <p className="text-sm text-red-700">Amount exceeds your encrypted collateral. Enter a lower value.</p>
-              </div>
-            )}
-
-            {withdrawStep !== "idle" && (
-              <div className="p-3 border rounded">
-                <div className="font-medium">Transaction Progress</div>
-                <div className="mt-2 space-y-2">
-                  <div className="flex items-center gap-2">
-                    {withdrawStep === "withdraw_pending" || isWithdrawConfirming ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : withdrawStep === "withdraw_confirmed" ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    ) : withdrawStep === "error" ? (
-                      <AlertCircle className="h-4 w-4 text-red-600" />
-                    ) : (
-                      <div className="h-4 w-4 rounded-full border" />
-                    )}
-                    <div>
-                      Withdraw from Walnut
-                      {withdrawTxHash && (
-                        <a
-                          href={`https://sepolia.arbiscan.io/tx/${withdrawTxHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="ml-2 text-xs text-blue-600 hover:underline"
-                        >
-                          View
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                  {errorMessage && <div className="text-sm text-red-700">{errorMessage}</div>}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleWithdraw}
-                disabled={!canSubmit}
-                className="px-4 py-2 bg-black text-white rounded disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {hasActiveLoan ? "Repay Loan First" : "Withdraw"}
-              </button>
-              {withdrawStep === "error" && (
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="px-4 py-2 border rounded"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </section>
-
-          <aside className="space-y-3">
-            <div className="p-3 border rounded">
-              <div className="text-xs font-mono uppercase text-muted-foreground">USD Value</div>
-              <div className="font-mono text-lg font-semibold mt-2">{formattedUsdValue}</div>
-            </div>
-
-            <div className="p-3 border rounded">
-              <div className="text-xs font-mono uppercase text-muted-foreground">Collateral (decrypt to view)</div>
-              <div className="font-mono text-lg font-semibold mt-2">
-                ${(Number(collateralUsd) / 1e6).toFixed(2)}
-              </div>
-            </div>
-
-            <div className="p-3 border rounded">
-              <div className="text-xs font-mono uppercase text-muted-foreground">Status</div>
-              <div className="mt-2 text-sm">
-                {withdrawStep === "idle" && parsedAmount > 0n && !exceedsCollateral && "Ready to withdraw"}
-                {withdrawStep === "idle" && parsedAmount === 0n && "Enter amount to continue"}
-                {withdrawStep === "idle" && exceedsCollateral && "Amount exceeds encrypted collateral"}
-                {withdrawStep === "withdraw_pending" && "Submitting withdrawal request..."}
-                {withdrawStep === "withdraw_confirmed" && "Withdrawal request submitted"}
-                {withdrawStep === "error" && "Transaction failed"}
-              </div>
-            </div>
-          </aside>
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="pb-6 border-b border-black/5 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-black">Withdraw Collateral</h1>
+          <p className="mt-2 text-sm text-slate-500 max-w-xl">
+            Withdraw wUSDC collateral from WalnutLendingV2. The contract homomorphically caps withdrawals to maintain safe LTV ratios without disclosing your position.
+          </p>
         </div>
       </div>
+
+      {hasActiveLoan && (
+        <div className="p-4 rounded-md bg-amber-50 border border-amber-200 flex items-start gap-3 text-xs leading-relaxed">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <strong className="font-bold text-amber-900 block mb-0.5">Active Borrow Position Detected</strong>
+            <span className="text-amber-800/80">Withdrawal requests that would push your account position unhealthy are homomorphically capped to zero by the contract.</span>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-8 md:grid-cols-3">
+        {/* Main Panel */}
+        <section className="md:col-span-2">
+          <div className="bg-white border border-black/10 rounded-md p-6 space-y-8 shadow-none">
+            
+            {/* Collateral Token Box */}
+            <div className="space-y-2">
+              <label className="block text-[11px] font-semibold uppercase tracking-widest text-slate-500 ml-1">
+                Collateral Token
+              </label>
+              <div className="bg-slate-50 border border-black/5 rounded-md p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full border-2 border-blue-200/60 bg-gradient-to-br from-blue-50 to-white flex items-center justify-center font-bold text-blue-700 shadow-sm text-[11px] tracking-wide">
+                    wUSDC
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-black">wUSDC (Walnut Vault Wrapper)</p>
+                    <p className="text-xs text-slate-500">Canonical Approved Vault Token</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700">
+                  Approved Vault <CheckCircle2 className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Withdraw Form */}
+            <div className="space-y-3 pt-2">
+              <div className="flex justify-between items-center ml-1">
+                <label className="block text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                  Withdrawal Amount (wUSDC)
+                </label>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative w-full">
+                  <Input
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="0.00"
+                    className="text-sm h-11 pr-16 rounded-md border-black/10 bg-white focus-visible:ring-black/20 text-black placeholder:text-slate-400 shadow-none"
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-400">
+                    wUSDC
+                  </div>
+                </div>
+                
+                <Button
+                  onClick={handleWithdraw}
+                  disabled={parsedAmount === 0n}
+                  className="w-full sm:w-auto bg-black hover:bg-black/90 text-white font-medium h-11 px-6 rounded-md shadow-none shrink-0 transition-all disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  Withdraw Collateral
+                </Button>
+              </div>
+              
+              {/* Quick Presets */}
+              <div className="flex gap-2">
+                {[50, 100, 500, 1000].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setAmount(String(v))}
+                    className="px-4 py-2 border border-black/10 bg-white rounded-md text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-black transition-colors shadow-none"
+                  >
+                    ${v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Unshield Section */}
+            <div className="bg-slate-50 border border-black/5 rounded-md p-5 space-y-5">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Unshield wUSDC</p>
+                  <p className="text-3xl font-bold text-black tracking-tight">${formattedWUsdc} <span className="text-lg font-medium text-slate-400">wUSDC</span></p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <Input
+                  value={unshieldAmount}
+                  onChange={(e) => setUnshieldAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                  placeholder="Amount to unshield to USDC..."
+                  className="text-sm rounded-md h-11 border-black/10 bg-white focus-visible:ring-black/20 shadow-none"
+                />
+                <Button
+                  onClick={handleUnshieldUSDC}
+                  disabled={isUnshielding || parsedUnshieldAmount === 0n}
+                  className="w-full sm:w-auto bg-black hover:bg-black/90 text-white font-medium h-11 px-6 rounded-md shrink-0 shadow-none"
+                >
+                  {isUnshielding ? "Processing..." : "Unshield to USDC"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Info Sidebar */}
+        <aside className="space-y-6">
+          <div className="p-5 rounded-md bg-white border border-black/5 shadow-sm space-y-3">
+            <h3 className="text-sm font-bold text-black flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-slate-400" /> Health Factor Safety
+            </h3>
+            <p className="text-[13px] text-slate-500 leading-relaxed">
+              WalnutLendingV2 computes your maximum safe withdrawal limit on encrypted balances using CoFHE. If a requested withdrawal breaches the 80% LTV threshold, the contract automatically zeroes the withdrawn amount.
+            </p>
+          </div>
+
+          <div className="p-5 rounded-md bg-white border border-black/5 shadow-sm space-y-4">
+            <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Security Parameters</h4>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Contract</span>
+                <span className="font-medium text-black">WalnutLendingV2</span>
+              </div>
+              <div className="w-full h-px bg-black/5" />
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Vault Asset</span>
+                <span className="font-medium text-black">wUSDC</span>
+              </div>
+              <div className="w-full h-px bg-black/5" />
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Encryption</span>
+                <span className="font-medium text-black">InEuint128</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* Multi-Step Progress Modal */}
+      <TransactionProgressModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        stage={modalStage}
+        currentStepIndex={currentStepIndex}
+        steps={WITHDRAW_STEPS}
+        txHash={activeTxHash}
+        errorMessage={errorMessage}
+        title="Withdraw Progress"
+      />
     </div>
   );
 }
