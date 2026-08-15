@@ -14,10 +14,10 @@ Confidential Lending Protocol • Powered by FHENIX
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.25-blue)](https://soliditylang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16.2.1-black)](https://nextjs.org/)
-[![Tests](https://img.shields.io/badge/Tests-55%2B%20Passing-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/Tests-60%2B%20Passing-brightgreen)](./test)
 [![Network](https://img.shields.io/badge/Network-Arbitrum%20Sepolia-blue)](https://sepolia.arbiscan.io/)
 
-**[Live Product](https://walnut-finance.vercel.app/)** • **[Video](https://youtu.be/zb2FVYq8C58?si=kjZE6NKMwfgBMBkN)** • **[Documentation](./docs)** • **[Architecture](./docs/architecture.md)** • **[Security](./docs/security.md)** 
+**[Live Product](https://walnut-finance.vercel.app/)** • **[Video](https://youtu.be/zb2FVYq8C58?si=kjZE6NKMwfgBMBkN)** • **[Protocol Spec](./WALNUT_PROTOCOL_SPEC.md)** • **[Technical Docs](./Technical-docs)** • **[Privacy Audit](./PRIVACY_AUDIT.md)** 
 
 ---
 
@@ -55,10 +55,19 @@ For confidential lending, we need the protocol to:
 - Only you can decrypt your own data via cryptographic permits
 - Protocol performs FHE operations without seeing plaintext values
 
-### [▸] Protocol-Owned Accounting
+### [▸] P2P Confidential Marketplace (`WalnutP2P`)
+- Create encrypted LEND and BORROW offers with private principal, interest rate, and duration terms
+- Counterparty submits encrypted matching terms evaluated on-chain via homomorphic equality checks (`FHE.eq`)
+- Automated settlement callback (`syncMatchSettlement`) executes principal transfer upon verified match
+
+### [▸] Solvency-Protected ENS Wallet Linking
+- Link secondary wallets/ENS names to aggregate collateral across accounts using EIP-712 domain-bound signatures
+- `requestUnlink` + `syncUnlink` callback protects protocol solvency: unlinking is blocked on-chain if removing the secondary wallet leaves the primary position undercollateralized
+
+### [▸] Protocol-Owned Accounting & Repay Hardening
 - Users cannot manipulate debt calculations through calldata
+- Repay exploit hardening ensures `$0` real balance calls strictly preserve outstanding debt and do not increment `_repaymentCount`
 - Each loan maintains independent principal and timestamp
-- Interest calculated from contract-controlled state
 
 ### [▸] Multi-Loan Support
 - Users can have multiple concurrent loans
@@ -76,10 +85,10 @@ For confidential lending, we need the protocol to:
 - Linear accrual from borrow timestamp
 - Private settlement via Privara for encrypted payment metadata
 
-### [▸] Real Collateral
-- Deposit MockUSDC (testnet) as collateral
-- Borrow encrypted cUSDC stablecoin
-- Chainlink price feeds for accurate valuation
+### [▸] Shielded Collateral Vault
+- Shield standard USDC into `wUSDC` (Vault Wrapper) to fully encrypt collateral before entering the protocol
+- Borrow encrypted `cUSDC` stablecoin against shielded collateral
+- Chainlink price feeds for accurate real-time valuation
 
 ---
 
@@ -100,10 +109,14 @@ For confidential lending, we need the protocol to:
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Arbitrum Sepolia Blockchain                  │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐   │
-│  │ WalnutLending    │  │ WalnutFHERC20    │  │ Price Oracle │   │
-│  │ (Main Protocol)  │◄─┤ (cUSDC Token)    │  │ (Chainlink)  │   │
-│  └──────────────────┘  └──────────────────┘  └──────────────┘   │
-│           │                                                     │
+│  │ WalnutVault      │  │ WalnutLending    │  │ Price Oracle │   │
+│  │ Wrapper (wUSDC)  ├─►│ (Main Protocol)  │  │ (Chainlink)  │   │
+│  └──────────────────┘  └─────────┬────────┘  └──────────────┘   │
+│                                  │                              │
+│                        ┌─────────▼────────┐                     │
+│                        │ WalnutFHERC20    │                     │
+│                        │ (cUSDC Token)    │                     │
+│                        └──────────────────┘                     │
 │           ▼                                                     │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  Encrypted State (euint128)                              │   │
@@ -175,6 +188,8 @@ User Input (Plain) → Browser Encryption → InEuint128 (Ciphertext)
 | **Tailwind CSS** | 4.1.9 | Utility-first styling |
 | **Framer Motion** | 12.38.0 | Animations |
 
+**UI/UX Architecture:** The application features a "Private Lending Command Center" aesthetic built around a unified, single-card layout. It utilizes clean 10% chamfers (`rounded-md`), minimal borders (`border-black/10`), and high-contrast dark gradients for key protocol health indicators, abandoning heavy glassmorphism for a sleek, premium, and professional FHE financial interface.
+
 ### Infrastructure
 | Component | Purpose |
 |-----------|---------|
@@ -191,11 +206,12 @@ User Input (Plain) → Browser Encryption → InEuint128 (Ciphertext)
 
 | Contract | Address | Arbiscan |
 |----------|---------|----------|
-| **WalnutLending** | `0xA99C28678ca4C19741995B0874155e6abAad76CA` | [View →](https://sepolia.arbiscan.io/address/0xA99C28678ca4C19741995B0874155e6abAad76CA) |
-| **cUSDC (WalnutFHERC20)** | `0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343` | [View →](https://sepolia.arbiscan.io/address/0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343) |
-| **WalnutPriceOracle** | `0xFaB46543812Fc34b080b668f62864e46064D9ba1` | [View →](https://sepolia.arbiscan.io/address/0xFaB46543812Fc34b080b668f62864e46064D9ba1) |
-| **MockUSDC** | `0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd` | [View →](https://sepolia.arbiscan.io/address/0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd) |
-| **MockUSDCPriceFeed** | `0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1` | [View →](https://sepolia.arbiscan.io/address/0xc55f567ac8E27E0Cb33fcbF62F923BA4b1f827E1) |
+| **WalnutLendingV2** | `0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8` | [View →](https://sepolia.arbiscan.io/address/0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8) |
+| **WalnutP2P (Confidential Marketplace)** | `0xDBE85a6e8369B7E155B4c78dA7e0e841d97322Bc` | [View →](https://sepolia.arbiscan.io/address/0xDBE85a6e8369B7E155B4c78dA7e0e841d97322Bc) |
+| **cUSDC (WalnutFHERC20)** | `0x78136BC03b4549688C48181a26c521eb2F27F23F` | [View →](https://sepolia.arbiscan.io/address/0x78136BC03b4549688C48181a26c521eb2F27F23F) |
+| **WalnutVaultWrapper (wUSDC)** | `0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61` | [View →](https://sepolia.arbiscan.io/address/0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61) |
+| **WalnutPriceOracle** | `0x82E7caF958B329c47F10778E10A89B2319D67A14` | [View →](https://sepolia.arbiscan.io/address/0x82E7caF958B329c47F10778E10A89B2319D67A14) |
+| **MockUSDC** | `0x6341A12D08EE6F6fA071CF94C7C4a878ee5AF3ef` | [View →](https://sepolia.arbiscan.io/address/0x6341A12D08EE6F6fA071CF94C7C4a878ee5AF3ef) |
 
 All contracts are **verified** on Arbiscan with source code available.
 
@@ -221,7 +237,7 @@ https://faucet.quicknode.com/arbitrum/sepolia
 ```bash
 # Clone the repository
 git clone https://github.com/Iam-jayant/walnut.git
-cd walnut-protocol
+cd walnut
 
 # Install dependencies
 npm install
@@ -240,11 +256,13 @@ NEXT_PUBLIC_CHAIN_ID=421614
 NEXT_PUBLIC_RPC_URL_PRIMARY=https://sepolia-rollup.arbitrum.io/rpc
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id_here
 
-# Contract Addresses (Already Deployed)
-NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0xA99C28678ca4C19741995B0874155e6abAad76CA
-NEXT_PUBLIC_FHERC20_ADDRESS=0x7974E997e4cF45b37Ff2fA4472ea39BB2eAD4343
-NEXT_PUBLIC_ORACLE_ADDRESS=0xFaB46543812Fc34b080b668f62864e46064D9ba1
-NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x813Dd4Ffa32728a2d1A9e8f91714E06d062C66Dd
+# Contract Addresses (Canonical Live Network Deployment)
+NEXT_PUBLIC_WALNUT_LENDING_ADDRESS=0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8
+NEXT_PUBLIC_WALNUT_P2P_ADDRESS=0xDBE85a6e8369B7E155B4c78dA7e0e841d97322Bc
+NEXT_PUBLIC_FHERC20_ADDRESS=0x78136BC03b4549688C48181a26c521eb2F27F23F
+NEXT_PUBLIC_ORACLE_ADDRESS=0x82E7caF958B329c47F10778E10A89B2319D67A14
+NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x6341A12D08EE6F6fA071CF94C7C4a878ee5AF3ef
+NEXT_PUBLIC_WRAPPER_ADDRESS=0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61
 ```
 
 ### Run the Application
@@ -274,7 +292,7 @@ Connect MetaMask → Switch to Arbitrum Sepolia → Approve connection
 
 #### [2] Mint Test USDC
 ```
-Navigate to Deposit page → Click "Mint MockUSDC" → Confirm transaction
+Navigate to Deposit page → Click "Faucet" → Confirm transaction to mint MockUSDC.
 ```
 
 #### [3] Create FHE Permit
@@ -282,10 +300,10 @@ Navigate to Deposit page → Click "Mint MockUSDC" → Confirm transaction
 Sign permit message → Grant decryption access to your wallet
 ```
 
-#### [4] Deposit Collateral
+#### [4] Shield & Deposit Collateral
 ```
-Enter amount → Approve MockUSDC → Deposit → Wait for confirmation
-Your collateral is now encrypted on-chain
+Enter amount → Approve MockUSDC → Click "Shield & Deposit" → Confirm transactions.
+Your raw USDC is wrapped into `wUSDC` via the Vault Wrapper and deposited into the protocol, fully encrypted on-chain.
 ```
 
 #### [5] Borrow cUSDC
@@ -310,9 +328,9 @@ Your collateral is returned
 ### Protocol Interactions
 
 ```typescript
-// Deposit collateral
-await mockUSDC.approve(walnutLendingAddress, amount);
-await walnutLending.deposit(mockUSDCAddress, amount);
+// Deposit collateral (via WalnutVaultWrapper)
+await mockUSDC.approve(walnutVaultWrapperAddress, amount);
+await walnutVaultWrapper.shield(account.address, amount);
 
 // Borrow (encrypted amount)
 const encryptedAmount = await cofheClient.encrypt(borrowAmount);
@@ -322,8 +340,8 @@ await walnutLending.borrow(encryptedAmount);
 const encryptedRepayAmount = await cofheClient.encrypt(repayAmount);
 await walnutLending.repay(encryptedRepayAmount, loanIndex);
 
-// Withdraw
-await walnutLending.withdraw(mockUSDCAddress, withdrawAmount);
+// Withdraw collateral (via WalnutVaultWrapper)
+await walnutVaultWrapper.unshield(account.address, account.address, amount);
 ```
 
 
@@ -353,14 +371,16 @@ npx hardhat coverage
 
 ### Test Coverage
 
-**55+ passing tests** across unit and integration suites
+**100+ passing tests** across unit and integration suites spanning multiple security and lifecycle phases.
 
 | Test Category | Coverage |
 |---------------|----------|
+| **Security Zone Isolation** | Reentrancy locks, calldata manipulation blocks, exploit mitigations |
 | **Interest Calculation** | 1 day, 7 days, 30 days, 1 year scenarios |
 | **Credit Tier LTV** | All 5 tiers (70%-90% LTV) |
 | **Multi-Loan Support** | Concurrent loans, independent repayment |
-| **Multi-Token Collateral** | USDC, WETH, and custom tokens |
+| **ENS Wallet Aggregation** | EIP-712 linked collateral, solvency-protected unlinking |
+| **Vault Wrapper (wUSDC)** | Shielding/unshielding token conversion tracking |
 | **Complete User Journey** | Deposit → Borrow → Repay → Withdraw |
 | **Access Control** | Owner, CoFHE, and pause mechanisms |
 | **Edge Cases** | Zero amounts, insufficient balance, stale prices |
@@ -385,7 +405,12 @@ walnut-protocol/
 │   ├── app/                 # Dashboard and protocol pages
 │   │   ├── borrow/         # Borrow page
 │   │   ├── deposit/        # Deposit page
+│   │   ├── ens/            # ENS Wallet Linking
+│   │   ├── history/        # Transaction history
+│   │   ├── liquidation/    # Liquidation dashboard
+│   │   ├── p2p/            # Confidential P2P market
 │   │   ├── repay/          # Repay page
+│   │   ├── settings/       # Protocol settings
 │   │   ├── withdraw/       # Withdraw page
 │   │   └── layout.tsx      # App layout
 │   ├── api/                # API routes
@@ -399,24 +424,26 @@ walnut-protocol/
 ├── contracts/               # Solidity smart contracts
 │   ├── WalnutLendingV2.sol        # Main lending protocol (privacy-hardened)
 │   └── common/                    # Tokens, price oracle, and mock contracts
-├── docs/                    # Documentation
-│   ├── architecture.md     # System architecture
-│   ├── contracts.md        # Contract documentation
-│   ├── fhe-explainer.md    # FHE concepts
-│   └── security.md         # Security considerations
+├── Technical-docs/          # Technical Documentation
+│   ├── flow.md             # End-to-end data flow
+│   ├── 2-deposit.md        # Deposit mechanism
+│   └── 4-borrow.md         # Borrowing mechanism
+├── PRIVACY_AUDIT.md         # Privacy & Security threat model
+├── WALNUT_PROTOCOL_SPEC.md  # Detailed system architecture
 ├── hooks/                   # React hooks
-│   ├── use-walnut-protocol.ts  # Main protocol hook
-│   ├── use-permit.ts           # FHE permit management
-│   └── use-token-balances.ts   # Balance decryption
+│   ├── use-privara.ts          # Privara settlement logic
+│   ├── use-token-balances.ts   # Balance decryption
+│   └── use-walnut-protocol.ts  # Main protocol hook
 ├── lib/                     # Utilities and configurations
+│   ├── cofhe-client.ts     # CoFHE SDK wrapper
 │   ├── walnut-contract.ts  # Contract ABIs and config
-│   └── cofhe-client.ts     # CoFHE SDK wrapper
+│   └── web3-config.ts      # wagmi/viem configuration
 ├── scripts/                 # Deployment scripts
 │   └── deploy-arbitrum-sepolia.js
 ├── test/                    # Contract tests
 │   ├── unit/               # Unit tests
 │   └── integration/        # Integration tests
-├── hardhat.config.js        # Hardhat configuration
+├── hardhat.config.ts        # Hardhat configuration
 ├── package.json             # Dependencies
 └── README.md                # This file
 ```
@@ -425,6 +452,20 @@ walnut-protocol/
 ---
 
 ## Technical Deep Dive
+
+### Vault Wrapper Collateral Shielding
+
+To prevent raw ERC20 tracking and preserve privacy at the entry point, Walnut employs a **Vault Wrapper** (`wUSDC`).
+
+```solidity
+// User approves Vault Wrapper
+MockUSDC.approve(wrapperAddress, amount);
+
+// User calls shield() on the Wrapper
+// The wrapper deposits MockUSDC into itself, and mints an encrypted collateral balance in WalnutLendingV2
+WalnutVaultWrapper.shield(msg.sender, amount);
+```
+This guarantees that the main protocol only ever interacts with fully encrypted representations of user balances, acting as a cryptographic firewall.
 
 ### FHE Operations in Walnut
 
@@ -571,63 +612,47 @@ function _tierFromRepaymentCount(uint128 count) internal pure returns (uint8) {
 
 ### CoFHE Decryption Flow
 
-Walnut uses CoFHE's permissionless decryption pattern:
+Walnut uses CoFHE's automated task manager callback pattern for state syncs:
 
 ```
 ┌─────────────┐
-│  Contract   │  1. FHE.allowPublic(ctHash)
-│             │     Grant public decrypt permission
+│  Contract   │  1. ITaskManager.addDecrypt(ctHash, callbackSel)
+│             │     Queue decryption task on-chain
 └──────┬──────┘
        │
        ▼
 ┌─────────────┐
-│   Client    │  2. decryptForTx(ctHash).execute()
-│  (Off-chain)│     Request decryption from CoFHE
+│CoFHE Network│  2. Decrypt ciphertext off-chain
+│             │     (Threshold Network)
 └──────┬──────┘
        │
        ▼
 ┌─────────────┐
-│CoFHE Network│  3. Decrypt ciphertext
-│             │     Return { decryptedValue, signature }
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│   Client    │  4. Submit plaintext + signature
-│             │     Call syncXxx(ctHash, plaintext, sig)
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│  Contract   │  5. FHE.verifyDecryptResultSafe()
-│             │     Verify signature and process result
+│  Contract   │  3. syncCallback(result)
+│             │     CoFHE calls back into contract with plaintext
 └─────────────┘
 ```
 
 **Example**: Loan principal sync after borrow
 
 ```solidity
-// 1. Contract requests decrypt
 function borrow(InEuint128 calldata encryptedAmount) external {
     // ... FHE operations ...
-    FHE.allowPublic(mintAmount);  // Grant public decrypt permission
-    emit BorrowPrincipalSyncRequested(msg.sender, requestId, openedAt);
+    euint128 mintAmount = FHE.select(withinLimit, borrowAmount, FHE.asEuint128(0));
+    
+    // 1. Contract queues decrypt for callback
+    ITaskManager(TASK_MANAGER_ADDRESS).addDecrypt(
+        mintAmount,
+        this.syncBorrowActive.selector
+    );
 }
 
-// 2. Client decrypts off-chain and submits result
-// (Frontend calls CoFHE SDK)
-
-// 3. Contract verifies and processes
-function syncLoanPrincipal(uint256 loanIndex, uint128 result, bytes calldata signature) external {
-    euint128 mintedHandle = _loanMintedHandles[msg.sender][loanIndex];
-    require(
-        FHE.verifyDecryptResultSafe(mintedHandle, result, signature),
-        "Invalid decrypt proof"
-    );
-    
-    // Update loan principal
-    userLoans[user][loanIndex].principal = result;
-    userLoans[user][loanIndex].active = true;
+// 2 & 3. CoFHE network decrypts and calls back
+function syncBorrowActive(uint256 requestId, uint128 result) external onlyCofhe {
+    // Update loan principal with verified plaintext
+    PendingSync memory pending = _pendingBorrowSyncs[requestId];
+    _loans[pending.user][pending.loanIndex].principal = result;
+    _loans[pending.user][pending.loanIndex].principalPending = false;
 }
 ```
 
@@ -672,7 +697,7 @@ function syncLoanPrincipal(uint256 loanIndex, uint128 result, bytes calldata sig
 - **No Timelock**: Owner can change parameters immediately
 - **Single Owner**: No multi-sig or governance
 
-**See [Security Documentation](./docs/security.md) for detailed threat model.**
+**See [Privacy Audit](./PRIVACY_AUDIT.md) for detailed threat model.**
 
 
 ---
@@ -683,26 +708,26 @@ function syncLoanPrincipal(uint256 loanIndex, uint128 result, bytes calldata sig
 
 | Operation | Gas estimate | Notes |
 |-----------|-------------|-------|
-| Deposit | ~150,000 | Includes ERC20 transfer + FHE encrypt |
-| Borrow | ~350,000 | FHE arithmetic + cUSDC mint |
-| Repay | ~300,000 | FHE arithmetic + cUSDC burn |
-| Withdraw | ~120,000 | ERC20 transfer + FHE state update |
+| Shield & Deposit | ~180,000 | ERC20 transfer + Vault shielding + FHE encrypt |
+| Borrow | ~380,000 | FHE arithmetic + cUSDC mint + Callback request |
+| Repay | ~320,000 | FHE arithmetic + cUSDC burn + Callback request |
+| Unshield (Withdraw) | ~130,000 | ERC20 transfer + FHE state update |
 
-FHE operations are significantly more expensive than standard EVM operations. CoFHE coprocessor offloads compute to an off-chain threshold network — the on-chain footprint is the encrypted handle and the verification call only.
+FHE operations are significantly more expensive than standard EVM operations. CoFHE coprocessor offloads compute to an off-chain threshold network — the on-chain footprint is the encrypted handle and the automated callback relay.
 
 ### Decryption latency (Arbitrum Sepolia)
 
-Client-side decryption via CoFHE SDK: 1–3 seconds typical.
+- **Client-side View Permits** (Viewing balances): 1–3 seconds via CoFHE SDK.
+- **On-chain Callbacks** (Borrow/Repay syncs): 1–3 blocks via `TaskManager`.
 
 ---
 
 ## Documentation
 
 ### Core Documentation
-- **[Architecture Guide](./docs/architecture.md)** - System design, data flows, and interactions
-- **[Contract Documentation](./docs/contracts.md)** - Detailed contract specifications and API reference
-- **[FHE Explainer](./docs/fhe-explainer.md)** - Understanding Fully Homomorphic Encryption
-- **[Security Documentation](./docs/security.md)** - Threat model and security considerations
+- **[Protocol Specification](./WALNUT_PROTOCOL_SPEC.md)** - System design, data flows, and interactions
+- **[Privacy Audit](./PRIVACY_AUDIT.md)** - Threat model and privacy considerations
+- **[Technical Docs](./Technical-docs)** - Step-by-step guides for all protocol interactions
 
 ### Key Concepts
 
@@ -733,12 +758,12 @@ npx hardhat run scripts/deploy/deploy.js --network arbitrumSepolia
 # Verify contracts on Arbiscan
 npx hardhat verify --network arbitrumSepolia <CONTRACT_ADDRESS> [CONSTRUCTOR_ARGS]
 
-# Example: Verify WalnutLending
+# Example: Verify WalnutLendingV2
 npx hardhat verify --network arbitrumSepolia \
-  0x7D2624efEEe1640d347fbE4632d352c8648A26f5 \
-  0xD23FC704Dc7b69F299E8f69704f9dDc631d7CDef \
-  0x5Ca597609292912a9422EB6a954236564331911F \
-  0x65c3768E98eE211a7589fe94c753e11cB8895069
+  0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8 \
+  <MockUSDC_Address> \
+  <PriceOracle_Address> \
+  <FHERC20_Address>
 
 # Mint test USDC
 npx hardhat run scripts/mint-mock-usdc.js --network arbitrumSepolia
@@ -750,9 +775,10 @@ npx hardhat run scripts/mint-mock-usdc.js --network arbitrumSepolia
 2. **MockUSDCPriceFeed** (Chainlink-compatible)
 3. **WalnutPriceOracle**
 4. **WalnutFHERC20** (cUSDC)
-5. **WalnutLending**
-6. **Configuration**:
-   - `WalnutFHERC20.setMinter(WalnutLending)`
+5. **WalnutLendingV2**
+6. **WalnutVaultWrapper** (wUSDC)
+7. **Configuration**:
+   - `WalnutFHERC20.setMinter(WalnutLendingV2)`
    - `WalnutPriceOracle.setPriceFeed(MockUSDC, MockUSDCPriceFeed)`
 
 
@@ -806,53 +832,7 @@ The confidential DeFi lending market does not exist yet. Walnut is the earliest 
 
 ---
 
-### Investment Required
 
-| Area | Amount (USD) | What it funds |
-|------|-------------|---------------|
-| **Security audit** | $80,000 | Independent audit by Trail of Bits or Spearbit — mandatory before mainnet |
-| **Legal and compliance** | $60,000 | Protocol structure, jurisdiction, regulatory clarity for lending products |
-| **Core team** | $300,000 / yr | 2 engineers + 1 business co-founder salaries (18-month runway) |
-| **User acquisition** | $120,000 | Liquidity mining, referral rewards, community building |
-| **Infrastructure** | $30,000 / yr | RPC nodes, monitoring, DevOps, Vercel Pro |
-| **Marketing and BD** | $80,000 | Protocol partnerships, DeFi integrations, ecosystem presence |
-| **Bug bounty** | $30,000 | Immunefi program to surface vulnerabilities before they are exploited |
-| **Total seed ask** | **$700,000** | **18 months to mainnet + first $10M TVL milestone** |
-
----
-
-### For Investors
-
-The DeFi lending market holds **$50 billion in TVL today** — all of it on transparent rails that leak position data to MEV bots and block institutional participation.
-
-**Walnut addresses both.**
-
-A 1% capture of the existing lending market puts protocol TVL at **$500 million**. At a 2% annualized spread, that is **$10 million in annual protocol revenue** — profitable from the day TVL crosses $50 million, which is achievable within 12 months of mainnet launch with the right liquidity incentives.
-
-**The first $700K gets Walnut through audit, onto mainnet, and to the point where the protocol earns more than it costs to run. Every dollar after that is growth.**
-
-Built entirely on **Fhenix CoFHE**. Private settlement via **Privara**.  
-Two infrastructure partners who are already invested in this succeeding.
-
----
-
-### Co-Founder Wanted
-
-This protocol was designed and built solely by one developer.
-
-**The technical foundation is complete.** What it needs now is someone who understands go-to-market, institutional BD, and can turn a working protocol into a funded company.
-
-If you have experience in DeFi growth, protocol economics, or fintech sales and believe private on-chain lending is the next category — **let's talk.**
-
-**$700K in seed funding and the right co-founder makes Walnut unstoppable.**
-
----
-
-*Built solely on [Fhenix](https://fhenix.io) — the encrypted compute layer.*  
-*Private settlement via [Privara](https://reineira.xyz) — confidential payment rails.*
-
-
----
 
 ## Acknowledgments
 
@@ -920,7 +900,7 @@ In no event shall the authors or copyright holders be liable for any claim, dama
 
 **Walnut Protocol** • Confidential Lending for Everyone
 
-[Get Started](https://walnut-finance.vercel.app/) • [Read Docs](./docs) • [View Contracts](https://sepolia.arbiscan.io/address/0x7D2624efEEe1640d347fbE4632d352c8648A26f5)
+[Get Started](https://walnut-finance.vercel.app/) • [Read Docs](./Technical-docs) • [View Contracts](https://sepolia.arbiscan.io/address/0x0EdA387ef2bE47317c5a342EAcEabE7CED297ED8)
 
 ---
 
