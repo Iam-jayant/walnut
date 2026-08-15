@@ -1,13 +1,24 @@
 const hre = require("hardhat");
-const ethers = hre.ethers;
+const { ethers } = hre;
+require("dotenv").config({ path: ".env.local" });
 
 async function main() {
-  const address = "0x05951ec62b4cb45032Fbb7F4194689AF4bdC77C8";
-  const mockUSDC = await ethers.getContractAt("MockUSDC", "0xbaF9465042BeFA0714E56bcDAddcaF6311FF5F59");
-  console.log("Minting to", address);
-  const tx = await mockUSDC.mint(address, ethers.parseUnits("1000", 6));
+  const [deployer] = await ethers.getSigners();
+  console.log("Using account:", deployer.address);
+
+  const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS;
+  const targetWallet = "0x05951ec62b4cb45032Fbb7F4194689AF4bdC77C8";
+  const amountToMint = ethers.parseUnits("100000", 6); // 100,000 USDC (6 decimals)
+
+  const MockUSDC = await ethers.getContractFactory("MockUSDC");
+  const mockUSDC = MockUSDC.attach(MOCK_USDC_ADDRESS);
+
+  console.log(`Minting 100,000 USDC to ${targetWallet}...`);
+  const tx = await mockUSDC.mint(targetWallet, amountToMint);
+  console.log("Tx Hash:", tx.hash);
+  
   await tx.wait();
-  console.log("Minted 1000 MockUSDC!");
+  console.log("✅ Successfully minted MockUSDC!");
 }
 
 main().catch(console.error);
