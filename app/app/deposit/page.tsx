@@ -1,129 +1,33 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import type { Address } from "viem";
 import { Encryptable } from "@cofhe/sdk";
-import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Lock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWalnutProtocol } from "@/hooks/use-walnut-protocol";
 import { useTokenBalances } from "@/hooks/use-token-balances";
 import { useToast } from "@/components/walnut/toast-provider";
-import { wagmiConfig } from "@/lib/web3-config";
+import { TransactionProgressModal, TransactionStage, StepItem } from "@/components/walnut/transaction-progress-modal";
 import {
   walnutChainId,
   walnutLendingAbi,
+  walnutWrapperAbi,
+  erc20Abi,
+  getGasFeeOverrides,
   walnutContractAddress as WALNUT_LENDING_ADDRESS,
+  walnutWrapperAddress as WRAPPER_ADDRESS,
   walnutMockUsdcAddress as MOCK_USDC_ADDRESS,
   walnutOracleAddress as ORACLE_ADDRESS,
 } from "@/lib/walnut-contract";
 
-const targetChainName =
-  wagmiConfig.chains.find((chain) => chain.id === walnutChainId)?.name ??
-  `Chain ${walnutChainId}`;
-
-const SUPPORTED_TOKENS = [
-  { address: MOCK_USDC_ADDRESS, symbol: "USDC", name: "USD Coin", decimals: 6 },
-  { address: "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73" as Address, symbol: "WETH", name: "Wrapped Ethereum", decimals: 18 },
-  { address: "0x152b0df80135c63b4cb1fbe00ddce7e9a8ffcb04" as Address, symbol: "LINK", name: "Chainlink Token", decimals: 18 },
-] as const;
-
-function TokenBadge({ symbol, name }: { symbol: string; name?: string }) {
-  // Reuse same token images as the dashboard (CoinGecko CDN), fallback to local /tokens/{symbol}.png
-  const TOKEN_IMAGES: Record<string, string> = {
-    USDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
-    cUSDC: "https://assets.coingecko.com/coins/images/6319/standard/usdc.png",
-    WETH: "https://assets.coingecko.com/coins/images/2518/standard/weth.png",
-    LINK: "https://assets.coingecko.com/coins/images/877/large/chainlink.png",
-  };
-  const src = TOKEN_IMAGES[symbol] ?? `/tokens/${symbol.toLowerCase()}.png`;
-  const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    // reset error state when source changes so the badge will retry loading
-    setImgError(false);
-  }, [src]);
-
-  // debug info (dev only)
-  if (process.env.NODE_ENV === 'development') console.debug(`[TokenBadge] symbol=${symbol} src=${src} imgError=${imgError}`);
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-sm hover:scale-105 transition-transform cursor-pointer overflow-hidden bg-slate-100 border border-slate-200">
-        {!imgError ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={`${symbol} logo`} onError={() => setImgError(true)} className="w-full h-full object-cover" />
-        ) : (
-          <div className="text-xs font-bold text-slate-500">{symbol.slice(0, 3)}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-sm font-semibold text-slate-900">{symbol}</div>
-        <div className="text-xs text-muted-foreground">{name}</div>
-      </div>
-    </div>
-  );
-}
-
-function TokenDropdown({ value, onChange, className }: { value: Address; onChange: (a: Address) => void; className?: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!ref.current) return;
-      if (e.target instanceof Node && !ref.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-
-  const selected = SUPPORTED_TOKENS.find((t) => t.address.toLowerCase() === value.toLowerCase()) ?? SUPPORTED_TOKENS[0];
-
-  return (
-    <div ref={ref} className={`${className} relative`}>
-      <button type="button" onClick={() => setOpen((s) => !s)} className="w-full flex items-center justify-between gap-3 p-2 border rounded shadow-sm bg-white">
-        <div className="flex items-center gap-3">
-          <TokenBadge symbol={selected.symbol} name={selected.name} />
-        </div>
-        <div className="text-sm text-muted-foreground">▾</div>
-      </button>
-
-      {open && (
-        <div className="absolute z-40 mt-2 w-full rounded border bg-white shadow-lg">
-          {SUPPORTED_TOKENS.map((t) => (
-            <button
-              key={t.address}
-              onClick={() => { onChange(t.address); setOpen(false); }}
-              className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-3"
-            >
-              <TokenBadge symbol={t.symbol} name={t.name} />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const ERC20_ABI = [
-  { inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], name: "approve", outputs: [{ name: "", type: "bool" }], stateMutability: "nonpayable", type: "function" },
-  { inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], name: "allowance", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
-  { inputs: [], name: "decimals", outputs: [{ name: "", type: "uint8" }], stateMutability: "view", type: "function" },
-] as const;
-
-// WALNUT_V2_ABI removed in favor of imported walnutLendingAbi
-
-const ORACLE_ABI = [
-  { inputs: [{ name: "token", type: "address" }, { name: "amount", type: "uint256" }], name: "getUSDValue", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
-] as const;
-
-type DepositStep = "idle" | "approve_pending" | "approve_confirmed" | "deposit_pending" | "deposit_confirmed" | "error";
-
-function assertSuccessReceipt(receipt: { status?: "success" | "reverted" }) {
-  if (receipt.status && receipt.status !== "success") throw new Error("Transaction reverted on-chain.");
-}
+const DEPOSIT_STEPS: StepItem[] = [
+  { id: "encrypt", label: "1. FHE Input Encryption", description: "Encrypting deposit amount into euint64 via CoFHE ZK engine." },
+  { id: "deposit", label: "2. Protocol Deposit", description: "Broadcasting confidential deposit transaction to Arbitrum Sepolia." },
+];
 
 export default function DepositPage() {
   const account = useAccount();
@@ -132,239 +36,440 @@ export default function DepositPage() {
   const protocol = useWalnutProtocol();
   const { tokenBalances, refreshBalances } = useTokenBalances();
 
-  const [selectedToken, setSelectedToken] = useState<Address>(MOCK_USDC_ADDRESS);
   const [amount, setAmount] = useState("");
-  const [depositStep, setDepositStep] = useState<DepositStep>("idle");
-  const [approveTxHash, setApproveTxHash] = useState<string | null>(null);
-  const [depositTxHash, setDepositTxHash] = useState<string | null>(null);
+  const [shieldAmount, setShieldAmount] = useState("");
+  
+  // Progress modal states
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalStage, setModalStage] = useState<TransactionStage>("zk_encrypt");
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [activeTxHash, setActiveTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const tokenInfo = useMemo(() => {
-    const fromBalances = tokenBalances.find((t) => t.token.toLowerCase() === selectedToken.toLowerCase());
-    if (fromBalances) return fromBalances;
-    const fromSupported = SUPPORTED_TOKENS.find((t) => t.address.toLowerCase() === selectedToken.toLowerCase());
-    if (fromSupported) return { token: fromSupported.address, symbol: fromSupported.symbol, decimals: fromSupported.decimals, balance: 0n };
-    return undefined;
-  }, [tokenBalances, selectedToken]);
+  // Faucet & Shielding state
+  const [isMinting, setIsMinting] = useState(false);
+  const [isShielding, setIsShielding] = useState(false);
+
+  const { writeContractAsync } = useWriteContract();
+
+  // Read Raw USDC & wUSDC Balances
+  const { data: rawUsdcBalance, refetch: refetchRawUsdc } = useReadContract({
+    address: MOCK_USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [account.address ?? "0x0000000000000000000000000000000000000000"],
+    query: { enabled: Boolean(account.address) }
+  });
+
+  const { data: wUsdcBalance, refetch: refetchWUsdc } = useReadContract({
+    address: WRAPPER_ADDRESS,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [account.address ?? "0x0000000000000000000000000000000000000000"],
+    query: { enabled: Boolean(account.address) }
+  });
 
   const parsedAmount = useMemo(() => {
     if (!amount || !/^\d+(\.\d+)?$/.test(amount)) return 0n;
     try {
-      const decimals = tokenInfo?.decimals ?? 6;
       const parts = amount.split('.');
       const integerPart = parts[0] || '0';
-      const decimalPart = (parts[1] || '').padEnd(decimals, '0').slice(0, decimals);
+      const decimalPart = (parts[1] || '').padEnd(6, '0').slice(0, 6);
       return BigInt(integerPart + decimalPart);
     } catch { return 0n; }
-  }, [amount, tokenInfo]);
+  }, [amount]);
 
-  const { data: currentAllowance, refetch: refetchAllowance } = useReadContract({ address: selectedToken, abi: ERC20_ABI, functionName: 'allowance', args: [account.address ?? '0x0000000000000000000000000000000000000000', WALNUT_LENDING_ADDRESS], query: { enabled: Boolean(account.address) } });
+  const parsedShieldAmount = useMemo(() => {
+    if (!shieldAmount || !/^\d+(\.\d+)?$/.test(shieldAmount)) return 0n;
+    try {
+      const parts = shieldAmount.split('.');
+      const integerPart = parts[0] || '0';
+      const decimalPart = (parts[1] || '').padEnd(6, '0').slice(0, 6);
+      return BigInt(integerPart + decimalPart);
+    } catch { return 0n; }
+  }, [shieldAmount]);
 
-  const { data: usdValue } = useReadContract({ address: ORACLE_ADDRESS, abi: ORACLE_ABI, functionName: 'getUSDValue', args: [selectedToken, parsedAmount], query: { enabled: parsedAmount > 0n } });
+  // Faucet Handlers
+  const handleMintFaucet = async () => {
+    if (!account.address) return;
+    setIsMinting(true);
+    try {
+      addToast({ variant: "pending", title: "Faucet Request", message: "Minting $1,000 MockUSDC on Arbitrum Sepolia..." });
+      const mintAmount = 1000n * 10n ** 6n; // $1,000
+      const gasOverrides = await getGasFeeOverrides(publicClient);
+      const hash = await writeContractAsync({
+        address: MOCK_USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "mint",
+        args: [account.address, mintAmount],
+        ...gasOverrides
+      });
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+      addToast({ variant: "success", title: "Faucet Complete", message: "Successfully minted $1,000 MockUSDC!", txHash: hash });
+      await refetchRawUsdc();
+    } catch (err: any) {
+      addToast({ variant: "error", title: "Faucet Failed", message: err?.message || err });
+    } finally {
+      setIsMinting(false);
+    }
+  };
 
-  const formattedUsdValue = useMemo(() => {
-    if (!usdValue || usdValue === 0n) return '$0.00';
-    const value = Number(usdValue) / 1e6;
-    return `$${value.toFixed(2)}`;
-  }, [usdValue]);
+  const handleShieldUSDC = async () => {
+    if (!account.address || parsedShieldAmount === 0n) return;
+    setIsShielding(true);
+    try {
+      addToast({ variant: "pending", title: "Shielding Collateral", message: "Approving MockUSDC to Vault Wrapper..." });
+      const gasOverrides = await getGasFeeOverrides(publicClient);
+      
+      // Step 1: Approve wrapper to pull MockUSDC
+      const approveHash = await writeContractAsync({
+        address: MOCK_USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [WRAPPER_ADDRESS, parsedShieldAmount],
+        ...gasOverrides
+      });
+      if (publicClient) await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
-  const needsApproval = useMemo(() => {
-    if (parsedAmount === 0n) return false;
-    if (!currentAllowance) return true;
-    return currentAllowance < parsedAmount;
-  }, [currentAllowance, parsedAmount]);
+      addToast({ variant: "pending", title: "Shielding Collateral", message: "Wrapping USDC into wUSDC vault tokens..." });
+      
+      // Step 2: Shield to wUSDC
+      const shieldHash = await writeContractAsync({
+        address: WRAPPER_ADDRESS,
+        abi: walnutWrapperAbi,
+        functionName: "shield",
+        args: [account.address, parsedShieldAmount],
+        ...gasOverrides
+      });
+      if (publicClient) await publicClient.waitForTransactionReceipt({ hash: shieldHash });
 
-  const { writeContractAsync: approveAsync } = useWriteContract();
-  const { isLoading: isApproveConfirming } = useWaitForTransactionReceipt({ hash: approveTxHash as `0x${string}` | undefined });
-  const { writeContractAsync: depositAsync } = useWriteContract();
-  const { isLoading: isDepositConfirming } = useWaitForTransactionReceipt({ hash: depositTxHash as `0x${string}` | undefined });
+      addToast({
+        variant: "success",
+        title: "Shielding Complete",
+        message: `Successfully shielded $${(Number(parsedShieldAmount) / 1e6).toFixed(2)} USDC to wUSDC!`,
+        txHash: shieldHash
+      });
 
+      setShieldAmount("");
+      await refetchRawUsdc();
+      await refetchWUsdc();
+    } catch (err: any) {
+      addToast({ variant: "error", title: "Shielding Failed", message: err?.message || err });
+    } finally {
+      setIsShielding(false);
+    }
+  };
+
+  // Main Deposit Handler
   const handleDeposit = async () => {
     if (!account.address || parsedAmount === 0n) return;
+
+    setModalOpen(true);
+    setModalStage("zk_encrypt");
+    setCurrentStepIndex(0);
+    setActiveTxHash(null);
+    setErrorMessage(null);
+
     try {
-      // Get current gas price from network
-      const gasPrice = await publicClient?.getGasPrice();
-      const maxFeePerGas = gasPrice ? (gasPrice * 150n) / 100n : undefined; // 50% buffer
-      const maxPriorityFeePerGas = gasPrice ? (gasPrice * 10n) / 100n : undefined; // 10% of base as tip
-      
-      if (needsApproval) {
-        setDepositStep('approve_pending');
-        setErrorMessage(null);
-        
-        let approveGasLimit;
-        try {
-          const estimatedGas = await publicClient?.estimateContractGas({
-            address: selectedToken as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [WALNUT_LENDING_ADDRESS, parsedAmount],
-            account: account.address,
-          });
-          if (estimatedGas) {
-            approveGasLimit = (estimatedGas * 130n) / 100n; // 30% buffer
-          }
-        } catch (e) {
-          console.warn("Approve gas estimation failed", e);
-        }
+      const gasOverrides = await getGasFeeOverrides(publicClient);
 
-        const approveHash = await approveAsync({ 
-          address: selectedToken, 
-          abi: ERC20_ABI, 
-          functionName: 'approve', 
-          args: [WALNUT_LENDING_ADDRESS, parsedAmount],
-          maxFeePerGas,
-          maxPriorityFeePerGas,
-          gas: approveGasLimit
-        });
-        setApproveTxHash(approveHash);
-        addToast({ variant: 'pending', message: 'Approving tokens...' });
-        if (publicClient) {
-          const receipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
-          assertSuccessReceipt(receipt);
-        }
-        setDepositStep('approve_confirmed');
-        await refetchAllowance();
-      }
-
-      setDepositStep('deposit_pending');
-
+      // ----------------------------------------------------
+      // STEP 1: FHE INPUT ENCRYPTION
+      // ----------------------------------------------------
       let encryptedAmountVal;
       try {
         const [encAmount] = await protocol.encryptor.encryptInputsAsync({
-          items: [Encryptable.uint128(parsedAmount)],
+          items: [Encryptable.uint64(parsedAmount)],
           account: account.address,
           chainId: walnutChainId,
         });
         encryptedAmountVal = encAmount;
       } catch (err) {
-        console.error("FHE Encryption failed", err);
-        throw new Error("Collateral encryption failed. Please make sure your wallet supports FHE encryption.");
+        console.error("FHE Encryption error", err);
+        throw new Error("Collateral input encryption failed. Please verify your CoFHE wallet connection.");
       }
-      
-      let depositGasLimit;
+
+      // ----------------------------------------------------
+      // STEP 2: PROTOCOL DEPOSIT
+      // ----------------------------------------------------
+      setModalStage("wallet_sign");
+      setCurrentStepIndex(1);
+
+      // Check if Lending protocol is operator of wUSDC
+      const isOp = await publicClient?.readContract({
+        address: WRAPPER_ADDRESS,
+        abi: walnutWrapperAbi,
+        functionName: "isOperator",
+        args: [account.address, WALNUT_LENDING_ADDRESS],
+      });
+
+      if (!isOp) {
+        addToast({ variant: "pending", title: "Approving Vault", message: "Granting time-bound operator allowance to lending protocol..." });
+        const setOpHash = await writeContractAsync({
+          address: WRAPPER_ADDRESS,
+          abi: walnutWrapperAbi,
+          functionName: "setOperator",
+          args: [WALNUT_LENDING_ADDRESS, 0xffffffff],
+          ...gasOverrides
+        });
+        if (publicClient) await publicClient.waitForTransactionReceipt({ hash: setOpHash });
+        addToast({ variant: "success", title: "Approval Complete", message: "Vault operator allowance granted." });
+      }
+
+      let depositGasLimit = 15000000n;
       try {
         const estimatedGas = await publicClient?.estimateContractGas({
           address: WALNUT_LENDING_ADDRESS,
           abi: walnutLendingAbi,
-          functionName: 'deposit',
-          args: [selectedToken, encryptedAmountVal as any],
+          functionName: "deposit",
+          args: [WRAPPER_ADDRESS, encryptedAmountVal as any],
           account: account.address,
         });
         if (estimatedGas) {
-          depositGasLimit = (estimatedGas * 130n) / 100n; // 30% buffer
+          depositGasLimit = (estimatedGas * 130n) / 100n;
         }
       } catch (e) {
-        console.warn("Deposit gas estimation failed", e);
-        // Fallback to a very high safe value for FHE transactions if estimation reverts completely
-        depositGasLimit = 15000000n;
+        console.warn("Deposit gas estimation fallback used", e);
       }
 
-      const hash = await depositAsync({ 
-        address: WALNUT_LENDING_ADDRESS, 
-        abi: walnutLendingAbi, 
-        functionName: 'deposit', 
-        args: [selectedToken, encryptedAmountVal as any],
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-        gas: depositGasLimit
+      const depositHash = await writeContractAsync({
+        address: WALNUT_LENDING_ADDRESS,
+        abi: walnutLendingAbi,
+        functionName: "deposit",
+        args: [WRAPPER_ADDRESS, encryptedAmountVal as any],
+        gas: depositGasLimit,
+        ...gasOverrides
       });
-      setDepositTxHash(hash);
-      addToast({ variant: 'pending', message: 'Deposit submitted...' });
+
+      setActiveTxHash(depositHash);
+      setModalStage("mining");
+
       if (publicClient) {
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        assertSuccessReceipt(receipt);
-        // Sync decryption to execute ERC20 transfer and update collateral on-chain
-        await protocol.syncDecryptResultsFromReceipt('deposit', receipt as any);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: depositHash });
+        if (receipt.status !== "success") throw new Error("Deposit transaction reverted on-chain.");
       }
-      setDepositStep('deposit_confirmed');
-      addToast({ variant: 'success', message: `Successfully deposited ${amount} ${tokenInfo?.symbol ?? 'USDC'} as collateral.` });
+
+      setModalStage("completed");
+      addToast({
+        variant: "success",
+        title: "Deposit Confirmed",
+        message: `Successfully deposited $${(Number(parsedAmount) / 1e6).toFixed(2)} wUSDC as confidential collateral!`,
+        txHash: depositHash
+      });
+
+      setAmount("");
+      await refetchWUsdc();
       await refreshBalances();
       await protocol.refreshBalances();
-      setAmount('');
-      setTimeout(() => setDepositStep('idle'), 2500);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Deposit failed';
-      setErrorMessage(message);
-      setDepositStep('error');
-      addToast({ variant: 'error', message });
+    } catch (err: any) {
+      console.error("Deposit Execution Failure:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(msg);
+      setModalStage("failed");
+      addToast({ variant: "error", title: "Deposit Reverted", message: msg });
     }
   };
 
-  const handleCancel = () => { setDepositStep('idle'); setApproveTxHash(null); setDepositTxHash(null); setErrorMessage(null); };
-
-  const isProcessing = depositStep === 'approve_pending' || depositStep === 'deposit_pending' || isApproveConfirming || isDepositConfirming;
-  const canSubmit = parsedAmount > 0n && !isProcessing && depositStep !== 'deposit_confirmed';
+  const formattedRawUsdc = rawUsdcBalance ? (Number(rawUsdcBalance) / 1e6).toFixed(2) : "0.00";
+  const formattedWUsdc = wUsdcBalance ? (Number(wUsdcBalance) / 1e6).toFixed(2) : "0.00";
 
   return (
-    <div className="p-6 space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Add Collateral</h1>
-        <p className="text-sm text-muted-foreground">Deposit ERC20 tokens as collateral.</p>
-      </header>
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="pb-6 border-b border-black/10">
+        <h1 className="text-3xl font-bold tracking-tight text-black">Add Shielded Collateral</h1>
+        <p className="mt-2 text-sm text-slate-500 max-w-xl">
+          Deposit wUSDC collateral into WalnutLendingV2. Your collateral amounts are protected with homomorphic FHE encryption and zero plaintext exposure.
+        </p>
+      </div>
 
-      <div className="border rounded-lg p-4">
-        <div className="mb-3 text-sm font-medium">Status: Ready to deposit — {targetChainName}</div>
+      <div className="grid gap-6 md:grid-cols-3 items-start">
+        {/* Main Panel */}
+        <section className="md:col-span-2">
+          <div className="bg-white border border-black/10 rounded-md p-6 space-y-8 shadow-none">
+            
+            {/* Unshielded Balance Box */}
+            <div className="bg-slate-50 border border-black/5 rounded-md p-5 space-y-5">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Unshielded Mock USDC Balance</p>
+                  <p className="text-3xl font-bold text-black tracking-tight">${formattedRawUsdc} <span className="text-lg font-medium text-slate-400">USDC</span></p>
+                </div>
+                <Button
+                  onClick={handleMintFaucet}
+                  disabled={isMinting}
+                  variant="outline"
+                  className="bg-white border-black/10 text-black hover:bg-slate-50 font-medium rounded-md h-9 px-4 text-xs shadow-none"
+                >
+                  {isMinting ? "Minting..." : "+ Mint $1,000 Faucet"}
+                </Button>
+              </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <section className="md:col-span-2 space-y-4">
-            <div>
-              <label className="block text-xs font-mono uppercase text-muted-foreground">Select Token</label>
-              <TokenDropdown className="mt-2 w-full" value={selectedToken} onChange={(addr: Address) => setSelectedToken(addr)} />
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <Input
+                  value={shieldAmount}
+                  onChange={(e) => setShieldAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                  placeholder="Amount to shield to wUSDC..."
+                  className="text-sm rounded-md h-11 border-black/10 bg-white focus-visible:ring-black/20 shadow-none"
+                />
+                <Button
+                  onClick={handleShieldUSDC}
+                  disabled={isShielding || parsedShieldAmount === 0n}
+                  className="w-full sm:w-auto bg-black hover:bg-black/90 text-white font-medium h-11 px-6 rounded-md shrink-0 shadow-none"
+                >
+                  {isShielding ? "Shielding..." : "Shield to wUSDC"}
+                </Button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-mono uppercase text-muted-foreground">Amount</label>
-              <Input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" className="mt-2 w-full" />
-              <div className="text-xs text-muted-foreground mt-1">Wallet: {tokenInfo ? (Number(tokenInfo.balance) / 10 ** tokenInfo.decimals).toFixed(2) : '0.00'} {tokenInfo?.symbol}</div>
-            </div>
-
-            <div className="flex gap-2">
-              {[100,500,1000,5000].map((v) => (
-                <button key={v} onClick={() => setAmount(String(v))} disabled={isProcessing} className="px-3 py-1 border rounded">{v}</button>
-              ))}
-            </div>
-
-            {depositStep !== 'idle' && (
-              <div className="p-3 border rounded">
-                <div className="font-medium">Transaction Progress</div>
-                <div className="mt-2 space-y-2">
-                  <div className="flex items-center gap-2">
-                    {depositStep === 'approve_pending' || isApproveConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : (depositStep === 'approve_confirmed' || depositStep === 'deposit_pending' || depositStep === 'deposit_confirmed' ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <div className="h-4 w-4 rounded-full border" />)}
-                    <div>1. Approve Tokens {approveTxHash && (<a href={`https://sepolia.arbiscan.io/tx/${approveTxHash}`} target="_blank" rel="noreferrer" className="text-xs text-blue-600">View</a>)}</div>
+            {/* Collateral Token Box */}
+            <div className="space-y-2">
+              <label className="block text-[11px] font-semibold uppercase tracking-widest text-slate-500 ml-1">
+                Collateral Token
+              </label>
+              <div className="bg-slate-50 border border-black/5 rounded-md p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full border-2 border-blue-200/60 bg-gradient-to-br from-blue-50 to-white flex items-center justify-center font-bold text-blue-700 shadow-sm text-[11px] tracking-wide">
+                    wUSDC
                   </div>
-                  <div className="flex items-center gap-2">
-                    {depositStep === 'deposit_pending' || isDepositConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : (depositStep === 'deposit_confirmed' ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <div className="h-4 w-4 rounded-full border" />)}
-                    <div>2. Deposit {depositTxHash && (<a href={`https://sepolia.arbiscan.io/tx/${depositTxHash}`} target="_blank" rel="noreferrer" className="text-xs text-blue-600">View</a>)}</div>
+                  <div>
+                    <p className="text-sm font-bold text-black">wUSDC (Walnut Vault Wrapper)</p>
+                    <p className="text-xs text-slate-500">Canonical Approved Vault Token</p>
                   </div>
-                  {errorMessage && <div className="text-sm text-red-700">{errorMessage}</div>}
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700">
+                  Approved Vault <CheckCircle2 className="w-3.5 h-3.5" />
                 </div>
               </div>
-            )}
+            </div>
 
+            {/* Deposit Form */}
+            <div className="space-y-3 pt-2">
+              <div className="flex justify-between items-center ml-1">
+                <label className="block text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                  Deposit Amount (wUSDC)
+                </label>
+                <span className="text-xs text-slate-500">
+                  Shielded Balance: <span className="font-semibold text-black">${formattedWUsdc} wUSDC</span>
+                </span>
+              </div>
+              
+              <div className="relative">
+                <Input
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                  placeholder="0.00"
+                  className="text-2xl font-semibold py-7 pl-4 pr-20 rounded-md border-black/10 bg-white focus-visible:ring-black/20 text-black placeholder:text-slate-300 shadow-none"
+                />
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">
+                  wUSDC
+                </div>
+              </div>
+              
+              {/* Quick Presets */}
+              <div className="flex gap-2">
+                {[50, 100, 500, 1000].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setAmount(String(v))}
+                    className="px-4 py-2 border border-black/10 bg-white rounded-md text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-black transition-colors shadow-none"
+                  >
+                    ${v}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setAmount(formattedWUsdc)}
+                  className="px-4 py-2 border border-black/10 bg-white rounded-md text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-black transition-colors shadow-none"
+                >
+                  MAX
+                </button>
+              </div>
+
+              <div className="pt-4">
+                <Button
+                  onClick={handleDeposit}
+                  disabled={parsedAmount === 0n}
+                  className="w-full bg-black hover:bg-black/90 text-white font-bold h-12 text-[15px] rounded-md shadow-none transition-all disabled:bg-slate-100 disabled:text-slate-400 gap-2 flex items-center justify-center"
+                >
+                  <Lock className="w-4 h-4" /> Deposit Shielded Collateral
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Sidebar */}
+        <aside className="space-y-6">
+          <div className="rounded-md bg-white border border-black/10 shadow-none overflow-hidden">
+            <div className="p-5 space-y-3">
+              <h3 className="text-sm font-bold text-black flex items-center gap-2">
+                <Lock className="w-4 h-4 text-slate-400" /> FHE Privacy Guarantee
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Your collateral is stored on-chain as an encrypted vault (FHE2B masked). Only your wallet holds the CoFHE permit key to view your balance.
+              </p>
+            </div>
+            <div className="bg-slate-50 p-4 border-t border-black/10 flex items-start gap-3">
+              <Lock className="w-4 h-4 mt-0.5 text-slate-600 shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-slate-700">CoFHE SECURED</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">End-to-end encrypted coprocessor</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md bg-white border border-black/10 shadow-none">
+            <div className="p-4 border-b border-black/10">
+              <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">Vault Security Parameters</h4>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Vault Contract</span>
+                <span className="font-semibold text-black font-mono">WalnutLendingV2</span>
+              </div>
+              <div className="w-full h-px bg-black/5" />
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Vault Whitelist</span>
+                <span className="font-semibold text-slate-700">Active (wUSDC)</span>
+              </div>
+              <div className="w-full h-px bg-black/5" />
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Encryption Type</span>
+                <span className="font-semibold text-slate-700">InEuint64</span>
+              </div>
+              <div className="w-full h-px bg-black/5" />
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Permit Model</span>
+                <span className="font-semibold text-slate-700">CoFHE (Active)</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md bg-white border border-black/10 shadow-none p-5">
+            <h4 className="text-sm font-bold text-black">Need Help?</h4>
+            <p className="text-xs text-slate-500 mt-1 mb-4">Read documentation or join our community</p>
             <div className="flex gap-2">
-              <button onClick={handleDeposit} disabled={!canSubmit} className="px-4 py-2 bg-black text-white rounded">{needsApproval ? 'Approve & Deposit' : 'Deposit'}</button>
-              {depositStep === 'error' && <button onClick={handleCancel} className="px-4 py-2 border rounded">Cancel</button>}
+              <Button variant="outline" className="w-full bg-white border-black/10 text-black shadow-none rounded-md text-xs h-9 font-medium">
+                Docs
+              </Button>
             </div>
-          </section>
-
-          <aside className="space-y-3">
-            <div className="p-3 border rounded">
-              <div className="text-xs font-mono uppercase text-muted-foreground">USD Value</div>
-              <div className="font-mono text-lg font-semibold mt-2">{formattedUsdValue}</div>
-            </div>
-
-            <div className="p-3 border rounded">
-              <div className="text-xs font-mono uppercase text-muted-foreground">Token Balance</div>
-              <div className="font-mono text-lg font-semibold mt-2">{tokenInfo ? (Number(tokenInfo.balance) / 10 ** tokenInfo.decimals).toFixed(2) : '0.00'}</div>
-            </div>
-
-            <div className="p-3 border rounded">
-              <div className="text-xs font-mono uppercase text-muted-foreground">Status</div>
-              <div className="mt-2 text-sm">{depositStep === 'idle' && needsApproval && 'Approval required'}{depositStep === 'idle' && !needsApproval && parsedAmount > 0n && 'Ready to deposit'}</div>
-            </div>
-          </aside>
-        </div>
+          </div>
+        </aside>
       </div>
+
+      {/* Multi-Step Progress Modal */}
+      <TransactionProgressModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        stage={modalStage}
+        currentStepIndex={currentStepIndex}
+        steps={DEPOSIT_STEPS}
+        txHash={activeTxHash}
+        errorMessage={errorMessage}
+        title="Deposit Progress"
+      />
     </div>
   );
 }
