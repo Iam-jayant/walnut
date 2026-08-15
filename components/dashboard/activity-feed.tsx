@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
 import { formatDistanceToNow } from "date-fns";
 import { ExternalLink, Activity } from "lucide-react";
+import Link from "next/link";
 import { parseAbiItem } from "viem";
 import { walnutContractAddress } from "@/lib/walnut-contract";
 
@@ -131,11 +132,16 @@ export function ActivityFeed() {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <Activity className="w-4 h-4 text-slate-600 animate-pulse" />
-          Recent Activity
-        </h3>
+      <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-slate-600 animate-pulse" />
+            Recent Activity
+          </h3>
+          <Link href="/app/history" className="text-[10px] uppercase font-bold text-slate-400 hover:text-black transition-colors px-2 py-1 rounded-md hover:bg-slate-100">
+            View All
+          </Link>
+        </div>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="flex items-center gap-3 animate-pulse">
@@ -151,11 +157,16 @@ export function ActivityFeed() {
 
   if (events.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <Activity className="w-4 h-4 text-slate-600" />
-          Recent Activity
-        </h3>
+      <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Activity className="w-4 h-4 text-slate-600" />
+            Recent Activity
+          </h3>
+          <Link href="/app/history" className="text-[10px] uppercase font-bold text-slate-400 hover:text-black transition-colors px-2 py-1 rounded-md hover:bg-slate-100">
+            View All
+          </Link>
+        </div>
         <div className="text-center py-8 text-slate-500">
           <p className="text-xs font-semibold">No activity yet</p>
           <p className="text-[10px] mt-1">Your transactions will appear here</p>
@@ -165,11 +176,16 @@ export function ActivityFeed() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-        <Activity className="w-4 h-4 text-slate-600" />
-        Recent Activity
-      </h3>
+    <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <Activity className="w-4 h-4 text-slate-600" />
+          Recent Activity
+        </h3>
+        <Link href="/app/history" className="text-[10px] uppercase font-bold text-slate-400 hover:text-black transition-colors px-2 py-1 rounded-md hover:bg-slate-100">
+          View All
+        </Link>
+      </div>
       <div className="space-y-3">
         {events.map((event, index) => (
           <ActivityRow key={`${event.txHash}-${index}`} event={event} />

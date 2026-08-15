@@ -29,7 +29,7 @@ export function ProtocolStatus() {
   const showSidebar = isConnected && protocol.permit.hasPermit;
 
   return (
-    <div className={`fixed bottom-0 ${showSidebar ? 'left-64' : 'left-0'} right-0 bg-[#FAFAFA]/95 backdrop-blur-md border-t border-[#EFEFEF] px-6 py-2.5 z-40 transition-all duration-300`}>
+    <div className="fixed bottom-0 left-64 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-8 py-2.5 z-40 transition-all duration-300">
       <div className="max-w-7xl mx-auto flex items-center justify-between text-xs">
         <div className="flex flex-wrap items-center gap-6">
           <StatusItem

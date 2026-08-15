@@ -233,19 +233,23 @@ export default function WalnutDashboardPage() {
     return Math.min(100, Number(scaled) / 100);
   }, [protocol.collateral.decrypted.data, protocol.debt.decrypted.data]);
   const poolUtilizationPercent = useMemo(() => {
-    // Pool utilization = user's personal decrypted debt / total pool deposits (plain uint256).
-    // totalBorrowed from contract is FHE-encrypted (its .decrypted.data is a ciphertext handle,
-    // not a plaintext amount), so we use the user's own decrypted debt as a proxy instead.
-    // totalPoolCollateral.decrypted.data is totalDeposited - a plain uint256 (not FHE).
     if (!showDecrypted || !protocol.canRead) return null; // null = hidden
     const userDebt = protocol.debt?.decrypted?.data;
-    const deposited = protocol.totalPoolCollateral?.decrypted?.data;
-    if (typeof userDebt !== "bigint" || typeof deposited !== "bigint") return null;
-    if (deposited <= 0n || userDebt <= 0n) return 0;
-    // Use bigint arithmetic: userDebt * 10_000n / deposited gives basis points
-    const bps = (userDebt * 10_000n) / deposited;
+    const userCollateral = protocol.collateral?.decrypted?.data;
+    const poolDeposited = protocol.totalPoolCollateral?.decrypted?.data;
+
+    const effectiveDeposited = (typeof poolDeposited === "bigint" && poolDeposited > 0n)
+      ? poolDeposited
+      : (typeof userCollateral === "bigint" ? userCollateral : 0n);
+
+    if (typeof userDebt !== "bigint" || effectiveDeposited <= 0n) {
+      if (typeof userCollateral === "bigint" && userCollateral > 0n) return 0;
+      return null;
+    }
+
+    const bps = (userDebt * 10_000n) / effectiveDeposited;
     return Math.min(100, Number(bps) / 100);
-  }, [showDecrypted, protocol.canRead, protocol.debt?.decrypted?.data, protocol.totalPoolCollateral?.decrypted?.data]);
+  }, [showDecrypted, protocol.canRead, protocol.debt?.decrypted?.data, protocol.collateral?.decrypted?.data, protocol.totalPoolCollateral?.decrypted?.data]);
 
   const readinessLabel = protocol.permit.isPermitInitializing 
     ? "Loading..." 
@@ -392,19 +396,45 @@ export default function WalnutDashboardPage() {
       </div>
 
       {/* Systems Operational Banner */}
-      <div className="flex flex-col sm:flex-row items-center justify-between border border-black/10 rounded-xl bg-white/90 p-4 shadow-[0_4px_12px_rgba(0,0,0,0.06)] backdrop-blur-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
-          <div>
-            <div className="text-sm font-semibold text-foreground">All systems operational</div>
-            <div className="text-xs text-muted-foreground">All protocols are functioning normally</div>
+      <div className="flex flex-col sm:flex-row items-center justify-between rounded-md bg-gradient-to-br from-slate-900 via-slate-800 to-black border border-black/20 p-5 relative overflow-hidden mb-6 shadow-none">
+        
+        {/* Animated Data Wave / Particle Background */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-md">
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1/2 h-[200%] bg-[radial-gradient(ellipse_at_center,rgba(0,194,255,0.04)_0%,transparent_70%)]" />
+          <div className="absolute right-[-5%] top-0 bottom-0 w-[70%] opacity-60 flex items-center mix-blend-screen">
+            <svg viewBox="0 0 800 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-auto">
+              <path d="M0,100 C150,200 300,0 500,100 C700,200 800,50 800,50" stroke="url(#cyan-gradient)" strokeWidth="2" strokeDasharray="4 6" className="animate-pulse opacity-80" style={{ animationDuration: '3s' }} />
+              <path d="M0,130 C200,30 400,230 600,130 C750,50 800,100 800,100" stroke="url(#cyan-gradient)" strokeWidth="1.5" strokeDasharray="2 8" className="animate-pulse opacity-70" style={{ animationDuration: '4s', animationDelay: '1s' }} />
+              <path d="M0,70 C250,170 350, -30 650,70 C750,120 800,70 800,70" stroke="url(#cyan-gradient)" strokeWidth="3" strokeDasharray="1 10" className="animate-pulse opacity-90" style={{ animationDuration: '5s', animationDelay: '2s' }} />
+              <defs>
+                <linearGradient id="cyan-gradient" x1="0" y1="0" x2="800" y2="0" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#00C2FF" stopOpacity="0" />
+                  <stop offset="70%" stopColor="#00C2FF" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#00C2FF" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+            </svg>
           </div>
         </div>
-        <div className="flex items-center gap-2 mt-4 sm:mt-0">
+        
+        <div className="flex items-center gap-4 relative z-10">
+          <div className="flex items-center justify-center w-11 h-11 rounded-lg border border-[rgba(0,194,255,0.15)] bg-[#00C2FF]/5 text-[#00C2FF] shadow-[0_0_15px_rgba(0,194,255,0.05)]">
+            <Activity size={22} className="drop-shadow-[0_0_6px_rgba(0,194,255,0.4)]" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#00C2FF] shadow-[0_0_6px_rgba(0,194,255,0.8)] animate-pulse" style={{ animationDuration: '2s' }} />
+              <div className="text-[15px] font-semibold text-[#F5F7FA] tracking-wide">All systems operational</div>
+            </div>
+            <div className="text-[13px] text-[#8B93A1]">All protocols are functioning normally.</div>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-3 mt-4 sm:mt-0 relative z-10">
           <Button
             size="sm"
             variant="outline"
-            className="text-xs h-9 px-4 rounded-full border-black/15 bg-white hover:bg-black/5 hover:border-black/25 transition-all font-medium"
+            className="text-xs h-9 px-4 rounded-lg border-[rgba(255,255,255,0.08)] bg-transparent text-[#F5F7FA] hover:bg-[#00C2FF]/10 hover:border-[#00C2FF]/30 hover:text-[#00C2FF] transition-all duration-200 font-medium"
             onClick={handleToggleValues}
             isLoading={isRevealingValues}
           >
@@ -413,10 +443,11 @@ export default function WalnutDashboardPage() {
           <Button
             size="sm"
             variant="outline"
-            className="text-xs h-9 px-4 rounded-full border-black/15 bg-white hover:bg-black/5 hover:border-black/25 transition-all font-medium"
+            className="text-xs h-9 px-4 rounded-lg border-[rgba(255,255,255,0.08)] bg-transparent text-[#F5F7FA] hover:bg-[#00C2FF]/10 hover:border-[#00C2FF]/30 hover:text-[#00C2FF] transition-all duration-200 font-medium group"
             onClick={handleRefresh}
             isLoading={isRefreshing}
           >
+            <RefreshCcw size={14} className="mr-2 opacity-60 group-hover:opacity-100 transition-opacity duration-200" />
             Refresh
           </Button>
         </div>
@@ -427,68 +458,70 @@ export default function WalnutDashboardPage() {
 
       {/* KPI Cards Layer */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="border border-black/10 rounded-xl bg-linear-to-br from-white to-gray-50/50 p-5 shadow-[0_4px_16px_rgba(0,0,0,0.06),inset_0_1px_0_rgba(255,255,255,0.9)] flex flex-col justify-between hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] transition-all">
-          <div className="flex items-start justify-between mb-2">
-             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Total Supplied</div>
+        <div className="border border-slate-100 rounded-md bg-white p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex flex-col justify-between hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,0.08)] transition-all">
+          <div className="flex items-start justify-between mb-4">
+             <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-slate-500">Total Supplied</div>
+             <div className="flex items-center justify-center w-8 h-8 rounded-md bg-[#00C2FF]/10 text-[#00C2FF]">
+               <span className="font-bold text-sm">$</span>
+             </div>
           </div>
           <div>
-            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">
+            <div className="font-mono text-[1.75rem] font-bold text-slate-900 tracking-tight leading-none mb-1">
               {showDecrypted ? (
-                typeof protocol.totalPoolCollateral.decrypted.data === 'bigint' 
+                typeof protocol.totalPoolCollateral.decrypted.data === 'bigint' && protocol.totalPoolCollateral.decrypted.data > 0n
                   ? `$${formatTokenAmount(protocol.totalPoolCollateral.decrypted.data, 6)}` 
-                  : '$0.00'
+                  : (typeof collateralDecrypted === 'bigint' ? `$${formatTokenAmount(collateralDecrypted, 6)}` : '$0.00')
               ) : ENCRYPTION_MASK}
             </div>
-            <div className="h-5" />
+            <div className="text-xs text-slate-400 font-medium mb-3">USDC</div>
+            <div className="text-[11px] text-slate-400">Across all connected wallets</div>
           </div>
         </div>
         
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between mb-2">
-             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Your Debt</div>
+        <div className="border border-slate-100 rounded-md bg-white p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex flex-col justify-between hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,0.08)] transition-all">
+          <div className="flex items-start justify-between mb-4">
+             <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-slate-500">Your Debt</div>
+             <div className="flex items-center justify-center w-8 h-8 rounded-md bg-blue-50 text-blue-500">
+               <ArrowUpFromLine size={14} className="rotate-45" />
+             </div>
           </div>
           <div>
-            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">
+            <div className="font-mono text-[1.75rem] font-bold text-slate-900 tracking-tight leading-none mb-1">
               {debtMetric === ENCRYPTION_MASK || debtMetric === "Loading..." || debtMetric === "—" ? debtMetric : `$${debtMetric}`}
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] text-muted-foreground">FHE-encrypted on-chain</span>
-            </div>
+            <div className="text-xs text-slate-400 font-medium mb-3">USDC</div>
+            <div className="text-[11px] text-slate-400">FHE-encrypted on-chain</div>
           </div>
         </div>
         
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between mb-2">
-             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Available</div>
+        <div className="border border-slate-100 rounded-md bg-white p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex flex-col justify-between hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,0.08)] transition-all">
+          <div className="flex items-start justify-between mb-4">
+             <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-slate-500">Available To Borrow</div>
+             <div className="flex items-center justify-center w-8 h-8 rounded-md bg-emerald-50 text-emerald-500">
+               <ArrowDownToLine size={14} />
+             </div>
           </div>
           <div>
-            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight">{availableMetric === ENCRYPTION_MASK || availableMetric === "Loading..." || availableMetric === "—" ? availableMetric : `$${availableMetric}`}</div>
-            <div className="h-5" />
+            <div className="font-mono text-[1.75rem] font-bold text-slate-900 tracking-tight leading-none mb-1">{availableMetric === ENCRYPTION_MASK || availableMetric === "Loading..." || availableMetric === "—" ? availableMetric : `$${availableMetric}`}</div>
+            <div className="text-xs text-slate-400 font-medium mb-3">USDC</div>
+            <div className="text-[11px] text-slate-400">Across all wallets</div>
           </div>
         </div>
         
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between mb-2">
-             <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/70">Borrow Utilization</div>
+        <div className="border border-slate-100 rounded-md bg-white p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex flex-col justify-between hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,0.08)] transition-all">
+          <div className="flex items-start justify-between mb-4">
+             <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-slate-500">Borrow Utilization</div>
           </div>
           <div>
-            <div className="font-mono text-[1.5rem] font-semibold text-foreground tracking-tight mb-2">{utilizationLabel}</div>
+            <div className="font-mono text-[1.75rem] font-bold text-slate-900 tracking-tight leading-none mb-4">{utilizationLabel}</div>
             {poolUtilizationPercent !== null ? (
               <>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-1.5 flex">
-                   <div className={`h-full rounded-l-full transition-all duration-1000 ${
-                     utilizationBarWidth > 80 ? 'bg-red-500' :
-                     utilizationBarWidth > 50 ? 'bg-amber-500' :
-                     'bg-emerald-500'
-                   }`} style={{ width: `${utilizationBarWidth}%` }} />
+                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2 flex">
+                   <div className={`h-full rounded-full transition-all duration-1000 bg-gradient-to-r from-slate-900 via-slate-800 to-black`} style={{ width: `${utilizationBarWidth}%` }} />
                 </div>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <div className={`w-1.5 h-1.5 rounded-full ${
-                    utilizationBarWidth > 80 ? 'bg-red-400' :
-                    utilizationBarWidth > 50 ? 'bg-amber-400' :
-                    'bg-emerald-400'
-                  }`} />
-                  <span className="text-[11px] text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-1.5 h-1.5 rounded-full bg-slate-900`} />
+                  <span className="text-[11px] font-medium text-slate-500">
                     {utilizationBarWidth > 80 ? 'High' :
                      utilizationBarWidth > 50 ? 'Moderate' :
                      'Low'}
@@ -496,7 +529,7 @@ export default function WalnutDashboardPage() {
                 </div>
               </>
             ) : (
-              <div className="text-[11px] text-slate-400 mt-1">Reveal values to compute</div>
+              <div className="text-[11px] text-slate-400 mt-2">Unlock to view utilization</div>
             )}
           </div>
         </div>
@@ -506,7 +539,7 @@ export default function WalnutDashboardPage() {
       <div className="grid lg:grid-cols-3 gap-4">
         
         {/* Wallet Balances */}
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm overflow-hidden flex flex-col">{/* Removed tour-credit class */}
+        <div className="border border-slate-200 rounded-md bg-white p-5 shadow-sm overflow-hidden flex flex-col">{/* Removed tour-credit class */}
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold tracking-tight text-slate-900">Wallet Balances</h3>
           </div>
@@ -551,7 +584,7 @@ export default function WalnutDashboardPage() {
         </div>
 
         {/* Vault Holdings */}
-        <div className="border border-slate-200 rounded-xl bg-white p-5 shadow-sm overflow-hidden flex flex-col">
+        <div className="border border-slate-200 rounded-md bg-white p-5 shadow-sm overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold tracking-tight text-slate-900">Vault Holdings</h3>
           </div>
@@ -616,29 +649,29 @@ export default function WalnutDashboardPage() {
       {/* Row 3: Quick Actions and Activity Feed */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Quick Actions */}
-        <div className="lg:col-span-2 border border-slate-200 rounded-xl bg-white p-5 shadow-sm flex flex-col justify-between">
+        <div className="lg:col-span-2 border border-slate-200 rounded-md bg-white p-5 shadow-sm flex flex-col justify-between">
           <div>
             <h3 className="font-bold tracking-tight text-slate-900 mb-4">Quick Actions</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Link href="/app/deposit" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group">
+              <Link href="/app/deposit" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-md hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group">
                 <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
                   <ArrowDownToLine className="w-5 h-5 text-emerald-600" />
                 </div>
                 <span className="text-sm font-bold text-slate-900">Deposit</span>
               </Link>
-              <Link href="/app/borrow" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-indigo-50/50 hover:border-indigo-200 transition-all group">
+              <Link href="/app/borrow" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-md hover:bg-indigo-50/50 hover:border-indigo-200 transition-all group">
                 <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
                   <HandCoins className="w-5 h-5 text-indigo-600" />
                 </div>
                 <span className="text-sm font-bold text-slate-900">Borrow</span>
               </Link>
-              <Link href="/app/withdraw" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-orange-50/50 hover:border-orange-200 transition-all group">
+              <Link href="/app/withdraw" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-md hover:bg-orange-50/50 hover:border-orange-200 transition-all group">
                 <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
                   <ArrowUpFromLine className="w-5 h-5 text-orange-600" />
                 </div>
                 <span className="text-sm font-bold text-slate-900">Withdraw</span>
               </Link>
-              <Link href="/app/repay" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-xl hover:bg-cyan-50/50 hover:border-cyan-200 transition-all group">
+              <Link href="/app/repay" className="flex flex-col items-center justify-center py-6 px-4 border border-slate-100 bg-slate-50/80 rounded-md hover:bg-cyan-50/50 hover:border-cyan-200 transition-all group">
                 <div className="w-12 h-12 rounded-full bg-cyan-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm">
                   <RefreshCcw className="w-5 h-5 text-cyan-600" />
                 </div>
@@ -658,7 +691,7 @@ export default function WalnutDashboardPage() {
     {/* FAQ Modal */}
     {showFaqModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100 flex flex-col max-h-[85vh] animate-in scale-in-95 duration-200">
+        <div className="bg-white rounded-md shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100 flex flex-col max-h-[85vh] animate-in scale-in-95 duration-200">
           <div className="p-6 border-b border-slate-100">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -714,7 +747,7 @@ export default function WalnutDashboardPage() {
           <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
             <button 
               onClick={() => setShowFaqModal(false)}
-              className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition-colors"
+              className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-md hover:bg-slate-800 transition-colors"
             >
               Got it, thanks!
             </button>
