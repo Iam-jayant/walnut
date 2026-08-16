@@ -195,7 +195,7 @@ User Input (Plain) → Browser Encryption → InEuint128 (Ciphertext)
 |-----------|---------|
 | **Arbitrum Sepolia** | Layer 2 testnet deployment |
 | **Vercel** | Frontend hosting & CDN |
-| **Privara** | Private settlement coordination |
+| **Privara** | Private settlement coordination *(Note: SDK settlement mocked on Testnet; full integration active on Mainnet)* |
 | **CoFHE Network** | Threshold decryption service |
 
 ---
@@ -206,9 +206,9 @@ User Input (Plain) → Browser Encryption → InEuint128 (Ciphertext)
 
 | Contract | Address | Arbiscan |
 |----------|---------|----------|
-| **WalnutLendingV2** | `0xdF921cF29Aae0fBf524139a4cae9289478893fDf` | [View →](https://sepolia.arbiscan.io/address/0xdF921cF29Aae0fBf524139a4cae9289478893fDf) |
-| **WalnutP2P (Confidential Marketplace)** | `0xFd2AbEB7fd4fe91fc78ddD54dB13f7762a17A88E` | [View →](https://sepolia.arbiscan.io/address/0xFd2AbEB7fd4fe91fc78ddD54dB13f7762a17A88E) |
-| **cUSDC (WalnutFHERC20)** | `0x78136BC03b4549688C48181a26c521eb2F27F23F` | [View →](https://sepolia.arbiscan.io/address/0x78136BC03b4549688C48181a26c521eb2F27F23F) |
+| **WalnutLendingV2** | `0x22715b184B040c65d1aFb15595B533f2BD94bCfa` | [View →](https://sepolia.arbiscan.io/address/0x22715b184B040c65d1aFb15595B533f2BD94bCfa) |
+| **WalnutP2P (Confidential Marketplace)** | `0xF0B496672c2b4F7fC8F53ece3c5199F51f40F517` | [View →](https://sepolia.arbiscan.io/address/0xF0B496672c2b4F7fC8F53ece3c5199F51f40F517) |
+| **cUSDC (WalnutFHERC20)** | `0x141F1eD1548F7a1000Dc67C0338c427acE2A654D` | [View →](https://sepolia.arbiscan.io/address/0x141F1eD1548F7a1000Dc67C0338c427acE2A654D) |
 | **WalnutVaultWrapper (wUSDC)** | `0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61` | [View →](https://sepolia.arbiscan.io/address/0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61) |
 | **WalnutPriceOracle** | `0x82E7caF958B329c47F10778E10A89B2319D67A14` | [View →](https://sepolia.arbiscan.io/address/0x82E7caF958B329c47F10778E10A89B2319D67A14) |
 | **MockUSDC** | `0x6341A12D08EE6F6fA071CF94C7C4a878ee5AF3ef` | [View →](https://sepolia.arbiscan.io/address/0x6341A12D08EE6F6fA071CF94C7C4a878ee5AF3ef) |
