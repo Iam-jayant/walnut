@@ -12,7 +12,7 @@ async function main() {
   const balance = await hre.ethers.provider.getBalance(deployer.address);
   console.log("Deployer ETH balance:    ", hre.ethers.formatEther(balance), "ETH");
 
-  const cUSDC_Address = "0x78136BC03b4549688C48181a26c521eb2F27F23F";
+  const cUSDC_Address = process.env.NEXT_PUBLIC_FHERC20_ADDRESS || "0x78136BC03b4549688C48181a26c521eb2F27F23F";
   const oracleAddress = "0x82E7caF958B329c47F10778E10A89B2319D67A14";
   const wUSDC_Address = "0x8684d325BE9B635BD72bFC2bB10bB6f354f5Cd61";
   const treasuryAddress = deployer.address;

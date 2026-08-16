@@ -7,7 +7,7 @@ async function main() {
   console.log("Using account:", deployer.address);
 
   const MOCK_USDC_ADDRESS = process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS;
-  const targetWallet = "0x05951ec62b4cb45032Fbb7F4194689AF4bdC77C8";
+  const targetWallet = "0x2F1a541F22082eF155fBAC522ED4007980d12B21";
   const amountToMint = ethers.parseUnits("100000", 6); // 100,000 USDC (6 decimals)
 
   const MockUSDC = await ethers.getContractFactory("MockUSDC");
